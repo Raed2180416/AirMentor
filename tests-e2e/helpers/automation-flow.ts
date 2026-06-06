@@ -65,12 +65,10 @@ export const TRAJECTORY_CASES: TrajectoryCase[] = [
   { label: 'Case 4: Late bloomer (bad→good, bad attendance)', tt1Pct: 0.20, tt2Pct: 0.85, quizPct: 0.60, assignmentPct: 0.50, attendancePct: 0.40, seePct: 0.80 },
 ]
 
-/** Scheme configurations to experiment with across semesters.
- * NOTE: quizCount and assignmentCount are capped at 2 by the backend schema
- * (z.union([z.literal(0), z.literal(1), z.literal(2)])). */
+/** Scheme configurations to experiment with across semesters. */
 export const SCHEME_CONFIGS = [
   { sem: 1, assignments: 2, quizzes: 2, label: 'Baseline: 2A/2Q' },
-  { sem: 2, assignments: 2, quizzes: 0, label: 'Assignment-only: 2A/0Q' },
+  { sem: 2, assignments: 3, quizzes: 0, label: 'Assignment-only: 3A/0Q' },
   { sem: 3, assignments: 0, quizzes: 2, label: 'Quiz-only: 0A/2Q' },
   { sem: 4, assignments: 2, quizzes: 1, label: 'Unbalanced: 2A/1Q' },
   { sem: 5, assignments: 1, quizzes: 2, label: 'Quiz-heavy: 1A/2Q' },
@@ -421,11 +419,11 @@ export async function getRiskExplorer(
   request: RequestContext,
   csrfToken: string,
   studentId: string,
-  runId: string,
+  runId: string | null,
   checkpointId: string,
 ) {
   const params = new URLSearchParams()
-  params.set('simulationRunId', runId)
+  if (runId) params.set('simulationRunId', runId)
   params.set('simulationStageCheckpointId', checkpointId)
   const response = await request.get(
     apiPath(`/api/academic/students/${encodeURIComponent(studentId)}/risk-explorer?${params.toString()}`),
@@ -665,8 +663,13 @@ export async function setOfferingScheme(
   const ceTotal = 60
   const seeTotal = 40
 
-  const quizCount = Math.min(semConfig.quizzes, 2) as 0 | 1 | 2
-  const assignmentCount = Math.min(semConfig.assignments, 2) as 0 | 1 | 2
+  const quizCount = Math.max(0, Math.round(semConfig.quizzes))
+  const assignmentCount = Math.max(0, Math.round(semConfig.assignments))
+  const componentWeightage = (totalWeight: number, count: number, index: number) => {
+    if (count <= 0) return 0
+    const baseWeight = Math.floor(totalWeight / count)
+    return index === 0 ? totalWeight - baseWeight * (count - 1) : baseWeight
+  }
 
   let ttWeight = ceTotal
   let qWeight = 0
@@ -696,13 +699,13 @@ export async function setOfferingScheme(
         id: `quiz-${i + 1}`,
         label: `Quiz ${i + 1}`,
         rawMax: 10,
-        weightage: i === 0 ? qWeight - Math.floor(qWeight / quizCount) * (quizCount - 1) : Math.floor(qWeight / quizCount)
+        weightage: componentWeightage(qWeight, quizCount, i)
       })),
       assignmentComponents: Array.from({ length: assignmentCount }, (_, i) => ({
         id: `assignment-${i + 1}`,
         label: `Assignment ${i + 1}`,
         rawMax: 10,
-        weightage: i === 0 ? aWeight - Math.floor(aWeight / assignmentCount) * (assignmentCount - 1) : Math.floor(aWeight / assignmentCount)
+        weightage: componentWeightage(aWeight, assignmentCount, i)
       })),
       termTestWeights: { tt1, tt2 },
       quizWeight: qWeight,

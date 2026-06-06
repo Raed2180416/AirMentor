@@ -614,7 +614,7 @@ function createHttpAcademicRepositories({
   const baselineMeetingCache = deepClone(bootstrap.meetings ?? [])
   const meetingCache = deepClone(bootstrap.meetings ?? [])
   const taskVersionCache = new Map<string, number>()
-  type FirstPartyRuntimeSliceKey = 'drafts' | 'cellValues' | 'lockByOffering' | 'lockAuditByTarget'
+  type FirstPartyRuntimeSliceKey = 'drafts' | 'cellValues' | 'lockByOffering' | 'lockAuditByTarget' | 'resolvedTasks'
   for (const task of bootstrap.runtime.tasks ?? []) {
     const version = (task as SharedTask & { version?: unknown }).version
     if (typeof version === 'number' && Number.isFinite(version)) {
@@ -638,6 +638,9 @@ function createHttpAcademicRepositories({
           return
         case 'lockAuditByTarget':
           await client.saveAcademicLockAuditByTarget(payload as Record<string, Array<{ action: string; actorRole: string; at?: number }>>)
+          return
+        case 'resolvedTasks':
+          await client.saveAcademicResolvedTasks(payload as Record<string, number>)
           return
       }
     } catch (error) {
@@ -765,7 +768,8 @@ function createHttpAcademicRepositories({
       async saveTasks(next) {
         const previousTasks = deepClone(runtimeCache.tasks ?? [])
         const previousTasksById = new Map(previousTasks.map(task => [task.id, task]))
-        runtimeCache.tasks = deepClone(next)
+        const optimisticTasks = deepClone(next)
+        runtimeCache.tasks = optimisticTasks
         const writes = next.filter(task => !jsonEqual(previousTasksById.get(task.id) ?? null, task))
         try {
           await Promise.all(writes.map(async task => {
@@ -776,12 +780,14 @@ function createHttpAcademicRepositories({
             taskVersionCache.set(task.id, response.task.version)
           }))
         } catch (error) {
-          runtimeCache.tasks = previousTasks
+          if (jsonEqual(runtimeCache.tasks ?? [], optimisticTasks)) {
+            runtimeCache.tasks = previousTasks
+          }
           throw error
         }
       },
       async saveResolvedTasks(next) {
-        runtimeCache.resolvedTasks = deepClone(next)
+        await persistRuntimeSlice('resolvedTasks', next)
       },
       async upsertTask(task) {
         return toBackendTaskPayload(task)

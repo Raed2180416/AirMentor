@@ -4,6 +4,8 @@ export type ProofPlaybackSelection = {
   simulationRunId: string
   simulationStageCheckpointId: string
   updatedAt: string
+  workspace?: 'academic' | 'system-admin'
+  source?: string
 }
 
 function hasWindow() {
@@ -21,10 +23,27 @@ export function readProofPlaybackSelection(): ProofPlaybackSelection | null {
       simulationRunId: parsed.simulationRunId,
       simulationStageCheckpointId: parsed.simulationStageCheckpointId,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
+      workspace: parsed.workspace === 'academic' || parsed.workspace === 'system-admin' ? parsed.workspace : undefined,
+      source: typeof parsed.source === 'string' ? parsed.source : undefined,
     }
   } catch {
     return null
   }
+}
+
+export function readProofPlaybackSelectionForWorkspace(workspace: ProofPlaybackSelection['workspace']): ProofPlaybackSelection | null {
+  const selection = readProofPlaybackSelection()
+  return selection?.workspace === workspace ? selection : null
+}
+
+// Proof playback is a shared cross-role control surface. Prefer same-workspace
+// selections when present, but allow the other role's selection to drive
+// playback so sysadmin and academic tabs stay aligned on one checkpoint.
+export function readSharedProofPlaybackSelection(workspace?: ProofPlaybackSelection['workspace']): ProofPlaybackSelection | null {
+  const selection = readProofPlaybackSelection()
+  if (!selection) return null
+  if (!workspace || !selection.workspace || selection.workspace === workspace) return selection
+  return selection
 }
 
 export function writeProofPlaybackSelection(selection: ProofPlaybackSelection | null) {

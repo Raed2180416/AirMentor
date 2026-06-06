@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, like } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, like, lt, not, or } from 'drizzle-orm'
 import type { RouteContext } from '../app.js'
 import type { AppDb } from '../db/client.js'
 import {
@@ -73,6 +73,7 @@ import { pickMostRecentActiveRun } from './proof-active-run.js'
 import {
   buildProofBatchDashboard as buildProofBatchDashboardService,
   getProofRunCheckpointDetail as getProofRunCheckpointDetailService,
+  listProofRunCheckpointStudents as listProofRunCheckpointStudentsService,
   getProofRunCheckpointStudentDetail as getProofRunCheckpointStudentDetailService,
   listProofRunCheckpoints as listProofRunCheckpointsService,
   type ProofControlPlaneBatchServiceDeps,
@@ -410,6 +411,7 @@ export type StudentAgentCardPayload = {
     currentQueueState?: string | null
     currentRecoveryState?: ProofRecoveryState | null
     currentCgpa: number | null
+    predictedCgpa?: number | null
     backlogCount: number
     electiveFit: {
       recommendedCode: string
@@ -630,6 +632,39 @@ export type StudentRiskExplorerPayload = {
     supportWarning: string | null
     calibrationMethod: string
   }> | null
+  xaiRiskReduction?: {
+    explanationMode: 'same-checkpoint-no-action-replay'
+    disclaimer: string
+    driverSource: string | null
+    scorerFamily: string | null
+    summary: {
+      stageKey: string | null
+      label: string
+      baselineRiskProbScaled: number | null
+      simulatedRiskProbScaled: number | null
+      deltaProbScaled: number | null
+      riskReducedByProbScaled: number | null
+      activeInterventions: string[]
+    } | null
+    deltaTimeline: Array<{
+      stageKey: string
+      label: string
+      baselineRiskProbScaled: number
+      simulatedRiskProbScaled: number
+      deltaProbScaled: number
+      riskReducedByProbScaled: number
+      activeInterventions: string[]
+    }>
+    componentImpacts: Array<{
+      componentKey: 'attendance' | 'tt1' | 'tt2' | 'assignment' | 'see' | 'overall'
+      componentLabel: string
+      baselineScore: number | null
+      simulatedScore: number | null
+      lift: number | null
+      direction: 'score-lift' | 'risk-reduction'
+    }>
+    topDriverEvidence: Array<{ label: string; impact: number; feature: string }>
+  } | null
   derivedScenarioHeads: {
     semesterSgpaDropRiskProbScaled: number | null
     cumulativeCgpaDropRiskProbScaled: number | null
@@ -1782,17 +1817,45 @@ const SCENARIO_ACADEMIC_STRESS: Record<ScenarioFamily, ScenarioAcademicStress> =
 }
 
 const CE_STRONG_SEE_WEAK_STUDENT_RATE: Record<ScenarioFamily, number> = {
-  balanced: 0.16,
-  'weak-foundation': 0.16,
+  balanced: 0.18,
+  'weak-foundation': 0.22,
   'low-attendance': 0.15,
-  'high-forgetting': 0.18,
+  'high-forgetting': 0.22,
   'coursework-inflation': 0.22,
   'exam-fragility': 0.30,
-  'carryover-heavy': 0.18,
-  'intervention-resistant': 0.18,
+  'carryover-heavy': 0.20,
+  'intervention-resistant': 0.22,
   'chronic-absentee': 0.15,
   'attendance-shock': 0.16,
-  'mental-health-disruption': 0.24,
+  'mental-health-disruption': 0.26,
+}
+
+const CE_STRONG_SEE_WEAK_COURSE_EVENT_RATE: Record<ScenarioFamily, number> = {
+  balanced: 0.50,
+  'weak-foundation': 0.58,
+  'low-attendance': 0.40,
+  'high-forgetting': 0.62,
+  'coursework-inflation': 0.60,
+  'exam-fragility': 0.62,
+  'carryover-heavy': 0.58,
+  'intervention-resistant': 0.58,
+  'chronic-absentee': 0.42,
+  'attendance-shock': 0.42,
+  'mental-health-disruption': 0.60,
+}
+
+const CE_STRONG_SEE_FAIL_EVENT_RATE: Record<ScenarioFamily, number> = {
+  balanced: 0.32,
+  'weak-foundation': 0.40,
+  'low-attendance': 0.18,
+  'high-forgetting': 0.42,
+  'coursework-inflation': 0.30,
+  'exam-fragility': 0.38,
+  'carryover-heavy': 0.34,
+  'intervention-resistant': 0.38,
+  'chronic-absentee': 0.18,
+  'attendance-shock': 0.18,
+  'mental-health-disruption': 0.40,
 }
 
 function archetypeAcademicVulnerability(archetype: string) {
@@ -1889,18 +1952,25 @@ function simulateSemesterCourse(input: {
     prereq,
     mastery,
   })
+  const externalAttendancePressure = (student.latentBase.externalWorkObligation * 4.5)
+    + (student.latentBase.commuteStress * 3.5)
+  const lowDisciplineAttendancePenalty = student.latentBase.attendanceDiscipline < 0.75
+    ? (0.75 - student.latentBase.attendanceDiscipline) * 25
+    : 0
   const attendancePct = clamp(
     Math.round(
-      58
-        + (student.latentBase.attendanceDiscipline * 30)
-        + (student.latentBase.selfRegulation * 8)
-        + (student.latentBase.supportResponsiveness * 4)
-        + (profile.behavior.attendancePropensity * 6)
-        - (difficulty * 6)
+      60
+        + (student.latentBase.attendanceDiscipline * 28)
+        + (student.latentBase.selfRegulation * 6)
+        + (student.latentBase.supportResponsiveness * 3)
+        + (profile.behavior.attendancePropensity * 5)
+        - (difficulty * 5.5)
+        - externalAttendancePressure
+        - lowDisciplineAttendancePenalty
         - academicStress.attendance
         + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-attendance`, -9, 10),
     ),
-    50,
+    48,
     99,
   )
   const tt1Pct = clamp(
@@ -1975,9 +2045,9 @@ function simulateSemesterCourse(input: {
     98,
   )
   const ceStrongSeeWeakProne = stableUnit(`run-${runSeed}-${student.studentId}-ce-strong-see-weak-prone`) < CE_STRONG_SEE_WEAK_STUDENT_RATE[scenarioFamily]
-  const ceStrongSeeWeakCourseEvent = stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-ce-strong-see-weak-event`) < 0.45
+  const ceStrongSeeWeakCourseEvent = stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-ce-strong-see-weak-event`) < CE_STRONG_SEE_WEAK_COURSE_EVENT_RATE[scenarioFamily]
   if (cePct >= 60 && ceStrongSeeWeakProne && ceStrongSeeWeakCourseEvent) {
-    const seeFailureEvent = stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-ce-strong-see-fail-event`) < 0.16
+    const seeFailureEvent = stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-ce-strong-see-fail-event`) < CE_STRONG_SEE_FAIL_EVENT_RATE[scenarioFamily]
     seePct = clamp(
       seeFailureEvent
         ? stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-ce-strong-see-weak-see`, 24, 39)
@@ -1996,9 +2066,25 @@ function simulateSemesterCourse(input: {
   }
   const ceMark = roundToTwo((cePct / 100) * policy.passRules.ceMaximum)
   const seeMark = roundToTwo((seePct / 100) * policy.passRules.seeMaximum)
+  const attendanceShortfallRatio = clamp(
+    (policy.attendanceRules.minimumPercent - attendancePct)
+      / Math.max(1, policy.attendanceRules.minimumPercent - policy.condonationRules.minimumPercent),
+    0,
+    1,
+  )
+  const condonationApprovalProb = clamp(
+    0.9
+      + (student.latentBase.supportResponsiveness * 0.06)
+      + (student.latentBase.selfRegulation * 0.05)
+      - (student.latentBase.externalWorkObligation * 0.05)
+      - (student.latentBase.commuteStress * 0.03)
+      - (attendanceShortfallRatio * 0.06),
+    0.82,
+    0.98,
+  )
   const condoned = attendancePct >= policy.condonationRules.minimumPercent
     && attendancePct < policy.attendanceRules.minimumPercent
-    && stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-condonation`) > 0.30
+    && stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-condonation`) < condonationApprovalProb
   const decision = evaluateCourseStatus({
     attendancePercent: attendancePct,
     ceMark,
@@ -2040,6 +2126,8 @@ function simulateSemesterCourse(input: {
       examStress: academicStress.exam,
       courseworkStress: academicStress.coursework,
       attendanceStress: academicStress.attendance,
+      externalAttendancePressure: roundToTwo(externalAttendancePressure),
+      lowDisciplineAttendancePenalty: roundToTwo(lowDisciplineAttendancePenalty),
     },
   }
 }
@@ -2361,6 +2449,10 @@ export type StageEvidenceSnapshot = {
   attendanceHistoryRiskCount: number
   currentCgpa: number
   backlogCount: number
+  activeBacklogCredits?: number
+  historicalBacklogCredits?: number
+  lowerYearBlockerCredits?: number
+  backlogSensitivityScore?: number
   interventionResponseScore: number | null
   evidenceWindow: string
   weakCourseOutcomes: Array<{
@@ -3196,7 +3288,10 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
     const studentIds = Array.from(new Set(sources.map(s => s.studentId)))
     const interventionRowsAll = offeringIds.length > 0
       ? await db.select().from(studentInterventions).where(
-          inArray(studentInterventions.offeringId, offeringIds),
+          and(
+            inArray(studentInterventions.offeringId, offeringIds),
+            not(like(studentInterventions.interventionId, 'intervention_auto_resolution_%')),
+          ),
         )
       : []
     const latentRowsAll = await db.select().from(studentLatentStates).where(
@@ -3272,7 +3367,7 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
     queueProjectionRows,
     queueCaseRows,
     stageEvidenceRows,
-  } = buildPlaybackGovernanceArtifacts({
+  } = await buildPlaybackGovernanceArtifacts({
     simulationRunId: input.simulationRunId,
     now: input.now,
     policy: input.policy,
@@ -4220,15 +4315,16 @@ export async function publishOperationalProjection(db: AppDb, input: {
     const cgpa = Number(payload.cgpaAfterSemester ?? 0)
     latestCgpaByStudent.set(row.studentId, cgpa)
   }
-  for (const studentId of proofStudentIds) {
-    const [profile] = await db.select().from(studentAcademicProfiles).where(eq(studentAcademicProfiles.studentId, studentId))
-    if (profile) {
-      const cgpa = latestCgpaByStudent.get(studentId) ?? 0
-      await db.update(studentAcademicProfiles).set({
+  if (proofStudentIds.length > 0) {
+    const profiles = await db.select().from(studentAcademicProfiles)
+      .where(inArray(studentAcademicProfiles.studentId, proofStudentIds))
+    await Promise.all(profiles.map(profile => {
+      const cgpa = latestCgpaByStudent.get(profile.studentId) ?? 0
+      return db.update(studentAcademicProfiles).set({
         prevCgpaScaled: Math.round(cgpa * 100),
         updatedAt: input.now,
-      }).where(eq(studentAcademicProfiles.studentId, studentId))
-    }
+      }).where(eq(studentAcademicProfiles.studentId, profile.studentId))
+    }))
   }
 }
 
@@ -4714,6 +4810,8 @@ export async function startProofSimulationRun(db: AppDb, input: {
 
     buildSeededSemesterSixRows({
       activeBacklogCount: historical.activeBacklogCount,
+      activeBacklogCredits: historical.activeBacklogCredits,
+      historicalBacklogCredits: historical.historicalBacklogCredits,
       attendanceRows,
       assessmentRows,
       coStateRows,
@@ -4832,12 +4930,92 @@ export async function archiveProofSimulationRun(db: AppDb, input: {
   })
 }
 
+const PROOF_ACTIVATION_LEASE_MS = 5 * 60_000
+const PROOF_ACTIVATION_WAIT_MS = 2 * 60_000
+const PROOF_ACTIVATION_POLL_MS = 500
+
+async function claimQueuedProofRunForImmediateActivation(db: AppDb, input: {
+  run: typeof simulationRuns.$inferSelect
+  now: string
+}) {
+  const leaseToken = createId('proof_activation_lease')
+  const leaseExpiresAt = new Date(Date.parse(input.now) + PROOF_ACTIVATION_LEASE_MS).toISOString()
+  const progress = parseJson(input.run.progressJson, {} as Record<string, unknown>)
+  const [claimed] = await db.update(simulationRuns).set({
+    status: 'running',
+    workerLeaseToken: leaseToken,
+    workerLeaseExpiresAt: leaseExpiresAt,
+    startedAt: input.run.startedAt ?? input.now,
+    completedAt: null,
+    failureCode: null,
+    failureMessage: null,
+    progressJson: JSON.stringify({
+      ...progress,
+      phase: 'running',
+      percent: Math.max(10, Number(progress.percent ?? 0)),
+      requestedActivate: true,
+      executionStarted: true,
+      executionLeaseToken: leaseToken,
+      activationPath: true,
+    }),
+    updatedAt: input.now,
+  }).where(and(
+    eq(simulationRuns.simulationRunId, input.run.simulationRunId),
+    or(
+      eq(simulationRuns.status, 'queued'),
+      and(
+        eq(simulationRuns.status, 'running'),
+        isNotNull(simulationRuns.workerLeaseToken),
+        or(
+          isNull(simulationRuns.progressJson),
+          not(like(simulationRuns.progressJson, '%"executionStarted":true%')),
+        ),
+      ),
+    ),
+    or(
+      isNull(simulationRuns.workerLeaseExpiresAt),
+      lt(simulationRuns.workerLeaseExpiresAt, input.now),
+    ),
+  )).returning({
+    simulationRunId: simulationRuns.simulationRunId,
+  })
+
+  return claimed ? leaseToken : null
+}
+
+async function waitForProofRunMaterialization(db: AppDb, input: {
+  simulationRunId: string
+  timeoutMs?: number
+  pollMs?: number
+}) {
+  const timeoutMs = input.timeoutMs ?? PROOF_ACTIVATION_WAIT_MS
+  const pollMs = input.pollMs ?? PROOF_ACTIVATION_POLL_MS
+  const deadlineAt = Date.now() + timeoutMs
+  while (Date.now() <= deadlineAt) {
+    const [run, checkpointCountRow, observedCountRow] = await Promise.all([
+      db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId)).then(rows => rows[0] ?? null),
+      db.select({ count: count() }).from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)),
+      db.select({ count: count() }).from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId)),
+    ])
+    if (!run) throw new Error('Simulation run not found')
+    if (run.status === 'failed') {
+      throw new Error(run.failureMessage ?? 'Proof run execution failed before activation')
+    }
+    const materialized = Number(checkpointCountRow[0]?.count ?? 0) > 0 || Number(observedCountRow[0]?.count ?? 0) > 0
+    if (materialized || run.status === 'completed' || run.status === 'active') {
+      return run
+    }
+    await new Promise(resolve => setTimeout(resolve, pollMs))
+  }
+  throw new Error('Proof run materialization timed out before activation')
+}
+
 export async function activateProofSimulationRun(db: AppDb, input: {
   simulationRunId: string
   actorFacultyId?: string | null
   now: string
 }) {
-  const [run] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
+  let [run] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
   if (!run) throw new Error('Simulation run not found')
   const [checkpointCountRow, observedCountRow] = await Promise.all([
     db.select({ count: count() }).from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, run.simulationRunId)),
@@ -4845,25 +5023,69 @@ export async function activateProofSimulationRun(db: AppDb, input: {
   ])
   const alreadyMaterialized = Number(checkpointCountRow[0]?.count ?? 0) > 0 || Number(observedCountRow[0]?.count ?? 0) > 0
   if (!alreadyMaterialized && (run.status === 'queued' || run.status === 'running')) {
-    if (!run.curriculumImportVersionId) {
-      throw new Error('Queued proof run is missing its curriculum import version')
-    }
-    await startProofSimulationRun(db, {
-      simulationRunId: run.simulationRunId,
-      batchId: run.batchId,
-      curriculumImportVersionId: run.curriculumImportVersionId,
-      curriculumFeatureProfileId: run.curriculumFeatureProfileId ?? null,
-      curriculumFeatureProfileFingerprint: run.curriculumFeatureProfileFingerprint ?? null,
-      policy: parseJson(run.policySnapshotJson, {} as ResolvedPolicy),
-      actorFacultyId: input.actorFacultyId ?? null,
+    const activationLeaseToken = await claimQueuedProofRunForImmediateActivation(db, {
+      run,
       now: input.now,
-      seed: run.seed,
-      runLabel: run.runLabel,
-      parentSimulationRunId: run.parentSimulationRunId ?? null,
-      activate: true,
-      demoWorkspaceId: run.demoWorkspaceId ?? null,
     })
+    if (activationLeaseToken) {
+      if (!run.curriculumImportVersionId) {
+        throw new Error('Queued proof run is missing its curriculum import version')
+      }
+      try {
+        await startProofSimulationRun(db, {
+          simulationRunId: run.simulationRunId,
+          batchId: run.batchId,
+          curriculumImportVersionId: run.curriculumImportVersionId,
+          curriculumFeatureProfileId: run.curriculumFeatureProfileId ?? null,
+          curriculumFeatureProfileFingerprint: run.curriculumFeatureProfileFingerprint ?? null,
+          policy: parseJson(run.policySnapshotJson, {} as ResolvedPolicy),
+          actorFacultyId: input.actorFacultyId ?? null,
+          now: input.now,
+          seed: run.seed,
+          runLabel: run.runLabel,
+          parentSimulationRunId: run.parentSimulationRunId ?? null,
+          activate: false,
+          demoWorkspaceId: run.demoWorkspaceId ?? null,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error ?? 'Unknown proof activation failure')
+        await db.update(simulationRuns).set({
+          status: 'failed',
+          completedAt: input.now,
+          failureCode: 'PROOF_RUN_ACTIVATION_FAILED',
+          failureMessage: message,
+          progressJson: JSON.stringify({
+            phase: 'failed',
+            percent: 100,
+            message,
+            activationPath: true,
+          }),
+          workerLeaseToken: null,
+          workerLeaseExpiresAt: null,
+          updatedAt: input.now,
+        }).where(and(
+          eq(simulationRuns.simulationRunId, run.simulationRunId),
+          eq(simulationRuns.workerLeaseToken, activationLeaseToken),
+        ))
+        throw error
+      }
+      await db.update(simulationRuns).set({
+        workerLeaseToken: null,
+        workerLeaseExpiresAt: null,
+        updatedAt: input.now,
+      }).where(and(
+        eq(simulationRuns.simulationRunId, run.simulationRunId),
+        eq(simulationRuns.workerLeaseToken, activationLeaseToken),
+      ))
+    } else {
+      run = await waitForProofRunMaterialization(db, {
+        simulationRunId: run.simulationRunId,
+      })
+    }
   }
+
+  const [refreshedRun] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
+  run = refreshedRun ?? run
   const runScopeCondition = run.demoWorkspaceId
     ? eq(simulationRuns.demoWorkspaceId, run.demoWorkspaceId)
     : isNull(simulationRuns.demoWorkspaceId)
@@ -5081,13 +5303,30 @@ const proofControlPlaneActivationServiceDeps: ProofControlPlaneActivationService
 }
 
 async function hasUnrealizedInterventionsSinceLastAdvance(db: AppDb, input: {
+  simulationRunId: string
+  batchId: string
   since: string | null
 }) {
   if (!input.since) return false
+  const offeringRows = await db
+    .select({ offeringId: simulationStageOfferingProjections.offeringId })
+    .from(simulationStageOfferingProjections)
+    .where(and(
+      eq(simulationStageOfferingProjections.simulationRunId, input.simulationRunId),
+      isNotNull(simulationStageOfferingProjections.offeringId),
+    ))
+  const offeringIds = Array.from(new Set(
+    offeringRows.map(row => row.offeringId).filter((offeringId): offeringId is string => !!offeringId),
+  ))
+  if (offeringIds.length === 0) return false
   const [row] = await db
     .select({ value: count() })
     .from(studentInterventions)
-    .where(gt(studentInterventions.createdAt, input.since))
+    .where(and(
+      gt(studentInterventions.createdAt, input.since),
+      inArray(studentInterventions.offeringId, offeringIds),
+      not(like(studentInterventions.interventionId, 'intervention_auto_resolution_%')),
+    ))
   return Number(row?.value ?? 0) > 0
 }
 
@@ -5137,6 +5376,13 @@ export async function getProofRunCheckpointDetail(db: AppDb, input: {
   simulationStageCheckpointId: string
 }) {
   return getProofRunCheckpointDetailService(db, input, proofControlPlaneBatchServiceDeps)
+}
+
+export async function listProofRunCheckpointStudents(db: AppDb, input: {
+  simulationRunId: string
+  simulationStageCheckpointId: string
+}) {
+  return listProofRunCheckpointStudentsService(db, input, proofControlPlaneBatchServiceDeps)
 }
 
 export async function getProofRunCheckpointStudentDetail(db: AppDb, input: {
@@ -5234,6 +5480,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
   facultyId: string
   viewerRoleCode?: string | null
   simulationStageCheckpointId?: string | null
+  demoWorkspaceId?: string | null
 }) {
   return buildFacultyProofViewService(db, input, proofControlPlaneTailServiceDeps)
 }

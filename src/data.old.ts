@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-// AirMentor — Complete Mock Data & Types
+// AirMentor - Offline Fixture Data & Types
 // ══════════════════════════════════════════════════════════════
 
 import type {
@@ -472,7 +472,7 @@ export function makeStudents(offering: Offering): Student[] {
     const asgn1 = tt1Done ? 5 + rand(5) : null
     const asgn2 = null
 
-    // CO attainment (mock based on TT1 scores)
+    // CO attainment derived from fixture TT evidence
     const coScores: COScore[] = cos.map(co => ({
       coId: co.id,
       attainment: stage >= 2 && tt1Score !== null
@@ -528,7 +528,7 @@ export function makeStudents(offering: Offering): Student[] {
       student.whatIf = genWhatIf(riskProb, attendancePct, coScores)
     }
 
-    // Mock interventions for high-risk students
+    // Fixture interventions for high-risk students
     if (menteeSeed?.interventions?.length) {
       student.interventions = menteeSeed.interventions
     } else if (riskProb !== null && riskProb >= 0.7 && i < 5) {
@@ -1217,7 +1217,7 @@ function buildFallbackHistory(params: { usn: string; studentName: string; dept: 
     program: dept,
     dept,
     trend: 'Stable',
-    advisoryNotes: ['Generated fallback transcript for mock walkthrough.', 'Use this record to validate history-page empty-state handling.'],
+    advisoryNotes: ['Local fixture transcript generated because no backend transcript was available.', 'Use only for offline development or empty-state validation.'],
     repeatSubjects: [],
     terms,
   })

@@ -1,102 +1,125 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useReactFlow, useNodesInitialized } from '@xyflow/react';
-
 import * as d3 from 'd3-force';
 
 export type ForceLayoutOptions = {
-  strength?: number;
-  distance?: number;
+  semesterCount?: number;
+  expandedSemesters?: Set<number>;
 };
 
-export function useForceLayout({ strength = -1000, distance = 250 }: ForceLayoutOptions = {}) {
-  const { getNodes, setNodes, getEdges } = useReactFlow();
+const SEM_SPACING = 400;
+
+export function useForceLayout({
+  semesterCount = 8,
+  expandedSemesters,
+}: ForceLayoutOptions = {}) {
+  const { getNodes, setNodes } = useReactFlow();
   const nodesInitialized = useNodesInitialized();
   const simulationRef = useRef<d3.Simulation<d3.SimulationNodeDatum, undefined> | null>(null);
 
   const runLayout = useCallback(() => {
     const nodes = getNodes();
-    const edges = getEdges();
-
     if (!nodes.length) return;
 
-    // Only simulate top-level nodes
-    const topLevelNodes = nodes.filter(n => !n.parentId);
+    // Only simulate true top-level nodes (semester clusters). Courses now use
+    // parentId so React Flow handles them natively — no physics needed.
+    const topLevelNodes = nodes.filter(n => !n.parentId && n.type === 'semesterCluster');
+    if (!topLevelNodes.length) return;
 
-    // Create D3 compatible node array
-    const simNodes = topLevelNodes.map((node) => ({
-      ...node,
-      x: node.position.x || 0,
-      y: node.position.y || 0,
-      // Lock position if node is currently being dragged
-      fx: node.dragging ? node.position.x : null,
-      fy: node.dragging ? node.position.y : null,
-      // Provide dimensions for rectangular collision
-      width: node.measured?.width || (node.type === 'courseBubble' || node.type === 'semesterCluster' ? 140 : 80),
-      height: node.measured?.height || (node.type === 'courseBubble' || node.type === 'semesterCluster' ? 140 : 40),
-    }));
+    const activeSems = new Set(topLevelNodes.map(n => Number(n.data?.semesterNumber)));
+    const sortedSems = [...activeSems].sort((a, b) => a - b);
+    const semIndex = new Map(sortedSems.map((s, i) => [s, i]));
+    const totalWidth = (sortedSems.length - 1) * SEM_SPACING;
+    const startX = -totalWidth / 2;
 
-    const getSimId = (id: string) => {
-      const node = nodes.find(n => n.id === id);
-      return node?.parentId ? node.parentId : id;
+    const simNodes = topLevelNodes.map((node) => {
+      const sem = Number(node.data?.semesterNumber);
+      const idx = semIndex.get(sem) ?? 0;
+      const targetX = startX + idx * SEM_SPACING;
+      const targetY = 0;
+      return {
+        ...node,
+        x: node.position.x || targetX,
+        y: node.position.y || targetY,
+        targetX,
+        targetY,
+        fx: node.dragging ? node.position.x : null,
+        fy: node.dragging ? node.position.y : null,
+        width: node.measured?.width || 140,
+        height: node.measured?.height || 140,
+      };
+    });
+
+    const forceCollide = d3.forceCollide()
+      .radius((d: any) => Math.max(d.width, d.height) / 2 + 20)
+      .strength(0.3)
+      .iterations(2);
+
+    const forceTarget = (alpha: number) => {
+      for (const node of simNodes) {
+        const n = node as any;
+        if (n.dragging) continue;
+        const tx = n.targetX ?? n.x;
+        const ty = n.targetY ?? n.y;
+        n.vx = (n.vx || 0) + (tx - n.x) * 0.05 * alpha;
+        n.vy = (n.vy || 0) + (ty - n.y) * 0.05 * alpha;
+      }
     };
 
-    const simLinks = edges.map((edge) => ({
-      source: getSimId(edge.source),
-      target: getSimId(edge.target),
-      isInternal: edge.data?.isInternal
-    })).filter(l => l.source !== l.target);
-
-    // Custom rectangular collision
-    const forceCollide = d3.forceCollide().radius((d: any) => {
-       const w = d.width / 2;
-       const h = d.height / 2;
-       return Math.max(w, h) + 10; // Simple bounding circle using max dimension + padding
-    }).iterations(3);
-
     const simulation = d3.forceSimulation(simNodes as d3.SimulationNodeDatum[])
-      .force('charge', d3.forceManyBody().strength((n: any) => n.type === 'courseBubble' ? strength * 4 : strength))
+      .velocityDecay(0.85)   // very heavy damping — no oscillation
+      .alphaDecay(0.12)       // cool fast
+      .alphaMin(0.001)        // stop early
+      .alpha(0.35)            // gentle start
       .force('collide', forceCollide)
-      .force('center', d3.forceCenter(0, 0).strength(0.05))
-      .force('link', d3.forceLink(simLinks).id((d: any) => d.id).distance((l: any) => l.isInternal ? distance * 0.5 : distance).strength(0.8))
-      .alphaDecay(0.02);
+      .force('target', forceTarget);
 
+    let frameId = 0;
     simulation.on('tick', () => {
-      window.requestAnimationFrame(() => {
+      frameId = window.requestAnimationFrame(() => {
         setNodes((currentNodes) => {
+          const simMap = new Map(simNodes.map(sn => [sn.id, sn]));
           return currentNodes.map((node) => {
-            // Child nodes shouldn't be overridden by physics, they are handled by React Flow
+            // Keep child nodes untouched — React Flow handles parent-relative positioning
             if (node.parentId) return node;
-
-            const simNode = simNodes.find((sn) => sn.id === node.id);
+            const simNode = simMap.get(node.id);
             if (!simNode) return node;
-
             if (node.dragging) {
               simNode.fx = node.position.x;
               simNode.fy = node.position.y;
               return node;
-            } else {
-              simNode.fx = null;
-              simNode.fy = null;
             }
-
-            return {
-              ...node,
-              position: { x: simNode.x!, y: simNode.y! },
-            };
+            simNode.fx = null;
+            simNode.fy = null;
+            return { ...node, position: { x: simNode.x!, y: simNode.y! } };
           });
         });
       });
     });
 
-    simulationRef.current = simulation;
-  }, [getNodes, getEdges, setNodes, strength, distance]);
+    simulation.on('end', () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      simulation.stop();
+    });
 
-  // Restart layout when nodes initialize or underlying graph topology changes
-  useEffect(() => {
-    if (nodesInitialized) {
-      runLayout();
-    }
+    const timeout = setTimeout(() => {
+      if (frameId) cancelAnimationFrame(frameId);
+      simulation.stop();
+    }, 700);
+
+    simulationRef.current = simulation;
     return () => {
+      clearTimeout(timeout);
+      if (frameId) cancelAnimationFrame(frameId);
+      simulation.stop();
+    };
+  }, [getNodes, setNodes]);
+
+  useEffect(() => {
+    if (!nodesInitialized) return;
+    const cleanup = runLayout();
+    return () => {
+      cleanup?.();
       simulationRef.current?.stop();
     };
   }, [nodesInitialized, runLayout]);

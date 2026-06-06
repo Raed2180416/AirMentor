@@ -1,7 +1,11 @@
 import { createContext, useContext } from 'react'
 import {
+  CO_MAP,
   PAPER_MAP,
   getStudents,
+  type COScore,
+  type CODef,
+  type CoAttainmentRow,
   type Offering,
   type PaperQ,
   type Student,
@@ -31,6 +35,10 @@ export type SelectorState = {
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
+}
+
+function roundRisk(value: number) {
+  return Math.round(value * 100) / 100
 }
 
 function clampInteger(value: number | undefined, min: number, max: number, fallback: number) {
@@ -434,12 +442,12 @@ export function isPatchEmpty(patch: StudentRuntimePatch) {
 }
 
 function getSubjectBand(score: number): DerivedAcademicProjection['bandLabel'] {
-  if (score > 90) return 'O'
-  if (score > 74) return 'A+'
-  if (score > 60) return 'A'
-  if (score >= 55) return 'B+'
-  if (score >= 50) return 'B'
-  if (score > 44) return 'C'
+  if (score >= 90) return 'O'
+  if (score >= 80) return 'A+'
+  if (score >= 70) return 'A'
+  if (score >= 60) return 'B+'
+  if (score >= 55) return 'B'
+  if (score >= 50) return 'C'
   if (score >= 40) return 'P'
   return 'F'
 }
@@ -455,9 +463,19 @@ function getGradePointFromBand(band: DerivedAcademicProjection['bandLabel']): De
     : 0
 }
 
-function projectPredictedCgpa(baseCgpa: number, gradePoint: DerivedAcademicProjection['gradePoint']) {
-  const base = baseCgpa > 0 ? baseCgpa : 6
-  return Math.round((((base * 5) + gradePoint) / 6) * 100) / 100
+function projectPredictedCgpa(
+  baseCgpa: number,
+  gradePoint: DerivedAcademicProjection['gradePoint'],
+  completedCredits: number,
+  subjectCredits: number,
+): number | null {
+  if (gradePoint == null) return null
+  if (baseCgpa > 0 && completedCredits > 0) {
+    const weighted = (baseCgpa * completedCredits) + (gradePoint * subjectCredits)
+    const totalCredits = completedCredits + subjectCredits
+    return Math.round((weighted / totalCredits) * 100) / 100
+  }
+  return gradePoint
 }
 
 function getLegacyComponentScore(student: Student, kind: AssessmentComponentKind, index: number) {
@@ -499,27 +517,208 @@ function buildComponentScoreMap(
 }
 
 export function computeEvaluation(student: Student, scheme: EvaluationScheme) {
+  return computeStageAwareEvaluation(student, scheme, null)
+}
+
+function isCeComponentVisibleAtStage(
+  kind: 'tt1' | 'tt2' | 'quiz' | 'assignment',
+  stageKey?: string | null,
+) {
+  if (!stageKey) return true
+  switch (stageKey) {
+    case 'pre-tt1':
+      return false
+    case 'post-tt1':
+      return kind === 'tt1'
+    case 'post-tt2':
+      return kind === 'tt1' || kind === 'tt2'
+    case 'post-assignments':
+      return kind === 'tt1' || kind === 'tt2' || kind === 'quiz' || kind === 'assignment'
+    case 'post-see':
+      return true
+    default:
+      return true
+  }
+}
+
+export function computeStageAwareEvaluation(student: Student, scheme: EvaluationScheme, stageKey?: string | null) {
   const ceTarget = Math.max(1, scheme.policyContext.ce)
   const seeTarget = Math.max(0, scheme.policyContext.see)
-  const tt1Scaled = student.tt1Score !== null && student.tt1Max > 0
+  const tt1Visible = isCeComponentVisibleAtStage('tt1', stageKey)
+  const tt2Visible = isCeComponentVisibleAtStage('tt2', stageKey)
+  const quizVisible = isCeComponentVisibleAtStage('quiz', stageKey)
+  const assignmentVisible = isCeComponentVisibleAtStage('assignment', stageKey)
+  const tt1Scaled = tt1Visible && student.tt1Score !== null && student.tt1Max > 0
     ? (student.tt1Score / student.tt1Max) * scheme.termTestWeights.tt1
     : 0
-  const tt2Scaled = student.tt2Score !== null && student.tt2Max > 0
+  const tt2Scaled = tt2Visible && student.tt2Score !== null && student.tt2Max > 0
     ? (student.tt2Score / student.tt2Max) * scheme.termTestWeights.tt2
     : 0
-  const quizScaled = scheme.quizComponents.reduce((acc, component, index) => {
+  const quizScaled = quizVisible ? scheme.quizComponents.reduce((acc, component, index) => {
     const score = getAssessmentComponentScore(student, 'quiz', component, index)
     if (score === null) return acc
     return acc + ((score / Math.max(1, component.rawMax)) * component.weightage)
-  }, 0)
-  const assignmentScaled = scheme.assignmentComponents.reduce((acc, component, index) => {
+  }, 0) : 0
+  const assignmentScaled = assignmentVisible ? scheme.assignmentComponents.reduce((acc, component, index) => {
     const score = getAssessmentComponentScore(student, 'assignment', component, index)
     if (score === null) return acc
     return acc + ((score / Math.max(1, component.rawMax)) * component.weightage)
-  }, 0)
+  }, 0) : 0
   const ce60 = tt1Scaled + tt2Scaled + quizScaled + assignmentScaled
   const overall40 = (ce60 / ceTarget) * seeTarget
   return { tt1Scaled, tt2Scaled, quizScaled, asgnScaled: assignmentScaled, assignmentScaled, ce60, overall40 }
+}
+
+function getLeaves(node: TermTestNode): TermTestNode[] {
+  return node.children && node.children.length > 0 ? node.children : [node]
+}
+
+function getLeafScoresForKind(
+  kind: TTKind,
+  patch?: { tt1LeafScores?: Record<string, number>; tt2LeafScores?: Record<string, number> },
+): Record<string, number> | null {
+  const scores = kind === 'tt1' ? patch?.tt1LeafScores : patch?.tt2LeafScores
+  return scores && Object.keys(scores).length > 0 ? scores : null
+}
+
+function getObservedTermTestPct(student: Student, kind: TTKind) {
+  const proofPct = kind === 'tt1' ? student.proofObservedTt1Pct : student.proofObservedTt2Pct
+  if (typeof proofPct === 'number' && Number.isFinite(proofPct)) return clampNumber(proofPct, 0, 100)
+  const totalScore = kind === 'tt1' ? student.tt1Score : student.tt2Score
+  const totalMax = kind === 'tt1' ? student.tt1Max : student.tt2Max
+  return totalScore !== null && totalMax > 0 ? (totalScore / totalMax) * 100 : null
+}
+
+export function computeStudentCoScores(
+  student: Student,
+  cos: CODef[],
+  blueprints?: Record<TTKind, TermTestBlueprint>,
+  patch?: { tt1LeafScores?: Record<string, number>; tt2LeafScores?: Record<string, number> },
+): COScore[] {
+  if (!blueprints) {
+    const tt1Pct = getObservedTermTestPct(student, 'tt1')
+    const tt2Pct = getObservedTermTestPct(student, 'tt2')
+    const avgPct = tt1Pct != null && tt2Pct != null
+      ? (tt1Pct + tt2Pct) / 2
+      : tt1Pct ?? tt2Pct ?? null
+    return cos.map(co => ({
+      coId: co.id,
+      attainment: avgPct != null ? Math.round(Math.max(0, Math.min(100, avgPct))) : 0,
+    }))
+  }
+
+  return cos.map(co => {
+    let coMax = 0
+    let coScore = 0
+
+    for (const kind of ['tt1', 'tt2'] as TTKind[]) {
+      const blueprint = blueprints[kind]
+      if (!blueprint || !blueprint.nodes) continue
+
+      const leafScores = getLeafScoresForKind(kind, patch)
+      const observedPct = getObservedTermTestPct(student, kind)
+      if (!leafScores && observedPct === null) continue
+
+      for (const node of blueprint.nodes) {
+        for (const leaf of getLeaves(node)) {
+          if (!leaf.cos.includes(co.id)) continue
+          coMax += leaf.maxMarks
+          if (leafScores) {
+            coScore += leafScores[leaf.id] ?? 0
+          } else if (observedPct !== null) {
+            coScore += (observedPct / 100) * leaf.maxMarks
+          }
+        }
+      }
+    }
+
+    const attainment = coMax > 0 ? Math.round((coScore / coMax) * 100) : 0
+    return { coId: co.id, attainment: Math.min(100, Math.max(0, attainment)) }
+  })
+}
+
+function hasStudentCoEvidence(
+  student: Student,
+  co: CODef,
+  blueprints?: Record<TTKind, TermTestBlueprint>,
+  patch?: { tt1LeafScores?: Record<string, number>; tt2LeafScores?: Record<string, number> },
+) {
+  if (!blueprints) {
+    return getObservedTermTestPct(student, 'tt1') !== null || getObservedTermTestPct(student, 'tt2') !== null
+  }
+
+  for (const kind of ['tt1', 'tt2'] as TTKind[]) {
+    const blueprint = blueprints[kind]
+    if (!blueprint || !blueprint.nodes) continue
+    const hasMappedLeaf = blueprint.nodes.some(node => getLeaves(node).some(leaf => leaf.cos.includes(co.id)))
+    if (!hasMappedLeaf) continue
+    if (getLeafScoresForKind(kind, patch)) return true
+    if (getObservedTermTestPct(student, kind) !== null) return true
+  }
+  return false
+}
+
+export function computeCoAttainmentRows(
+  students: Student[],
+  cos: CODef[],
+  blueprints?: Record<TTKind, TermTestBlueprint>,
+  patches?: Record<string, { tt1LeafScores?: Record<string, number>; tt2LeafScores?: Record<string, number> }>,
+): CoAttainmentRow[] {
+  return cos.map(co => {
+    let tt1Sum = 0, tt1Count = 0
+    let tt2Sum = 0, tt2Count = 0
+    let overallSum = 0
+    let overallCount = 0
+
+    for (const student of students) {
+      const patch = patches?.[student.id]
+      const scores = computeStudentCoScores(student, [co], blueprints, patch)
+      const score = scores.find(c => c.coId === co.id)?.attainment ?? 0
+      if (hasStudentCoEvidence(student, co, blueprints, patch)) {
+        overallSum += score
+        overallCount++
+      }
+
+      // Per-kind CO attainment from blueprint leaf scores when available
+      if (blueprints) {
+        for (const kind of ['tt1', 'tt2'] as TTKind[]) {
+          const blueprint = blueprints[kind]
+          if (!blueprint || !blueprint.nodes) continue
+          const leafScores = kind === 'tt1' ? patches?.[student.id]?.tt1LeafScores : patches?.[student.id]?.tt2LeafScores
+          const observedPct = getObservedTermTestPct(student, kind)
+          if (!leafScores && observedPct === null) continue
+          let coMax = 0, coScore = 0
+          for (const node of blueprint.nodes) {
+            for (const leaf of getLeaves(node)) {
+              if (!leaf.cos.includes(co.id)) continue
+              coMax += leaf.maxMarks
+              if (leafScores) {
+                coScore += leafScores[leaf.id] ?? 0
+              } else if (observedPct !== null) {
+                coScore += (observedPct / 100) * leaf.maxMarks
+              }
+            }
+          }
+          const pct = coMax > 0 ? Math.round((coScore / coMax) * 100) : null
+          if (pct != null) {
+            if (kind === 'tt1') { tt1Sum += pct; tt1Count++ }
+            else { tt2Sum += pct; tt2Count++ }
+          }
+        }
+      }
+    }
+
+    return {
+      coId: co.id,
+      desc: co.desc,
+      bloom: co.bloom,
+      target: 60,
+      tt1Attainment: tt1Count > 0 ? Math.round(tt1Sum / tt1Count) : null,
+      tt2Attainment: tt2Count > 0 ? Math.round(tt2Sum / tt2Count) : null,
+      overallAttainment: overallCount > 0 ? Math.round(overallSum / overallCount) : null,
+      studentsCounted: overallCount,
+    }
+  })
 }
 
 export function getEntryLockMap(offering: Offering): EntryLockMap {
@@ -531,6 +730,93 @@ export function getEntryLockMap(offering: Offering): EntryLockMap {
     attendance: false,
     finals: !!offering.finalsLocked,
   }
+}
+
+function deriveBandFromRisk(riskProb: number): Student['riskBand'] {
+  if (riskProb >= 0.70) return 'High'
+  if (riskProb >= 0.35) return 'Medium'
+  return 'Low'
+}
+
+function buildDeterministicReasons(student: Student, attendancePct: number, coScores: COScore[]): Student['reasons'] {
+  const reasons: Student['reasons'] = []
+  if (attendancePct < 65) reasons.push({ label: `Attendance critically low (${attendancePct}%)`, impact: 0.34, feature: 'attendance' })
+  else if (attendancePct < 75) reasons.push({ label: `Attendance below threshold (${attendancePct}%)`, impact: 0.22, feature: 'attendance' })
+
+  if (student.tt1Score !== null && student.tt1Max > 0) {
+    const pct = Math.round((student.tt1Score / student.tt1Max) * 100)
+    if (pct < 40) reasons.push({ label: `Very low TT1 score (${student.tt1Score}/${student.tt1Max})`, impact: 0.31, feature: 'tt1' })
+    else if (pct < 60) reasons.push({ label: `Below-average TT1 (${student.tt1Score}/${student.tt1Max})`, impact: 0.18, feature: 'tt1' })
+  }
+
+  if (student.prevCgpa < 6) reasons.push({ label: `Weak previous CGPA (${student.prevCgpa.toFixed(1)})`, impact: 0.22, feature: 'cgpa' })
+  else if (student.prevCgpa < 7) reasons.push({ label: `Below-average prev CGPA (${student.prevCgpa.toFixed(1)})`, impact: 0.12, feature: 'cgpa' })
+
+  const weakCO = coScores.filter(co => co.attainment < 40).sort((left, right) => left.attainment - right.attainment)[0]
+  if (weakCO) reasons.push({ label: `Weak ${weakCO.coId} attainment (${weakCO.attainment}%)`, impact: 0.19, feature: 'co' })
+
+  if (student.quiz1 !== null && student.quiz1 < 4) reasons.push({ label: `Low quiz performance (${student.quiz1}/10)`, impact: 0.09, feature: 'quiz' })
+
+  return reasons.sort((left, right) => right.impact - left.impact).slice(0, 4)
+}
+
+function buildDeterministicWhatIf(riskProb: number, attendancePct: number, coScores: COScore[]): Student['whatIf'] {
+  const scenarios: Student['whatIf'] = []
+  if (attendancePct < 75) {
+    const newRisk = roundRisk(Math.max(0.08, riskProb - 0.22))
+    scenarios.push({ label: 'Improve attendance to 75%', current: `${attendancePct}%`, target: '75%', currentRisk: riskProb, newRisk })
+  }
+  const weak = coScores.filter(co => co.attainment < 50).sort((left, right) => left.attainment - right.attainment)[0]
+  if (weak) {
+    const newRisk = roundRisk(Math.max(0.12, riskProb - 0.18))
+    scenarios.push({ label: `${weak.coId} attainment >= 50% in TT2`, current: `${weak.attainment}%`, target: '50%', currentRisk: riskProb, newRisk })
+  }
+  return scenarios
+}
+
+function derivePatchedRiskState(offering: Offering, student: Student, coScores: COScore[]) {
+  const attendancePct = Math.round((student.present / Math.max(1, student.totalClasses)) * 100)
+  const flags = {
+    ...student.flags,
+    backlog: student.flags.backlog || student.prevCgpa < 5.5,
+    lowAttendance: attendancePct < 75,
+  }
+
+  if (offering.stage < 2 || student.tt1Score === null) {
+    return {
+      riskProb: null,
+      riskBand: null,
+      reasons: [],
+      whatIf: [],
+      flags,
+    } satisfies Pick<Student, 'riskProb' | 'riskBand' | 'reasons' | 'whatIf' | 'flags'>
+  }
+
+  let base = 0
+  if (attendancePct < 65) base += 0.35
+  else if (attendancePct < 75) base += 0.18
+
+  const tt1Pct = student.tt1Max > 0 ? student.tt1Score / student.tt1Max : 0
+  if (tt1Pct < 0.4) base += 0.30
+  else if (tt1Pct < 0.6) base += 0.14
+
+  if (student.prevCgpa < 6) base += 0.22
+  else if (student.prevCgpa < 7) base += 0.10
+
+  base += coScores.filter(co => co.attainment < 40).length * 0.05
+
+  const riskProb = roundRisk(clampNumber(base, 0.05, 0.95))
+  const riskBand = deriveBandFromRisk(riskProb)
+  const reasons = riskProb >= 0.35 ? buildDeterministicReasons(student, attendancePct, coScores) : []
+  const whatIf = riskProb >= 0.35 ? buildDeterministicWhatIf(riskProb, attendancePct, coScores) : []
+
+  return {
+    riskProb,
+    riskBand,
+    reasons,
+    whatIf,
+    flags,
+  } satisfies Pick<Student, 'riskProb' | 'riskBand' | 'reasons' | 'whatIf' | 'flags'>
 }
 
 export function createAppSelectors(state: SelectorState) {
@@ -566,7 +852,7 @@ export function createAppSelectors(state: SelectorState) {
       : (state.studentsByOffering?.[offering.offId] ?? getStudents(offering))
     return baseStudents.map(student => {
       const patch = getStudentPatch(offering.offId, student.id)
-      if (!state.studentPatches[toStudentPatchKey(offering.offId, student.id)]) {
+      if (isPatchEmpty(patch)) {
         const hasTt1Blueprint = blueprints.tt1.totalMarks > 0 || blueprints.tt1.nodes.length > 0
         const hasTt2Blueprint = blueprints.tt2.totalMarks > 0 || blueprints.tt2.nodes.length > 0
         return {
@@ -583,7 +869,7 @@ export function createAppSelectors(state: SelectorState) {
       const assignmentScoreMap = buildComponentScoreMap(student, 'assignment', scheme.assignmentComponents, patch.assignmentScores)
       const quizScores = scheme.quizComponents.map(component => quizScoreMap[component.id] ?? null)
       const assignmentScores = scheme.assignmentComponents.map(component => assignmentScoreMap[component.id] ?? null)
-      return {
+      const patchedStudent: Student = {
         ...student,
         present,
         totalClasses,
@@ -598,6 +884,15 @@ export function createAppSelectors(state: SelectorState) {
         quizScores: Object.keys(quizScoreMap).length > 0 ? quizScoreMap : student.quizScores,
         assignmentScores: Object.keys(assignmentScoreMap).length > 0 ? assignmentScoreMap : student.assignmentScores,
       }
+      const cos = CO_MAP[offering.code] || CO_MAP.default
+      const hasUsableBlueprints = (['tt1', 'tt2'] as TTKind[]).some(kind => blueprints[kind].totalMarks > 0 || blueprints[kind].nodes.length > 0)
+      const coScores = computeStudentCoScores(patchedStudent, cos, hasUsableBlueprints ? blueprints : undefined, patch)
+      const riskState = derivePatchedRiskState(offering, patchedStudent, coScores)
+      return {
+        ...patchedStudent,
+        coScores,
+        ...riskState,
+      }
     })
   }
 
@@ -607,34 +902,72 @@ export function createAppSelectors(state: SelectorState) {
     return Math.round(students.reduce((acc, student) => acc + (student.present / Math.max(1, student.totalClasses)) * 100, 0) / students.length)
   }
 
-  const deriveAcademicProjection = (input: { offering: Offering; student: Student; scheme?: SchemeState; history?: StudentHistoryRecord | null }): DerivedAcademicProjection => {
+  const deriveAcademicProjection = (input: { offering: Offering; student: Student; scheme?: SchemeState; history?: StudentHistoryRecord | null; stageKey?: string | null }): DerivedAcademicProjection => {
     const scheme = input.scheme ?? getSchemeForOffering(input.offering)
     const patch = getStudentPatch(input.offering.offId, input.student.id)
-    const evaluation = computeEvaluation(input.student, scheme)
-    const attendancePct = Math.round((input.student.present / Math.max(1, input.student.totalClasses)) * 100)
-    const seeRaw = typeof patch.seeScore === 'number' ? patch.seeScore : null
-    const seeScaled40 = seeRaw !== null ? (seeRaw / Math.max(1, scheme.finalsMax)) * scheme.policyContext.see : 0
-    const finalScore100 = evaluation.ce60 + seeScaled40
-    const bandLabel = getSubjectBand(finalScore100)
-    const gradePoint = getGradePointFromBand(bandLabel)
-    const baseCgpa = input.history?.currentCgpa ?? input.student.prevCgpa
+    const evaluation = computeStageAwareEvaluation(input.student, scheme, input.stageKey)
+    const tt1Visible = isCeComponentVisibleAtStage('tt1', input.stageKey)
+    const tt2Visible = isCeComponentVisibleAtStage('tt2', input.stageKey)
+    const quizVisible = isCeComponentVisibleAtStage('quiz', input.stageKey)
+    const assignmentVisible = isCeComponentVisibleAtStage('assignment', input.stageKey)
+    const proofPct = (value: number | null | undefined) => (typeof value === 'number' && Number.isFinite(value) ? clampNumber(value, 0, 100) : null)
+    const scaleProofPct = (value: number | null | undefined, weight: number) => {
+      const pct = proofPct(value)
+      return pct === null ? null : (pct / 100) * weight
+    }
+    const proofTt1Scaled = tt1Visible ? scaleProofPct(input.student.proofObservedTt1Pct, scheme.termTestWeights.tt1) : null
+    const proofTt2Scaled = tt2Visible ? scaleProofPct(input.student.proofObservedTt2Pct, scheme.termTestWeights.tt2) : null
+    const proofQuizScaled = quizVisible ? scaleProofPct(input.student.proofObservedQuizPct, scheme.quizWeight) : null
+    const proofAssignmentScaled = assignmentVisible ? scaleProofPct(input.student.proofObservedAssignmentPct, scheme.assignmentWeight) : null
+    const seeVisible = !input.stageKey || input.stageKey === 'post-see'
+    const proofSeePct = seeVisible ? proofPct(input.student.proofObservedSeePct) : null
+    const attendancePct = proofPct(input.student.proofObservedAttendancePct)
+      ?? Math.round((input.student.present / Math.max(1, input.student.totalClasses)) * 100)
+    const tt1Scaled = proofTt1Scaled ?? evaluation.tt1Scaled
+    const tt2Scaled = proofTt2Scaled ?? evaluation.tt2Scaled
+    const quizScaled = proofQuizScaled ?? evaluation.quizScaled
+    const asgnScaled = proofAssignmentScaled ?? evaluation.asgnScaled
+    const ce60 = tt1Scaled + tt2Scaled + quizScaled + asgnScaled
+    const patchedSeeRaw = seeVisible && typeof patch.seeScore === 'number'
+      ? patch.seeScore
+      : seeVisible && typeof input.student.seeScore === 'number'
+        ? input.student.seeScore
+        : null
+    const seeRaw = patchedSeeRaw ?? (proofSeePct !== null ? (proofSeePct / 100) * scheme.finalsMax : null)
+    const seeScaled40 = patchedSeeRaw !== null
+      ? (patchedSeeRaw / Math.max(1, scheme.finalsMax)) * scheme.policyContext.see
+      : proofSeePct !== null
+        ? (proofSeePct / 100) * scheme.policyContext.see
+        : null
+    const finalScore100 = seeVisible
+      ? input.student.finalScore100 ?? (seeScaled40 !== null ? ce60 + seeScaled40 : null)
+      : null
+    const bandLabel = finalScore100 !== null ? getSubjectBand(finalScore100) : null
+    const gradePoint = bandLabel !== null ? getGradePointFromBand(bandLabel) : null
+    const baseCgpa = input.history?.currentCgpa ?? input.student.currentCgpa ?? input.student.prevCgpa
+    const completedCredits = input.history?.completedCreditsForCgpa ?? 0
+    const subjectCredits = input.offering.credits ?? 0
     return {
       attendancePct,
-      tt1Raw: input.student.tt1Score,
-      tt2Raw: input.student.tt2Score,
-      tt1Scaled: evaluation.tt1Scaled,
-      tt2Scaled: evaluation.tt2Scaled,
-      quizRawTotal: scheme.quizComponents.reduce((acc, component, index) => acc + (getAssessmentComponentScore(input.student, 'quiz', component, index) ?? 0), 0),
-      assignmentRawTotal: scheme.assignmentComponents.reduce((acc, component, index) => acc + (getAssessmentComponentScore(input.student, 'assignment', component, index) ?? 0), 0),
-      quizScaled: evaluation.quizScaled,
-      asgnScaled: evaluation.asgnScaled,
-      ce60: evaluation.ce60,
+      tt1Raw: tt1Visible ? input.student.tt1Score : null,
+      tt2Raw: tt2Visible ? input.student.tt2Score : null,
+      tt1Scaled,
+      tt2Scaled,
+      quizRawTotal: proofQuizScaled !== null
+        ? (proofQuizScaled / Math.max(1, scheme.quizWeight)) * scheme.quizComponents.reduce((sum, component) => sum + component.rawMax, 0)
+        : quizVisible ? scheme.quizComponents.reduce((acc, component, index) => acc + (getAssessmentComponentScore(input.student, 'quiz', component, index) ?? 0), 0) : 0,
+      assignmentRawTotal: proofAssignmentScaled !== null
+        ? (proofAssignmentScaled / Math.max(1, scheme.assignmentWeight)) * scheme.assignmentComponents.reduce((sum, component) => sum + component.rawMax, 0)
+        : assignmentVisible ? scheme.assignmentComponents.reduce((acc, component, index) => acc + (getAssessmentComponentScore(input.student, 'assignment', component, index) ?? 0), 0) : 0,
+      quizScaled,
+      asgnScaled,
+      ce60,
       seeRaw,
       seeScaled40,
       finalScore100,
       bandLabel,
       gradePoint,
-      predictedCgpa: projectPredictedCgpa(baseCgpa, gradePoint),
+      predictedCgpa: seeVisible ? input.student.predictedCgpa ?? projectPredictedCgpa(baseCgpa, gradePoint, completedCredits, subjectCredits) : null,
     }
   }
 

@@ -718,6 +718,7 @@ export type ApiProofDashboard = {
     runLabel: string
     seed: number
     activeOperationalSemester: number | null
+    activeStageKey?: string | null
     createdAt: string
     startedAt: string | null
     completedAt: string | null
@@ -1246,6 +1247,7 @@ export type ApiStudentAgentCard = {
     currentQueueState?: ApiProofQueueState | null
     currentRecoveryState?: ApiProofRecoveryState | null
     currentCgpa: number
+    predictedCgpa?: number | null
     backlogCount: number
     electiveFit: {
       recommendedCode: string
@@ -1495,6 +1497,39 @@ export type ApiStudentRiskExplorer = {
     downstreamCarryoverRiskProbScaled: number | null
   }
   trainedRiskHeadDisplays?: Record<string, ApiRiskHeadDisplay | undefined> | null
+  xaiRiskReduction?: {
+    explanationMode: 'same-checkpoint-no-action-replay'
+    disclaimer: string
+    driverSource: string | null
+    scorerFamily: string | null
+    summary: {
+      stageKey: string | null
+      label: string
+      baselineRiskProbScaled: number | null
+      simulatedRiskProbScaled: number | null
+      deltaProbScaled: number | null
+      riskReducedByProbScaled: number | null
+      activeInterventions: string[]
+    } | null
+    deltaTimeline: Array<{
+      stageKey: string
+      label: string
+      baselineRiskProbScaled: number
+      simulatedRiskProbScaled: number
+      deltaProbScaled: number
+      riskReducedByProbScaled: number
+      activeInterventions: string[]
+    }>
+    componentImpacts: Array<{
+      componentKey: 'attendance' | 'tt1' | 'tt2' | 'assignment' | 'see' | 'overall'
+      componentLabel: string
+      baselineScore: number | null
+      simulatedScore: number | null
+      lift: number | null
+      direction: 'score-lift' | 'risk-reduction'
+    }>
+    topDriverEvidence: Array<{ label: string; impact: number; feature: string }>
+  } | null
   policyComparison?: {
     policyPhenotype?: string | null
     recommendedAction: string | null
@@ -1931,6 +1966,37 @@ export type ApiAcademicHodProofCounterfactualAggregate = {
     maxDelta: number
     minDelta: number
   }>
+}
+
+export type ApiProofRunCheckpointStudentSummary = {
+  studentId: string
+  studentName: string
+  usn: string
+  sectionCode: string
+  currentSemester: number
+  currentRiskBand: string
+  currentRiskProbScaled: number
+  currentQueueState?: string | null
+  currentReassessmentStatus: string | null
+  primaryCourseCode: string
+  primaryCourseTitle: string
+  nextDueAt: string | null
+  riskChangeFromPreviousCheckpointScaled?: number | null
+  counterfactualLiftScaled?: number | null
+  observedEvidence: {
+    attendancePct: number
+    tt1Pct: number | null
+    tt2Pct: number | null
+    quizPct: number | null
+    assignmentPct: number | null
+    seePct: number | null
+    cgpa: number
+    backlogCount: number
+    weakCoCount: number
+    weakQuestionCount: number
+    interventionRecoveryStatus: string | null
+    coEvidenceMode?: string | null
+  }
 }
 
 export type ApiAcademicHodProofCounterfactualReport = {
@@ -2801,6 +2867,8 @@ export type ApiAcademicFacultyProfile = {
     publishedAt: string | null
     directEditWindowEndsAt: string | null
   }
+  timetableTemplate?: FacultyTimetableTemplate | null
+  calendarWorkspace?: ApiAdminFacultyCalendarWorkspace | null
   requestSummary: {
     openCount: number
     recent: Array<{

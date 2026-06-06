@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray, not } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { RouteContext } from '../app.js'
@@ -265,10 +265,15 @@ export async function registerAcademicRuntimeRoutes(
     const currentStudentPatches = await getAcademicRuntimeState(context, 'studentPatches') as Record<string, Record<string, unknown>>
     const mergedStudentPatches = { ...currentStudentPatches }
     for (const [patchKey, patchValue] of Object.entries(nextPatchesByKey)) {
-      mergedStudentPatches[patchKey] = {
+      const nextPatch = {
         ...(currentStudentPatches[patchKey] ?? {}),
-        ...patchValue,
       }
+      for (const [field, value] of Object.entries(patchValue)) {
+        if (value === null) delete nextPatch[field]
+        else nextPatch[field] = value
+      }
+      if (Object.keys(nextPatch).length === 0) delete mergedStudentPatches[patchKey]
+      else mergedStudentPatches[patchKey] = nextPatch
     }
     await saveAcademicRuntimeState(context, 'studentPatches', mergedStudentPatches)
   }
@@ -1441,13 +1446,97 @@ export async function registerAcademicRuntimeRoutes(
     } else {
       allowedComponents.set('see', { maxScore: scheme.finalsMax, storageType: 'sem_end' })
     }
-    const replacementComponentTypes = Array.from(new Set([
+    let replacementComponentTypes = Array.from(new Set([
       ...Array.from(allowedComponents.values()).map(component => component.storageType),
       ...((params.kind === 'tt1' || params.kind === 'tt2') ? [params.kind] : []),
     ]))
-
+    if (params.kind === 'quiz' || params.kind === 'assignment') {
+      const legacyComponentTypePattern = params.kind === 'quiz' ? /^quiz\d+$/ : /^asgn\d+$/
+      const existingScoreRows = await context.db
+        .select({ componentType: studentAssessmentScores.componentType })
+        .from(studentAssessmentScores)
+        .where(eq(studentAssessmentScores.offeringId, params.offeringId))
+      replacementComponentTypes = Array.from(new Set([
+        ...replacementComponentTypes,
+        ...existingScoreRows
+          .map(row => row.componentType)
+          .filter(componentType => legacyComponentTypePattern.test(componentType)),
+      ]))
+    }
+    const enrollmentByStudentId = new Map<string, Awaited<ReturnType<typeof assertStudentEnrolledInOffering>>>()
+    const submittedCanonicalStudentIds: string[] = []
+    const seenCanonicalStudentIds = new Set<string>()
     for (const entry of body.entries) {
       const enrollment = await assertStudentEnrolledInOffering(context, offering, entry.studentId)
+      if (seenCanonicalStudentIds.has(enrollment.studentId)) {
+        throw badRequest('Assessment payload contains duplicate student entries', { studentId: enrollment.studentId })
+      }
+      seenCanonicalStudentIds.add(enrollment.studentId)
+      submittedCanonicalStudentIds.push(enrollment.studentId)
+      enrollmentByStudentId.set(entry.studentId, enrollment)
+    }
+    for (const entry of body.entries) {
+      const seenComponentCodes = new Set<string>()
+      for (const component of entry.components) {
+        if (seenComponentCodes.has(component.componentCode)) {
+          throw badRequest('Assessment entry contains duplicate component scores', {
+            componentCode: component.componentCode,
+            studentId: entry.studentId,
+          })
+        }
+        seenComponentCodes.add(component.componentCode)
+        const allowed = allowedComponents.get(component.componentCode)
+        if (!allowed) {
+          throw badRequest('Assessment entry references a component outside the configured scheme', {
+            componentCode: component.componentCode,
+            kind: params.kind,
+          })
+        }
+        if (component.maxScore > allowed.maxScore || component.score > component.maxScore) {
+          throw badRequest('Assessment entry exceeds the configured component max score', {
+            componentCode: component.componentCode,
+            allowedMax: allowed.maxScore,
+          })
+        }
+      }
+    }
+    const patchFieldForKind = params.kind === 'tt1'
+      ? 'tt1LeafScores'
+      : params.kind === 'tt2'
+        ? 'tt2LeafScores'
+        : params.kind === 'quiz'
+          ? 'quizScores'
+          : params.kind === 'assignment'
+            ? 'assignmentScores'
+            : params.kind === 'finals'
+              ? 'seeScore'
+              : null
+    const submittedStudentIds = submittedCanonicalStudentIds
+    const submittedPatchKeys = new Set(submittedStudentIds.map(studentId => `${params.offeringId}::${studentId}`))
+    const shouldReplaceAssessmentEntries = body.entries.length > 0 || !body.lock
+    if (patchFieldForKind && shouldReplaceAssessmentEntries) {
+      const currentStudentPatches = await getAcademicRuntimeState(context, 'studentPatches') as Record<string, Record<string, unknown>>
+      for (const [patchKey, patch] of Object.entries(currentStudentPatches)) {
+        if (!patchKey.startsWith(`${params.offeringId}::`)) continue
+        if (submittedPatchKeys.has(patchKey)) continue
+        if (patch && typeof patch === 'object' && patch[patchFieldForKind] != null) {
+          studentPatchUpdates[patchKey] = {
+            ...(studentPatchUpdates[patchKey] ?? {}),
+            [patchFieldForKind]: null,
+          }
+        }
+      }
+      const staleScoreWhere = and(
+        eq(studentAssessmentScores.offeringId, params.offeringId),
+        inArray(studentAssessmentScores.componentType, replacementComponentTypes),
+        submittedStudentIds.length > 0 ? not(inArray(studentAssessmentScores.studentId, submittedStudentIds)) : undefined,
+      )
+      await context.db.delete(studentAssessmentScores).where(staleScoreWhere)
+    }
+
+    for (const entry of body.entries) {
+      const enrollment = enrollmentByStudentId.get(entry.studentId)
+      if (!enrollment) throw badRequest('Assessment entry references a student outside the offering', { studentId: entry.studentId })
       await context.db.delete(studentAssessmentScores).where(and(
         eq(studentAssessmentScores.studentId, enrollment.studentId),
         eq(studentAssessmentScores.offeringId, params.offeringId),

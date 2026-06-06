@@ -342,7 +342,9 @@ export function StudentShellPage({
                 Reassessment: {card.summaryRail.currentReassessmentStatus ?? 'None'}{card.summaryRail.nextDueAt ? ` · due ${new Date(card.summaryRail.nextDueAt).toLocaleString('en-IN')}` : ''}
               </div>
               <div style={{ ...mono, fontSize: 10, color: T.text }}>
-                CGPA {card.summaryRail.currentCgpa.toFixed(2)} · backlogs {card.summaryRail.backlogCount}
+                {card.summaryRail.predictedCgpa != null
+                  ? `Pred CGPA ${card.summaryRail.predictedCgpa.toFixed(2)} · current CGPA ${card.summaryRail.currentCgpa.toFixed(2)} · backlogs ${card.summaryRail.backlogCount}`
+                  : `CGPA ${card.summaryRail.currentCgpa.toFixed(2)} · backlogs ${card.summaryRail.backlogCount}`}
               </div>
               {card.checkpointContext ? (
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
@@ -511,7 +513,9 @@ export function StudentShellPage({
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                         <Chip color={T.warning}>Weak COs {item.weakCoCount}</Chip>
                         <Chip color={T.danger}>Weak questions {item.weakQuestionCount}</Chip>
-                        {item.drivers.slice(0, 3).map(driver => <Chip key={`${item.courseCode}-${driver.feature}`} color={driver.impact >= 0 ? T.warning : T.success}>{driver.label}</Chip>)}
+                        {item.drivers.slice(0, 3).map((driver, index) => (
+                          <Chip key={`${item.courseCode}-${driver.feature}-${index}-${driver.label}`} color={driver.impact >= 0 ? T.warning : T.success}>{driver.label}</Chip>
+                        ))}
                       </div>
                     </Card>
                   ))}

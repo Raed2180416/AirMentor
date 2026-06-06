@@ -359,6 +359,10 @@ const LATE_STAGE_ACTIONS: PolicyActionCode[] = [
   'pre-see-rescue',
 ]
 
+const POST_SEE_STAGE_ACTIONS: PolicyActionCode[] = [
+  ...POST_TT1_STAGE_ACTIONS,
+]
+
 function preferredActionsByPhenotype(stageActions: PolicyActionCode[]): Record<PolicyPhenotype, PolicyActionCode[]> {
   const stageActionSet = new Set(stageActions)
   const restrictToStage = (actions: PolicyActionCode[]) => actions.filter(action => stageActionSet.has(action))
@@ -421,8 +425,8 @@ const POLICY_ACTION_CATALOG_BY_STAGE: Record<PlaybackStageKey, StageActionCatalo
     phenotypePreferredActions: preferredActionsByPhenotype(LATE_STAGE_ACTIONS),
   },
   'post-see': {
-    stageActions: LATE_STAGE_ACTIONS,
-    phenotypePreferredActions: preferredActionsByPhenotype(LATE_STAGE_ACTIONS),
+    stageActions: POST_SEE_STAGE_ACTIONS,
+    phenotypePreferredActions: preferredActionsByPhenotype(POST_SEE_STAGE_ACTIONS),
   },
 }
 
@@ -869,6 +873,10 @@ export function buildStageEvidenceSnapshot(input: {
     attendanceHistoryRiskCount: includedAttendance.filter(entry => entry.attendancePct < input.policy.attendanceRules.minimumRequiredPercent).length,
     currentCgpa: input.stageKey === 'post-see' ? input.source.closingCgpa : input.source.previousCgpa,
     backlogCount: input.stageKey === 'post-see' ? input.source.closingBacklogCount : input.source.previousBacklogCount,
+    activeBacklogCredits: input.stageKey === 'post-see' ? input.source.closingBacklogCredits : input.source.previousBacklogCredits,
+    historicalBacklogCredits: input.source.historicalBacklogCredits,
+    lowerYearBlockerCredits: input.source.lowerYearBlockerCredits,
+    backlogSensitivityScore: input.source.backlogSensitivityScore,
     interventionResponseScore: pickInterventionResponseForStage(input.source.interventionResponse, input.stageKey),
     evidenceWindow: `${input.source.semesterNumber}-${input.stageKey}`,
     weakCourseOutcomes,

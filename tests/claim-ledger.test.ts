@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const ledgerPath = 'audit-map/32-reports/airmentor-claim-ledger-2026-05-11.md'
+const ledgerPath = 'docs/paper-evidence/claim-ledger-2026-05-11.md'
 
 type LedgerRow = {
   claimId: string

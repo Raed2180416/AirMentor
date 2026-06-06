@@ -1018,10 +1018,18 @@ describe('proof realism deep analysis', () => {
     const crossSeedScenarioCoverage: Record<string, number> = {}
     const crossSeedFindingCountsBySeverity: Record<string, number> = {}
     const hardContractFailures: JsonRecord[] = []
+    const hardRealismFailures: JsonRecord[] = []
     for (const seedReport of perSeed) {
       increment(crossSeedScenarioCoverage, seedReport.scenarioFamily)
       for (const finding of seedReport.findings as JsonRecord[]) {
         increment(crossSeedFindingCountsBySeverity, finding.severity)
+        if (finding.severity === 'critical' || finding.severity === 'high') {
+          hardRealismFailures.push({
+            seed: seedReport.seed,
+            scenarioFamily: seedReport.scenarioFamily,
+            ...finding,
+          })
+        }
       }
       const summary = seedReport.summary as JsonRecord
       if ((summary.structuralCoverageFailures as unknown[]).length > 0 || Number(summary.stageEvidenceLeakCount ?? 0) > 0) {
@@ -1041,6 +1049,7 @@ describe('proof realism deep analysis', () => {
       crossSeedScenarioCoverage,
       crossSeedFindingCountsBySeverity,
       hardContractFailures,
+      hardRealismFailures,
       perSeed,
     }
 
@@ -1050,5 +1059,6 @@ describe('proof realism deep analysis', () => {
     writeFileSync(path.join(outputDir, `${OUTPUT_STEM}.md`), renderMarkdown(report))
 
     expect(hardContractFailures).toEqual([])
-  }, 1_200_000)
+    expect(hardRealismFailures).toEqual([])
+  }, 3_600_000)
 })

@@ -77,13 +77,25 @@ function apiNodesToGraphNodes(nodes: ApiGraphNode[]): GraphNode[] {
   return nodes.map(n => ({
     id: n.draftNodeId,
     kind: 'course' as const,
-    label: n.courseCode,
-    subtitle: n.title,
-    meta: `Sem ${n.semesterNumber} \u00b7 ${n.credits}cr`,
+    code: n.courseCode,
+    label: `${n.title} \u00b7 Sem ${n.semesterNumber} \u00b7 ${n.credits}cr`,
+    semesterNumber: n.semesterNumber,
     x: n.positionX || Math.random() * 600,
     y: n.positionY || Math.random() * 400,
-    data: n,
   }))
+}
+
+function mapEdgeKind(backendKind: string): GraphEdge['kind'] {
+  switch (backendKind) {
+    case 'explicit':
+    case 'added':
+      return 'prerequisite'
+    case 'corequisite':
+    case 'cross_semester':
+      return 'parent-child'
+    default:
+      return 'prerequisite'
+  }
 }
 
 function apiEdgesToGraphEdges(edges: ApiGraphEdge[]): GraphEdge[] {
@@ -91,10 +103,8 @@ function apiEdgesToGraphEdges(edges: ApiGraphEdge[]): GraphEdge[] {
     id: e.draftEdgeId,
     source: e.sourceDraftNodeId,
     target: e.targetDraftNodeId,
-    kind: e.edgeKind as GraphEdge['kind'],
-    label: e.rationale,
+    kind: mapEdgeKind(e.edgeKind),
     weight: e.weight,
-    data: e,
   }))
 }
 
@@ -108,6 +118,7 @@ export default function CurriculumGraphWorkspace({ batchId, apiClient }: Props) 
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [mlOverlay, setMlOverlay] = useState<{ nodeId: string; features: Record<string, string | number> } | null>(null)
+  const [showValidation, setShowValidation] = useState(false)
 
   const loadGraph = useCallback(async () => {
     setLoading(true)
@@ -239,8 +250,30 @@ export default function CurriculumGraphWorkspace({ batchId, apiClient }: Props) 
         <Chip color={bundle.draftStatus === 'draft' ? T.accent : T.dim}>
           {bundle.draftStatus === 'draft' ? 'Draft' : 'Published'}
         </Chip>
-        {hasErrors && <Chip color={T.danger}>{validation.errors.length} errors</Chip>}
-        {hasWarnings && <Chip color={T.warning}>{validation.warnings.length} warnings</Chip>}
+        {hasErrors && (
+          <button
+            onClick={() => setShowValidation(v => !v)}
+            style={{
+              background: withAlpha(T.danger, '15'), color: T.danger,
+              border: `1px solid ${withAlpha(T.danger, '40')}`, borderRadius: 6,
+              padding: '4px 10px', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+            }}
+          >
+            <AlertTriangle size={12} /> {validation.errors.length} errors
+          </button>
+        )}
+        {hasWarnings && (
+          <button
+            onClick={() => setShowValidation(v => !v)}
+            style={{
+              background: withAlpha(T.warning, '15'), color: T.warning,
+              border: `1px solid ${withAlpha(T.warning, '40')}`, borderRadius: 6,
+              padding: '4px 10px', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+            }}
+          >
+            <Info size={12} /> {validation.warnings.length} warnings
+          </button>
+        )}
         {!hasErrors && !hasWarnings && <Chip color={T.success}>Valid</Chip>}
         <div style={{ flex: 1 }} />
         <Btn
@@ -310,26 +343,34 @@ export default function CurriculumGraphWorkspace({ batchId, apiClient }: Props) 
           </div>
         )}
 
-        {/* Validation panel */}
-        {(hasErrors || hasWarnings) && (
+        {/* Validation popup */}
+        {showValidation && (hasErrors || hasWarnings) && (
           <div style={{
-            position: 'absolute', bottom: 12, left: 12, zIndex: 10,
-            maxWidth: 320, display: 'grid', gap: 6,
+            position: 'absolute', bottom: 12, left: 12, zIndex: 20,
+            maxWidth: 360, maxHeight: 220, overflowY: 'auto',
+            background: T.surface2, borderRadius: 8, padding: '10px 12px',
+            border: `1px solid ${withAlpha(T.muted, '20')}`,
+            boxShadow: `0 4px 20px rgba(0,0,0,0.15)`,
+            display: 'grid', gap: 6,
           }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Validation</span>
+              <button onClick={() => setShowValidation(false)} style={{ background: 'none', border: 'none', color: T.dim, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+            </div>
             {validation.errors.map((err, i) => (
               <div key={`e${i}`} style={{
-                padding: '6px 10px', borderRadius: 6, fontSize: 11,
-                background: withAlpha(T.danger, '1a'), color: T.danger,
-                border: `1px solid ${withAlpha(T.danger, '33')}`,
+                padding: '5px 8px', borderRadius: 5, fontSize: 11,
+                background: withAlpha(T.danger, '12'), color: T.danger,
+                border: `1px solid ${withAlpha(T.danger, '25')}`,
               }}>
                 {err}
               </div>
             ))}
             {validation.warnings.map((warn, i) => (
               <div key={`w${i}`} style={{
-                padding: '6px 10px', borderRadius: 6, fontSize: 11,
-                background: withAlpha(T.warning, '1a'), color: T.warning,
-                border: `1px solid ${withAlpha(T.warning, '33')}`,
+                padding: '5px 8px', borderRadius: 5, fontSize: 11,
+                background: withAlpha(T.warning, '12'), color: T.warning,
+                border: `1px solid ${withAlpha(T.warning, '25')}`,
               }}>
                 {warn}
               </div>

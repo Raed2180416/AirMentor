@@ -85,6 +85,7 @@ function resolveOperationalCheckpointSummary(
   checkpointRows: Array<typeof simulationStageCheckpoints.$inferSelect>,
   queueCaseRows: Array<typeof simulationStageQueueCases.$inferSelect>,
   semesterNumber: number,
+  activeStageKey: string | null | undefined,
   deps: Pick<ProofControlPlaneHodServiceDeps, 'parseProofCheckpointSummary' | 'withProofPlaybackGate'>,
 ) {
   const summaries = deps.withProofPlaybackGate(
@@ -95,18 +96,18 @@ function resolveOperationalCheckpointSummary(
     queueCaseRows,
   )
   const semesterSummaries = summaries.filter(item => item.semesterNumber === semesterNumber)
+  if (typeof activeStageKey === 'string' && activeStageKey.trim().length > 0) {
+    return semesterSummaries.find(item => item.stageKey === activeStageKey)
+      ?? semesterSummaries.find(item => item.stageKey === 'pre-tt1')
+      ?? semesterSummaries[0]
+      ?? null
+  }
   return semesterSummaries
     .slice()
     .reverse()
     .find(item => item.playbackAccessible !== false)
     ?? semesterSummaries.at(-1)
     ?? null
-}
-
-function riskBandWeight(riskBand: string | null | undefined) {
-  if (riskBand === 'High') return 2
-  if (riskBand === 'Medium') return 1
-  return 0
 }
 
 export type ProofControlPlaneHodServiceDeps = {
@@ -377,6 +378,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     stageCheckpointRows,
     stageQueueCaseRows,
     currentSemester,
+    currentSemester === activeRun.activeOperationalSemester ? activeRun.activeStageKey : null,
     { parseProofCheckpointSummary, withProofPlaybackGate },
   )
 
@@ -503,7 +505,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           overloadFlag: (load?.weeklyContactHours ?? 0) >= overloadThreshold,
         }
       })
-      .sort((left, right) => (right.queueLoad - left.queueLoad) || (right.weeklyContactHours - left.weeklyContactHours) || left.facultyName.localeCompare(right.facultyName))
+      .sort((left, right) => (right.queueLoad - left.queueLoad) || (right.weeklyContactHours - left.weeklyContactHours) || left.facultyName.localeCompare(right.facultyName) || left.facultyId.localeCompare(right.facultyId))
 
     // Pre-compute lookups to avoid O(n²) filtering in courseRollups
     const checkpointRowsByCourse = new Map<string, typeof checkpointStudentRows>()
@@ -619,21 +621,12 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
             if (leftRank !== rightRank) return leftRank - rightRank
             return right.riskProbScaled - left.riskProbScaled || left.courseCode.localeCompare(right.courseCode)
           })
-        const actionPrimary = rowsForStudent[0]
-        const riskPrimary = rowsForStudent
-          .slice()
-          .sort((left, right) =>
-            riskBandWeight(right.riskBand) - riskBandWeight(left.riskBand)
-            || right.riskProbScaled - left.riskProbScaled
-            || left.courseCode.localeCompare(right.courseCode)
-          )[0] ?? null
-        const primary = riskPrimary ?? actionPrimary
-        if (!primary || !actionPrimary) return null
+        const primary = rowsForStudent[0]
+        if (!primary) return null
         const primaryPayload = parseJson(primary.projectionJson, {} as Record<string, unknown>)
-        const actionPayload = parseJson(actionPrimary.projectionJson, {} as Record<string, unknown>)
         const primaryEvidence = (primaryPayload.currentEvidence ?? {}) as Record<string, unknown>
-        const currentStatus = (actionPayload.currentStatus ?? {}) as Record<string, unknown>
-        const governance = (actionPayload.governance ?? {}) as Record<string, unknown>
+        const currentStatus = (primaryPayload.currentStatus ?? {}) as Record<string, unknown>
+        const governance = (primaryPayload.governance ?? {}) as Record<string, unknown>
         const counterfactualPolicy = (primaryPayload.counterfactualPolicyDiagnostics ?? {}) as Record<string, unknown>
         const evidenceTimeline = buildEvidenceTimelineFromRows(
           (observedRowsByStudent.get(studentId) ?? [])
@@ -655,7 +648,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           currentRiskBand: primary.riskBand,
           currentRiskProbScaled: primary.riskProbScaled,
           currentQueueState: canonicalPublicProofQueueStatus(
-            typeof currentStatus.queueState === 'string' ? currentStatus.queueState : null,
+            primary.queueState ?? (typeof currentStatus.queueState === 'string' ? currentStatus.queueState : null),
           ),
           queueCaseId: typeof governance.queueCaseId === 'string' ? governance.queueCaseId : null,
           countsTowardCapacity: governance.countsTowardCapacity === true,
@@ -702,9 +695,10 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
               riskBand: row.riskBand,
               riskProbScaled: row.riskProbScaled,
               queueState: canonicalPublicProofQueueStatus(
-                typeof ((payload.currentStatus ?? {}) as Record<string, unknown>).queueState === 'string'
+                row.queueState
+                  ?? (typeof ((payload.currentStatus ?? {}) as Record<string, unknown>).queueState === 'string'
                   ? String(((payload.currentStatus ?? {}) as Record<string, unknown>).queueState)
-                  : null,
+                  : null),
               ),
               queueCaseId: typeof (((payload.governance ?? {}) as Record<string, unknown>).queueCaseId) === 'string'
                 ? String((((payload.governance ?? {}) as Record<string, unknown>).queueCaseId))
@@ -751,7 +745,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         }
       })
       .filter((row): row is NonNullable<typeof row> => !!row)
-      .sort((left, right) => (right.currentRiskProbScaled - left.currentRiskProbScaled) || left.studentName.localeCompare(right.studentName))
+      .sort((left, right) => (right.currentRiskProbScaled - left.currentRiskProbScaled) || left.studentName.localeCompare(right.studentName) || left.studentId.localeCompare(right.studentId))
 
     const reassessments = checkpointQueueRows
       .map(row => {
@@ -794,7 +788,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
             : null,
         }
       })
-      .sort((left, right) => left.dueAt.localeCompare(right.dueAt) || right.riskProbScaled - left.riskProbScaled)
+      .sort((left, right) => left.dueAt.localeCompare(right.dueAt) || right.riskProbScaled - left.riskProbScaled || left.reassessmentEventId.localeCompare(right.reassessmentEventId))
 
     return {
       summary: {
@@ -924,10 +918,6 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   if (
     !input.filters?.simulationStageCheckpointId
     && operationalCheckpointSummary
-    && (
-      (activeRun.activeOperationalSemester != null && activeRun.activeOperationalSemester !== activeBatch.currentSemester)
-      || activeRiskRows.length === 0
-    )
   ) {
     const checkpointResult = await buildHodProofAnalytics(db, {
       facultyId: input.facultyId,
@@ -1060,7 +1050,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         overloadFlag: (load?.weeklyContactHours ?? 0) >= overloadThreshold,
       }
     })
-    .sort((left, right) => (right.queueLoad - left.queueLoad) || (right.weeklyContactHours - left.weeklyContactHours) || left.facultyName.localeCompare(right.facultyName))
+    .sort((left, right) => (right.queueLoad - left.queueLoad) || (right.weeklyContactHours - left.weeklyContactHours) || left.facultyName.localeCompare(right.facultyName) || left.facultyId.localeCompare(right.facultyId))
 
   const courseRollups = Array.from(new Map(
     uniqueSorted(activeOfferings.map(row => row.courseId)).map(courseId => {
@@ -1249,7 +1239,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
       }
     })
     .filter((row): row is NonNullable<typeof row> => !!row)
-    .sort((left, right) => (right.currentRiskProbScaled - left.currentRiskProbScaled) || left.studentName.localeCompare(right.studentName))
+    .sort((left, right) => (right.currentRiskProbScaled - left.currentRiskProbScaled) || left.studentName.localeCompare(right.studentName) || left.studentId.localeCompare(right.studentId))
 
   const facultyFilterIds = input.filters?.facultyId ? new Set([input.filters.facultyId]) : null
   const reassessments = activeReassessments
@@ -1320,7 +1310,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
       }
     })
     .filter((row): row is NonNullable<typeof row> => !!row)
-    .sort((left, right) => left.dueAt.localeCompare(right.dueAt) || right.riskProbScaled - left.riskProbScaled)
+    .sort((left, right) => left.dueAt.localeCompare(right.dueAt) || right.riskProbScaled - left.riskProbScaled || left.reassessmentEventId.localeCompare(right.reassessmentEventId))
 
   const sectionComparison = uniqueSorted(filteredObservedRows.map(row => row.sectionCode))
     .map(sectionCode => {

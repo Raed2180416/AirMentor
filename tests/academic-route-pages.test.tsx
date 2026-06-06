@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { createElement } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ApiAcademicFacultyProfile, ApiProofReassessmentResolveResponse, ApiStudentAgentCard, ApiStudentRiskExplorer } from '../src/api/types'
+import type { ApiAcademicFacultyProfile } from '../src/api/types'
 import type { Mentee, Offering, Student, StudentHistoryRecord } from '../src/data'
 import type { SharedTask } from '../src/domain'
 import { CLDashboard, MenteeDetailPage, MentorView, QueueHistoryPage } from '../src/academic-route-pages'
@@ -243,7 +243,8 @@ function renderWithSelectorOverrides(
 }
 
 describe('academic route pages', () => {
-  it('shows the guided demo reality loop on the course leader dashboard when proof queue evidence exists', () => {
+  it('surfaces the shared proof-controls CTA on the course leader dashboard when proof context exists', () => {
+    const onOpenFacultyProfile = vi.fn()
     const proofProfileWithQueue = {
       ...proofProfile,
       proofOperations: {
@@ -298,6 +299,7 @@ describe('academic route pages', () => {
       onOpenUpload: vi.fn(),
       onOpenCalendar: vi.fn(),
       onOpenPendingActions: vi.fn(),
+      onOpenFacultyProfile,
       teacherInitials: 'AR',
       greetingHeadline: 'Welcome back',
       greetingMeta: 'Proof-aligned teaching scope',
@@ -308,30 +310,16 @@ describe('academic route pages', () => {
       },
     })
 
-    expect(screen.getByText('Demo Reality Loop')).toBeTruthy()
-    expect(screen.getByText(/synthetic MSRUAS demo/i)).toBeTruthy()
+    expect(screen.getByText('Shared Proof Controls')).toBeTruthy()
+    expect(screen.getByText('Semester 6 · Semester Close')).toBeTruthy()
+    expect(screen.getByText(/authoritative controls live there/i)).toBeTruthy()
     expect(screen.getAllByText('Aarav Sharma').length).toBeGreaterThan(0)
-    expect(screen.getByRole('button', { name: /Capture before snapshot/i })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Faculty Profile' }))
+    expect(onOpenFacultyProfile).toHaveBeenCalledTimes(1)
   })
 
-  it('threads guided demo actions from the course leader dashboard to proof callbacks', async () => {
-    const loadStudentRiskExplorer = vi.fn(async () => ({
-      currentEvidence: { attendancePct: 62, tt1Pct: 38, tt2Pct: null, quizPct: null, assignmentPct: null, seePct: null, weakCoCount: 2, weakQuestionCount: 4, interventionRecoveryStatus: null },
-      currentStatus: { riskBand: 'High', riskProbScaled: 81, reassessmentStatus: 'Open', nextDueAt: null, recommendedAction: 'attendance_recovery_plan', queueState: 'open', simulatedActionTaken: null, attentionAreas: ['attendance'] },
-    } as unknown as ApiStudentRiskExplorer))
-    const loadStudentAgentCard = vi.fn(async () => ({
-      overview: {
-        currentEvidence: { attendancePct: 62, tt1Pct: 38, tt2Pct: null, quizPct: null, assignmentPct: null, seePct: null, weakCoCount: 2, weakQuestionCount: 4, interventionRecoveryStatus: null },
-        currentStatus: { riskBand: 'High', riskProbScaled: 81, reassessmentStatus: 'Open', nextDueAt: null, recommendedAction: 'attendance_recovery_plan', queueState: 'open', simulatedActionTaken: null, attentionAreas: ['attendance'] },
-      },
-      interventions: {
-        currentReassessments: [{ reassessmentEventId: 'reassessment_001', courseCode: 'MC601', courseTitle: 'Graph Theory', status: 'Open', dueAt: '2026-03-20T00:00:00.000Z', assignedToRole: 'COURSE_LEADER' }],
-      },
-    } as unknown as ApiStudentAgentCard))
-    const onCommitDemoAttendanceEdit = vi.fn(async () => undefined)
-    const onRecomputeProofRunRisk = vi.fn(async () => undefined)
-    const onResolveProofReassessment = vi.fn(async () => ({ reassessmentEventId: 'reassessment_001', resolution: { reassessmentResolutionId: 'resolution_001', resolvedByFacultyId: 'mnc_t1', resolutionStatus: 'Resolved', note: null, createdAt: '2026-03-20T00:00:00.000Z', resolutionJson: { outcome: 'completed_improving', temporaryResponseCredit: 0.05, recoveryState: 'confirmed_improvement', queueCaseId: 'queue_001', actorRole: 'COURSE_LEADER', resolvedAt: '2026-03-20T00:00:00.000Z', version: 1 } } } as unknown as ApiProofReassessmentResolveResponse))
-    const onAdvanceProofRun = vi.fn(async () => undefined)
+  it('routes the course leader dashboard CTA into the shared faculty proof surface', () => {
+    const onOpenFacultyProfile = vi.fn()
     const proofProfileWithQueue = {
       ...proofProfile,
       proofOperations: {
@@ -375,12 +363,7 @@ describe('academic route pages', () => {
       onOpenUpload: vi.fn(),
       onOpenCalendar: vi.fn(),
       onOpenPendingActions: vi.fn(),
-      loadStudentRiskExplorer,
-      loadStudentAgentCard,
-      onCommitDemoAttendanceEdit,
-      onRecomputeProofRunRisk,
-      onResolveProofReassessment,
-      onAdvanceProofRun,
+      onOpenFacultyProfile,
       teacherInitials: 'AR',
       greetingHeadline: 'Welcome back',
       greetingMeta: 'Proof-aligned teaching scope',
@@ -391,16 +374,10 @@ describe('academic route pages', () => {
       },
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /Apply attendance edit/i }))
-    await waitFor(() => expect(onCommitDemoAttendanceEdit).toHaveBeenCalledWith('off_mc601_a', 'student_001', 74))
-    fireEvent.click(screen.getByRole('button', { name: /^Recompute risk$/i }))
-    await waitFor(() => expect(onRecomputeProofRunRisk).toHaveBeenCalledWith('run_001', { refreshWorkspace: false }))
-    fireEvent.click(screen.getByRole('button', { name: /^Resolve intervention$/i }))
-    await waitFor(() => expect(onResolveProofReassessment).toHaveBeenCalledWith('reassessment_001', { refreshWorkspace: false }))
-    fireEvent.click(screen.getByRole('button', { name: /^Advance next stage$/i }))
-    await waitFor(() => expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'stage', { refreshWorkspace: false }))
-    fireEvent.click(screen.getByRole('button', { name: /^Refresh proof card$/i }))
-    await waitFor(() => expect(loadStudentAgentCard).toHaveBeenCalledWith('student_001'))
+    expect(screen.getByText('Shared Proof Controls')).toBeTruthy()
+    expect(screen.getByText(/dashboard stays stage-aware/i)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Faculty Profile' }))
+    expect(onOpenFacultyProfile).toHaveBeenCalledTimes(1)
   })
 
   it('opens mentor queue drilldowns into mentee, risk explorer, and student shell', () => {
@@ -424,6 +401,44 @@ describe('academic route pages', () => {
     expect(onOpenMentee).toHaveBeenCalledWith(mentee)
     expect(onOpenRiskExplorer).toHaveBeenCalledWith('student_001')
     expect(onOpenStudentShell).toHaveBeenCalledWith('student_001')
+  })
+
+  it('makes the mentor surface explicitly checkpoint-aware for a pre-tt1 proof view', () => {
+    const sem1ProofProfile: ApiAcademicFacultyProfile = {
+      ...proofProfile,
+      proofOperations: {
+        ...proofProfile.proofOperations,
+        activeOperationalSemester: 1,
+        selectedCheckpoint: {
+          simulationStageCheckpointId: 'checkpoint_sem1_prett1',
+          simulationRunId: 'run_001',
+          semesterNumber: 1,
+          stageKey: 'pre-tt1',
+          stageLabel: 'Pre TT1',
+          stageDescription: 'Opening evidence window before TT1 lands.',
+          stageOrder: 1,
+          previousCheckpointId: null,
+          nextCheckpointId: 'checkpoint_sem1_posttt1',
+          studentCount: 120,
+          highRiskCount: 4,
+          openQueueCount: 6,
+        },
+      },
+    }
+
+    render(createElement(MentorView, {
+      mentees: [mentee],
+      tasks: [task],
+      proofProfile: sem1ProofProfile,
+      onOpenMentee: vi.fn(),
+      onOpenRiskExplorer: vi.fn(),
+      onOpenStudentShell: vi.fn(),
+    }))
+
+    expect(screen.getByText('Semester 1 · Pre TT1')).toBeTruthy()
+    expect(screen.getByText(/later-semester cues like carry-forward CGPA framing/i)).toBeTruthy()
+    expect(screen.getAllByText('Awaiting TT1').length).toBeGreaterThan(0)
+    expect(screen.queryByText('CGPA: 7.1')).toBeNull()
   })
 
   it('opens partial-profile and proof drilldowns from mentee detail', () => {
@@ -480,7 +495,7 @@ describe('academic route pages', () => {
     expect(onOpenStudentShell).toHaveBeenCalledWith('student_001')
   })
 
-  it('shows the same proof summary strip on dashboard, mentor, and queue surfaces', () => {
+  it('keeps checkpoint context visible across dashboard, mentor, and queue surfaces', () => {
     renderWithSelectors(createElement(CLDashboard, {
       offerings: [],
       pendingTaskCount: 3,
@@ -495,11 +510,9 @@ describe('academic route pages', () => {
       greetingMeta: 'Proof-aligned teaching scope',
       greetingSubline: 'Checkpoint-bound view',
     }))
-    expect(screen.getByText('Course Leader Dashboard')).toBeTruthy()
+    expect(screen.getByText('Shared Proof Controls')).toBeTruthy()
     expect(screen.getByText('Semester 6 · Semester Close')).toBeTruthy()
-    expect(document.querySelector('[data-proof-summary-scope-label="2023 Mathematics and Computing"]')).toBeTruthy()
-    expect(document.querySelector('[data-proof-summary-mode="proof"]')).toBeTruthy()
-    expect(document.querySelector('[data-proof-summary-value="open-queue"]')?.textContent).toBe('13')
+    expect(document.querySelector('[data-proof-section="dashboard-proof-controls-cta"]')).toBeTruthy()
     cleanup()
 
     render(createElement(MentorView, {
@@ -510,8 +523,9 @@ describe('academic route pages', () => {
       onOpenRiskExplorer: vi.fn(),
       onOpenStudentShell: vi.fn(),
     }))
-    expect(screen.getByText('Mentor View')).toBeTruthy()
-    expect(screen.getByText('13')).toBeTruthy()
+    expect(screen.getByText('My Mentees')).toBeTruthy()
+    expect(screen.getByText('Shared Proof Checkpoint')).toBeTruthy()
+    expect(screen.getByText('Semester 6 · Semester Close')).toBeTruthy()
     cleanup()
 
     render(createElement(QueueHistoryPage, {
@@ -527,12 +541,12 @@ describe('academic route pages', () => {
       onOpenStudentShell: vi.fn(),
     }))
     expect(screen.getAllByText('Queue History').length).toBeGreaterThan(0)
-    expect(screen.getByText(/You are viewing (a saved preview checkpoint|the active simulation snapshot|live data)/)).toBeTruthy()
+    expect(screen.getByText(/Mentor view of active, resolved, and reassigned items\./)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open Student' })).toBeTruthy()
   })
 
-  it('opens active proof controls from the course leader floating proof launcher', () => {
-    const onAdvanceProofRun = vi.fn()
-    const onStopProofRun = vi.fn()
+  it('routes course leaders from the dashboard into the shared faculty proof surface instead of inline proof controls', () => {
+    const onOpenFacultyProfile = vi.fn()
     const proofProfileWithActiveRun = {
       ...proofProfile,
       proofOperations: {
@@ -560,23 +574,17 @@ describe('academic route pages', () => {
       onOpenUpload: vi.fn(),
       onOpenCalendar: vi.fn(),
       onOpenPendingActions: vi.fn(),
-      onAdvanceProofRun,
-      onStopProofRun,
-      onStepProofPlayback: vi.fn(),
+      onOpenFacultyProfile,
       teacherInitials: 'AR',
       greetingHeadline: 'Welcome back',
       greetingMeta: 'Proof-aligned teaching scope',
       greetingSubline: 'Checkpoint-bound view',
     }))
 
-    fireEvent.click(screen.getByRole('button', { name: /Proof Control/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Next Stage' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Next Day' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Stop Proof Run' }))
-
-    expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'stage')
-    expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'day')
-    expect(onStopProofRun).toHaveBeenCalledWith('run_001')
+    expect(screen.queryByRole('button', { name: /Proof Control/i })).toBeNull()
+    expect(screen.getByText('Shared Proof Controls')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Faculty Profile' }))
+    expect(onOpenFacultyProfile).toHaveBeenCalledTimes(1)
   })
 
   it('opens the full student roster from the course leader total-students metric', () => {

@@ -12,6 +12,7 @@ import {
   simulationRuns,
   simulationStageCheckpoints,
   simulationStageStudentProjections,
+  studentAssessmentScores,
   studentEnrollments,
   studentObservedSemesterStates,
 } from '../src/db/schema.js'
@@ -142,26 +143,6 @@ function collectLeafComponentDefs(nodes: Array<{ id: string; maxMarks?: number; 
 }
 
 describe('academic bootstrap', () => {
-  it('debug database state', async () => {
-    current = await createPublishedAcademicParityApp()
-    const runs = await current.db.select().from(simulationRuns)
-    const offerings = await current.db.select().from(sectionOfferings)
-    console.log('DEBUG RUNS COUNT:', runs.length)
-    console.log('DEBUG OFFERINGS COUNT:', offerings.length)
-    if (runs[0]) console.log('DEBUG RUN 0:', JSON.stringify(runs[0], null, 2))
-    if (offerings[0]) console.log('DEBUG OFFERING 0:', JSON.stringify(offerings[0], null, 2))
-    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
-    const response = await current.app.inject({
-      method: 'GET',
-      url: '/api/academic/bootstrap',
-      headers: { cookie: login.cookie },
-    })
-    console.log('DEBUG BOOTSTRAP STATUS:', response.statusCode)
-    const body = response.json()
-    console.log('DEBUG BOOTSTRAP OFFERINGS:', body.offerings?.length)
-    console.log('DEBUG BOOTSTRAP RUNTIME TIMETABLE:', body.runtime?.timetableByFacultyId ? Object.keys(body.runtime.timetableByFacultyId) : 'none')
-  })
-
   it('keeps faculty-profile proof context and linked proof drilldowns aligned for the active teaching role', async () => {
     current = await createPublishedAcademicParityApp()
     const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
@@ -194,6 +175,10 @@ describe('academic bootstrap', () => {
       }),
     })
     expect(Array.isArray(profile.proofOperations.monitoringQueue)).toBe(true)
+    const bootstrap = await loadAcademicBootstrap(login.cookie)
+    expect(bootstrap.proofPlayback?.simulationStageCheckpointId).toBe(
+      profile.proofOperations.selectedCheckpoint?.simulationStageCheckpointId,
+    )
 
     let drilldownStudentId = profile.proofOperations.monitoringQueue[0]?.studentId as string | undefined
     if (!drilldownStudentId) {
@@ -220,6 +205,68 @@ describe('academic bootstrap', () => {
 
     expect(riskExplorerResponse.statusCode).toBe(200)
     expect(studentShellResponse.statusCode).toBe(200)
+  })
+
+  it('shows proof-scoped mentees for every seeded mentor login with active assignments', async () => {
+    current = await createPublishedAcademicParityApp()
+    const mentorCredentials = [
+      { username: 'devika.shetty', password: 'faculty1234', facultyId: 'mnc_t1' },
+      { username: 'rohit.menon', password: 'faculty1234', facultyId: 'mnc_t2' },
+      { username: 'priya.raman', password: 'faculty1234', facultyId: 'mnc_t3' },
+      { username: 'karan.naidu', password: 'faculty1234', facultyId: 'mnc_t4' },
+      { username: 'sowmya.krishnan', password: 'faculty1234', facultyId: 'mnc_t5' },
+      { username: 'abhinav.rao', password: 'faculty1234', facultyId: 'mnc_t6' },
+      { username: 'neha.iyengar', password: 'faculty1234', facultyId: 'mnc_t7' },
+      { username: 'harish.bhat', password: 'faculty1234', facultyId: 'mnc_t8' },
+      { username: 'namrata.shah', password: 'faculty1234', facultyId: 'mnc_t9' },
+      { username: 'vivek.kumar', password: 'faculty1234', facultyId: 'mnc_t10' },
+    ]
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const [allEnrollments, allTerms] = await Promise.all([
+      current.db.select().from(studentEnrollments),
+      current.db.select().from(academicTerms),
+    ])
+    const termById = new Map(allTerms.map(term => [term.termId, term] as const))
+    let mentorsWithScopedAssignments = 0
+
+    for (const credential of mentorCredentials) {
+      const login = await loginAs(current.app, credential.username, credential.password)
+      expect(login.response.statusCode).toBe(200)
+      const mentorGrant = login.body.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'MENTOR')
+      expect(mentorGrant).toBeTruthy()
+      if (login.body.activeRoleGrant.roleCode !== 'MENTOR') {
+        await switchToRole(login.cookie, login.body.availableRoleGrants, 'MENTOR')
+      }
+
+      const mentorRows = await current.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, credential.facultyId))
+      const expectedStudentIds = Array.from(new Set(mentorRows
+        .filter(row => row.effectiveTo === null)
+        .filter(row => {
+          return allEnrollments.some(item => {
+            if (item.studentId !== row.studentId || item.academicStatus !== 'active') return false
+            const term = termById.get(item.termId)
+            return !!term && term.batchId === activeRun.batchId && term.semesterNumber === activeRun.activeOperationalSemester
+          })
+        })
+        .map(row => row.studentId)))
+        .sort((left, right) => left.localeCompare(right))
+      if (expectedStudentIds.length > 0) mentorsWithScopedAssignments += 1
+
+      const bootstrapResponse = await current.app.inject({
+        method: 'GET',
+        url: '/api/academic/bootstrap',
+        headers: { cookie: login.cookie },
+      })
+      expect(bootstrapResponse.statusCode).toBe(200)
+      const bootstrap = bootstrapResponse.json() as { mentees: Array<{ id: string }> }
+      const visibleMenteeStudentIds = bootstrap.mentees
+        .map(mentee => mentee.id.replace(/^mentee-/, ''))
+        .sort((left, right) => left.localeCompare(right))
+      expect(visibleMenteeStudentIds).toEqual(expectedStudentIds)
+    }
+
+    expect(mentorsWithScopedAssignments).toBeGreaterThan(0)
   })
 
   it('exposes non-overlapping faculty timetable blocks in the proof bootstrap for course-leader playback', async () => {
@@ -376,8 +423,8 @@ describe('academic bootstrap', () => {
       headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
       payload: {
         courseId: offeringRow.courseId,
-        scopeType: 'branch',
-        scopeId: offeringRow.branchId,
+        scopeType: 'offering',
+        scopeId: targetOffering.offId,
         outcomes: [
           { id: 'CO1', desc: 'Prove complexity bounds for algorithmic strategies.', bloom: 'Analyze' },
           { id: 'CO2', desc: 'Design dynamic programming solutions for constrained problems.', bloom: 'Create' },
@@ -776,7 +823,7 @@ describe('academic bootstrap', () => {
         offeringId: targetOffering.offId,
         title: 'Recovery planning meeting',
         notes: 'Review TT1 recovery steps and confirm the next checkpoint.',
-        dateISO: '2026-03-21',
+        dateISO: '2026-03-16',
         startMinutes: 900,
         endMinutes: 930,
         status: 'scheduled',
@@ -801,7 +848,7 @@ describe('academic bootstrap', () => {
         offeringId: targetOffering.offId,
         title: 'Recovery planning meeting',
         notes: 'Meeting completed. Student agreed to the revised remedial timeline.',
-        dateISO: '2026-03-21',
+        dateISO: '2026-03-16',
         startMinutes: 905,
         endMinutes: 940,
         status: 'completed',
@@ -920,6 +967,223 @@ describe('academic bootstrap', () => {
     if (!refreshedStudent) throw new Error('Expected the target student after stale-risk insert')
     expect(refreshedStudent.riskBand).toBe(baselineStudent.riskBand)
     expect(refreshedStudent.riskProb).toBeCloseTo(baselineStudent.riskProb, 6)
+  })
+
+  it('replaces assessment entries for one component without preserving stale omitted-student scores', async () => {
+    current = await createPublishedAcademicParityApp()
+    const facultyLogin = await loginAsProofCourseLeader()
+    const initialBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const targetOffering = initialBootstrap.offerings.find((offering: { offId: string }) => (
+      Array.isArray(initialBootstrap.questionPapersByOffering[offering.offId]?.tt1?.nodes)
+      && (initialBootstrap.assessmentSchemesByOffering[offering.offId]?.assignmentComponents?.length ?? 0) > 0
+      && (initialBootstrap.studentsByOffering[offering.offId]?.length ?? 0) >= 2
+    ))
+    expect(targetOffering).toBeTruthy()
+    if (!targetOffering) throw new Error('Expected a proof-scoped offering with two students for assessment replacement')
+
+    await current.db.update(sectionOfferings).set({
+      stage: 1,
+      tt1Locked: 0,
+      updatedAt: '2026-03-17T00:00:00.000Z',
+    }).where(eq(sectionOfferings.offeringId, targetOffering.offId))
+
+    const [firstStudent, omittedStudent] = initialBootstrap.studentsByOffering[targetOffering.offId]
+    expect(firstStudent).toBeTruthy()
+    expect(omittedStudent).toBeTruthy()
+    if (!firstStudent || !omittedStudent) throw new Error('Expected two students in the target offering')
+    const firstCanonicalStudentId = String(firstStudent.id).split('::').at(-1) ?? String(firstStudent.id)
+    const omittedCanonicalStudentId = String(omittedStudent.id).split('::').at(-1) ?? String(omittedStudent.id)
+    const tt1Leaves = collectLeafComponentDefs(initialBootstrap.questionPapersByOffering[targetOffering.offId].tt1.nodes).slice(0, 3)
+    expect(tt1Leaves.length).toBeGreaterThan(0)
+    const componentsFor = (baseScore: number) => tt1Leaves.map((leaf, index) => ({
+      componentCode: leaf.id,
+      score: Math.max(0, Math.min(leaf.maxMarks || 5, baseScore + index)),
+      maxScore: Math.max(1, leaf.maxMarks || 5),
+    }))
+    const firstStudentComponents = componentsFor(2)
+    const omittedStudentComponents = componentsFor(4)
+
+    const duplicateResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/offerings/${targetOffering.offId}/assessment-entries/tt1`,
+      headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        entries: [
+          { studentId: firstStudent.id, components: firstStudentComponents },
+          { studentId: firstStudent.id, components: firstStudentComponents },
+        ],
+        lock: false,
+      },
+    })
+    expect(duplicateResponse.statusCode).toBe(400)
+
+    const initialCommitResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/offerings/${targetOffering.offId}/assessment-entries/tt1`,
+      headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        entries: [
+          { studentId: firstStudent.id, components: firstStudentComponents },
+          { studentId: omittedStudent.id, components: omittedStudentComponents },
+        ],
+        lock: false,
+      },
+    })
+    expect(initialCommitResponse.statusCode).toBe(200)
+
+    const readStudentPatches = async () => {
+      const [row] = await current!.db
+        .select()
+        .from(academicRuntimeState)
+        .where(eq(academicRuntimeState.stateKey, 'studentPatches'))
+      return JSON.parse(row?.payloadJson ?? '{}') as Record<string, Record<string, unknown>>
+    }
+    const firstPatchKey = `${targetOffering.offId}::${firstCanonicalStudentId}`
+    const omittedPatchKey = `${targetOffering.offId}::${omittedCanonicalStudentId}`
+    const initialPatchPayload = await readStudentPatches()
+    expect(initialPatchPayload[omittedPatchKey]).toMatchObject({
+      tt1LeafScores: Object.fromEntries(omittedStudentComponents.map(component => [component.componentCode, component.score])),
+    })
+    await current.db.update(academicRuntimeState).set({
+      payloadJson: JSON.stringify({
+        ...initialPatchPayload,
+        [omittedPatchKey]: {
+          ...(initialPatchPayload[omittedPatchKey] ?? {}),
+          quizScores: { quiz1: 7 },
+          assignmentScores: { asgn1: 8 },
+        },
+      }),
+    }).where(eq(academicRuntimeState.stateKey, 'studentPatches'))
+
+    const replacementCommitResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/offerings/${targetOffering.offId}/assessment-entries/tt1`,
+      headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        entries: [
+          { studentId: firstStudent.id, components: firstStudentComponents },
+        ],
+        lock: false,
+      },
+    })
+    expect(replacementCommitResponse.statusCode).toBe(200)
+
+    const replacementPatchPayload = await readStudentPatches()
+    expect(replacementPatchPayload[firstPatchKey]).toMatchObject({
+      tt1LeafScores: Object.fromEntries(firstStudentComponents.map(component => [component.componentCode, component.score])),
+    })
+    expect(replacementPatchPayload[omittedPatchKey]).toMatchObject({
+      quizScores: { quiz1: 7 },
+      assignmentScores: { asgn1: 8 },
+    })
+    expect(replacementPatchPayload[omittedPatchKey]).not.toHaveProperty('tt1LeafScores')
+
+    const omittedScoreRows = await current.db
+      .select()
+      .from(studentAssessmentScores)
+      .where(and(
+        eq(studentAssessmentScores.offeringId, targetOffering.offId),
+        eq(studentAssessmentScores.studentId, omittedCanonicalStudentId),
+      ))
+    expect(omittedScoreRows.filter(row => row.componentType === 'tt1' || row.componentType === 'tt1_leaf')).toHaveLength(0)
+
+    const assignmentComponent = initialBootstrap.assessmentSchemesByOffering[targetOffering.offId].assignmentComponents[0]
+    expect(assignmentComponent).toBeTruthy()
+    if (!assignmentComponent) throw new Error('Expected an assignment component on the replacement test offering')
+    await current.db.insert(studentAssessmentScores).values({
+      assessmentScoreId: 'assessment_stale_asgn3_replacement_test',
+      studentId: firstCanonicalStudentId,
+      offeringId: targetOffering.offId,
+      termId: targetOffering.termId,
+      componentType: 'asgn3',
+      componentCode: 'assignment-3',
+      score: 9,
+      maxScore: 10,
+      evaluatedAt: '2026-03-17T01:00:00.000Z',
+      createdAt: '2026-03-17T01:00:00.000Z',
+      updatedAt: '2026-03-17T01:00:00.000Z',
+    })
+
+    const readFirstStudentAssessmentRows = async () => current!.db
+      .select()
+      .from(studentAssessmentScores)
+      .where(and(
+        eq(studentAssessmentScores.offeringId, targetOffering.offId),
+        eq(studentAssessmentScores.studentId, firstCanonicalStudentId),
+      ))
+    const beforeInvalidAssignmentRows = await readFirstStudentAssessmentRows()
+    expect(beforeInvalidAssignmentRows.some(row => row.componentType === 'asgn3')).toBe(true)
+    const invalidAssignmentResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/offerings/${targetOffering.offId}/assessment-entries/assignment`,
+      headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        entries: [{
+          studentId: firstStudent.id,
+          components: [{
+            componentCode: 'Assignment 1',
+            score: 1,
+            maxScore: assignmentComponent.rawMax,
+          }],
+        }],
+        lock: false,
+      },
+    })
+    expect(invalidAssignmentResponse.statusCode).toBe(400)
+    const afterInvalidAssignmentRows = await readFirstStudentAssessmentRows()
+    expect(afterInvalidAssignmentRows.map(row => row.assessmentScoreId).sort()).toEqual(
+      beforeInvalidAssignmentRows.map(row => row.assessmentScoreId).sort(),
+    )
+
+    const validAssignmentComponents = [{
+      componentCode: assignmentComponent.id,
+      score: Math.max(0, Math.min(assignmentComponent.rawMax, assignmentComponent.rawMax - 1)),
+      maxScore: assignmentComponent.rawMax,
+    }]
+    const assignmentCommitResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/offerings/${targetOffering.offId}/assessment-entries/assignment`,
+      headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        entries: [{
+          studentId: firstStudent.id,
+          components: validAssignmentComponents,
+        }],
+        lock: false,
+      },
+    })
+    expect(assignmentCommitResponse.statusCode).toBe(200)
+    const afterAssignmentRows = await readFirstStudentAssessmentRows()
+    expect(afterAssignmentRows.some(row => row.componentType === 'asgn3')).toBe(false)
+    expect(afterAssignmentRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        componentType: 'asgn1',
+        componentCode: assignmentComponent.id,
+      }),
+    ]))
+
+    await current.db.update(sectionOfferings).set({
+      stage: 3,
+      assignmentLocked: 0,
+      updatedAt: '2026-03-17T02:00:00.000Z',
+    }).where(eq(sectionOfferings.offeringId, targetOffering.offId))
+    const lockOnlyResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/offerings/${targetOffering.offId}/assessment-entries/assignment`,
+      headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        entries: [],
+        lock: true,
+      },
+    })
+    expect(lockOnlyResponse.statusCode).toBe(200)
+    const afterLockOnlyRows = await readFirstStudentAssessmentRows()
+    expect(afterLockOnlyRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        componentType: 'asgn1',
+        componentCode: assignmentComponent.id,
+      }),
+    ]))
   })
 
   it('reacts immediately to newly entered quiz evidence and follows the authoritative run stage instead of offering stage', async () => {
@@ -1210,6 +1474,16 @@ describe('academic bootstrap', () => {
       expect(bootstrapStudent.flags.backlog).toBe(studentShell.summaryRail.backlogCount > 0)
       expect(bootstrapStudent.riskBand).toBe(riskExplorer.currentStatus.riskBand)
       expect(Math.round((bootstrapStudent.riskProb ?? 0) * 100)).toBe(riskExplorer.currentStatus.riskProbScaled)
+      const bootstrapReasons = Array.isArray(bootstrapStudent.reasons)
+        ? bootstrapStudent.reasons as Array<{ label: string; feature: string }>
+        : []
+      const shellDrivers = (studentShell.assessmentEvidence?.components ?? [])
+        .flatMap((component: { drivers?: Array<{ label: string; feature: string }> }) => Array.isArray(component.drivers) ? component.drivers : [])
+      expect(shellDrivers.length).toBeGreaterThan(0)
+      expect(bootstrapReasons.length).toBeGreaterThan(0)
+      const shellDriverFeatures = new Set(shellDrivers.map((driver: { feature: string }) => driver.feature))
+      expect(bootstrapReasons.some((reason: { feature: string }) => shellDriverFeatures.has(reason.feature))).toBe(true)
+      expect(bootstrapReasons.some((reason: { feature: string }) => reason.feature === 'proof-checkpoint')).toBe(false)
     }
 
     const mentorCheckpointProfile = await loadProfileForRole('MENTOR', selectedCheckpoint.simulationStageCheckpointId)

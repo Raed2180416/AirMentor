@@ -61,14 +61,26 @@ def catboost_info():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--execute", action="store_true", help="Actually delete files")
+    parser.add_argument(
+        "--include-old-benchmarks",
+        action="store_true",
+        help="Include old benchmark directories. Preserve model artifacts and manifests first.",
+    )
+    parser.add_argument(
+        "--include-training-corpora",
+        action="store_true",
+        help="Include root feature CSVs. Preserve a compressed, checksummed copy first.",
+    )
     args = parser.parse_args()
 
     all_to_delete = []
     all_to_delete.extend([("stale_patch", f) for f in stale_patch_files()])
-    all_to_delete.extend([("old_benchmark", d) for d in old_benchmark_runs(keep_latest=3)])
     all_to_delete.extend([("old_smoke", d) for d in old_smoke_runs()])
-    all_to_delete.extend([("old_feature_csv", f) for f in old_feature_csvs()])
     all_to_delete.extend([("catboost_info", f) for f in catboost_info()])
+    if args.include_old_benchmarks:
+        all_to_delete.extend([("old_benchmark", d) for d in old_benchmark_runs(keep_latest=3)])
+    if args.include_training_corpora:
+        all_to_delete.extend([("old_feature_csv", f) for f in old_feature_csvs()])
 
     total_size = 0
     for kind, path in all_to_delete:

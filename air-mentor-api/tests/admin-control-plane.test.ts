@@ -644,7 +644,7 @@ describe('admin control plane routes', () => {
     expect(dashboard.activeRunDetail).toMatchObject({
       simulationRunId: runId,
       status: 'active',
-      activeOperationalSemester: 6,
+      activeOperationalSemester: 1,
     })
     expect(dashboard.activeRunDetail.checkpoints.length).toBeGreaterThan(0)
     expect(dashboard.activeRunDetail.teacherAllocationLoad.length).toBeGreaterThan(0)
@@ -678,7 +678,7 @@ describe('admin control plane routes', () => {
     expect(dashboard.activeRunDetail.coverageDiagnostics.interventionResponseCoverage.count).toBeGreaterThan(0)
     expect(dashboard.activeRunDetail.modelDiagnostics.production).toMatchObject({
       artifactVersion: expect.stringContaining('observable-risk-logit'),
-      modelFamily: 'logistic-scorecard',
+      modelFamily: 'logistic',
     })
     expect(dashboard.activeRunDetail.modelDiagnostics.activeRunFeatureRowCount).toBeGreaterThan(0)
     const [modelActiveResponse, modelEvaluationResponse, modelCorrelationResponse] = await Promise.all([
@@ -840,24 +840,34 @@ describe('admin control plane routes', () => {
       simulationRunId: runId,
     })
     expect(profile.proofOperations.resolvedFrom).toMatchObject({
-      kind: 'proof-run',
+      kind: 'proof-checkpoint',
       scopeType: 'proof',
-      scopeId: runId,
+      scopeId: profile.proofOperations.selectedCheckpoint?.simulationStageCheckpointId,
     })
     expect(profile.proofOperations.scopeMode).toBe('proof')
-    expect(profile.proofOperations.countSource).toBe('proof-run')
-    expect(profile.proofOperations.activeOperationalSemester).toBe(6)
-    expect(profile.proofOperations.monitoringQueue.length).toBeGreaterThan(0)
-    expect(profile.proofOperations.electiveFits.length).toBeGreaterThan(0)
-    expect(profile.proofOperations.monitoringQueue[0]).toMatchObject({
-      simulationRunId: runId,
-      observedEvidence: expect.objectContaining({
-        tt2Pct: expect.any(Number),
-        seePct: expect.any(Number),
-        weakCoCount: expect.any(Number),
-        weakQuestionCount: expect.any(Number),
-      }),
+    expect(profile.proofOperations.countSource).toBe('proof-checkpoint')
+    expect(profile.proofOperations.activeOperationalSemester).toBe(1)
+    expect(profile.proofOperations.selectedCheckpoint).toMatchObject({
+      semesterNumber: 1,
+      stageLabel: 'Pre TT1',
     })
+    expect(profile.proofOperations.monitoringQueue.length).toBe(
+      profile.proofOperations.selectedCheckpoint?.openQueueCount ?? 0,
+    )
+    expect(Array.isArray(profile.proofOperations.electiveFits)).toBe(true)
+    expect(profile).toHaveProperty('timetableTemplate')
+    expect(profile).toHaveProperty('calendarWorkspace')
+    if (profile.proofOperations.monitoringQueue[0]) {
+      expect(profile.proofOperations.monitoringQueue[0]).toMatchObject({
+        simulationRunId: runId,
+        observedEvidence: expect.objectContaining({
+          tt2Pct: expect.any(Number),
+          seePct: expect.any(Number),
+          weakCoCount: expect.any(Number),
+          weakQuestionCount: expect.any(Number),
+        }),
+      })
+    }
     const firstCheckpointId = (
       dashboard.activeRunDetail.checkpoints.find((item: { openQueueCount?: number }) => (item.openQueueCount ?? 0) > 0)
       ?? dashboard.activeRunDetail.checkpoints[0]
@@ -907,7 +917,30 @@ describe('admin control plane routes', () => {
       headers: { cookie: adminLogin.cookie },
     })
     expect(staleCheckpointResponse.statusCode).toBe(404)
-    expect(staleCheckpointResponse.json().message).toMatch(/selected proof run/i)
+    expect(staleCheckpointResponse.json().message).toMatch(/simulation run not found/i)
+
+    const checkpointStudentListResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/proof-runs/${runId}/checkpoints/${firstCheckpointId}/students`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(checkpointStudentListResponse.statusCode).toBe(200)
+    expect(checkpointStudentListResponse.json().checkpoint).toMatchObject({
+      simulationStageCheckpointId: firstCheckpointId,
+      semesterNumber: checkpointDetailOne.json().checkpoint.semesterNumber,
+    })
+    expect(checkpointStudentListResponse.json().items.length).toBeGreaterThan(0)
+    const checkpointStudentSummary = checkpointStudentListResponse.json().items.find((item: { studentId: string }) => item.studentId === studentId)
+      ?? checkpointStudentListResponse.json().items[0]
+    expect(checkpointStudentSummary).toMatchObject({
+      currentSemester: checkpointDetailOne.json().checkpoint.semesterNumber,
+      currentRiskProbScaled: expect.any(Number),
+      primaryCourseCode: expect.any(String),
+      observedEvidence: expect.objectContaining({
+        attendancePct: expect.any(Number),
+        backlogCount: expect.any(Number),
+      }),
+    })
 
     const checkpointStudentResponse = await current.app.inject({
       method: 'GET',
@@ -1073,18 +1106,38 @@ describe('admin control plane routes', () => {
 
     expect(sem2PostTt1).toBeTruthy()
     expect(sem6PostSee).toBeTruthy()
-    expect(sem2PostTt1).toMatchObject({
-      openQueueCount: expect.any(Number),
-      blockingQueueItemCount: 0,
-      stageAdvanceBlocked: false,
-      playbackAccessible: true,
+    if (!sem2PostTt1 || !sem6PostSee) throw new Error('Expected Sem2 post-TT1 and Sem6 post-SEE checkpoints')
+    const checkpointBlockingCounts = checkpoints.map(item => Number(item.blockingQueueItemCount ?? 0))
+    const firstBlockedIndex = checkpointBlockingCounts.findIndex(count => count > 0)
+    expect(firstBlockedIndex).toBeGreaterThanOrEqual(0)
+    checkpoints.forEach((checkpoint, index) => {
+      const blockingQueueItemCount = Number(checkpoint.blockingQueueItemCount ?? 0)
+      const playbackAccessible = firstBlockedIndex === -1 || index <= firstBlockedIndex
+      expect(checkpoint.stageAdvanceBlocked).toBe(blockingQueueItemCount > 0)
+      expect(checkpoint.playbackAccessible).toBe(playbackAccessible)
+      expect(checkpoint.blockedByCheckpointId ?? null).toBe(
+        !playbackAccessible && firstBlockedIndex !== -1
+          ? checkpoints[firstBlockedIndex]?.simulationStageCheckpointId
+          : null,
+      )
+      expect(checkpoint.blockedProgressionReason ?? null).toEqual(
+        !playbackAccessible || checkpoint.stageAdvanceBlocked
+          ? expect.any(String)
+          : null,
+      )
     })
+    expect(sem2PostTt1.openQueueCount).toEqual(expect.any(Number))
+    expect(sem2PostTt1.blockingQueueItemCount).toEqual(expect.any(Number))
     expect(Number(sem2PostTt1?.openQueueCount ?? 0)).toBeGreaterThan(0)
-    expect(sem6PostSee).toMatchObject({
-      playbackAccessible: true,
-      blockedByCheckpointId: null,
-      blockedProgressionReason: null,
-    })
+    expect(Number(sem2PostTt1.blockingQueueItemCount ?? 0)).toBeGreaterThan(0)
+    expect(sem2PostTt1.stageAdvanceBlocked).toBe(true)
+    if (firstBlockedIndex !== -1 && checkpoints.indexOf(sem6PostSee) > firstBlockedIndex) {
+      expect(sem6PostSee.playbackAccessible).toBe(false)
+      expect(sem6PostSee.blockedByCheckpointId).toBe(checkpoints[firstBlockedIndex]?.simulationStageCheckpointId)
+    } else {
+      expect(sem6PostSee.playbackAccessible).toBe(true)
+      expect(sem6PostSee.blockedByCheckpointId ?? null).toBeNull()
+    }
   }, 300000)
 
   it('keeps proof-dashboard stable across repeated semester activation reads', async () => {
@@ -1348,7 +1401,7 @@ describe('admin control plane routes', () => {
     expect(afterDashboard.activeRunDetail.checkpointReadiness?.totalCheckpointCount).toBe(afterDashboard.activeRunDetail.checkpoints.length)
     expect(afterDashboard.activeRunDetail.modelDiagnostics.production).toMatchObject({
       artifactVersion: expect.stringContaining('observable-risk-logit'),
-      modelFamily: 'logistic-scorecard',
+      modelFamily: 'logistic',
     })
   }, 120_000)
 
@@ -1712,15 +1765,37 @@ describe('admin control plane routes', () => {
 
   it('enforces the faculty timetable direct-edit window while keeping markers editable and reflected in teaching profile status', async () => {
     current = await createTestApp()
-    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
-    const facultyLogin = await loginAs(current.app, 'kavitha.rao', '1234')
+    const rootAdminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    expect(rootAdminLogin.response.statusCode).toBe(200)
+
+    const createWorkspaceResponse = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: rootAdminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Calendar Demo Workspace' },
+    })
+    expect(createWorkspaceResponse.statusCode).toBe(200)
+    const demoWorkspaceId = createWorkspaceResponse.json().demoWorkspaceId as string
+    expect(demoWorkspaceId).toBeTruthy()
+
+    const provisionWorkspaceResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/demo-workspaces/${demoWorkspaceId}/provision`,
+      headers: { cookie: rootAdminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(provisionWorkspaceResponse.statusCode).toBe(200)
+
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234', { demoWorkspaceId })
+    const facultyLogin = await loginAs(current.app, 'kavitha.rao', '1234', { demoWorkspaceId })
     expect(adminLogin.response.statusCode).toBe(200)
     expect(facultyLogin.response.statusCode).toBe(200)
+    const demoHeaders = { 'x-airmentor-demo-workspace': demoWorkspaceId }
 
     const offeringsResponse = await current.app.inject({
       method: 'GET',
       url: '/api/admin/offerings',
-      headers: { cookie: adminLogin.cookie },
+      headers: { ...demoHeaders, cookie: adminLogin.cookie },
     })
     expect(offeringsResponse.statusCode).toBe(200)
     const offering = offeringsResponse.json().items.find((item: { offId: string }) => item.offId === 'c3-A') ?? offeringsResponse.json().items[0]
@@ -1770,7 +1845,7 @@ describe('admin control plane routes', () => {
     const initialSave = await current.app.inject({
       method: 'PUT',
       url: '/api/admin/faculty-calendar/t1',
-      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      headers: { ...demoHeaders, cookie: adminLogin.cookie, origin: TEST_ORIGIN },
       payload: { template, workspace },
     })
     expect(initialSave.statusCode).toBe(200)
@@ -1781,9 +1856,27 @@ describe('admin control plane routes', () => {
     const profileResponse = await current.app.inject({
       method: 'GET',
       url: '/api/academic/faculty-profile/t1',
-      headers: { cookie: facultyLogin.cookie },
+      headers: { ...demoHeaders, cookie: facultyLogin.cookie },
     })
     expect(profileResponse.statusCode).toBe(200)
+    expect(profileResponse.json().timetableTemplate).toMatchObject({
+      facultyId: 't1',
+      classBlocks: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'block-1',
+          courseCode: offering.code,
+        }),
+      ]),
+    })
+    expect(profileResponse.json().calendarWorkspace).toMatchObject({
+      publishedAt: savedCalendar.workspace.publishedAt,
+      markers: expect.arrayContaining([
+        expect.objectContaining({
+          markerId: 'marker-1',
+          title: 'Semester Start',
+        }),
+      ]),
+    })
     expect(profileResponse.json().timetableStatus).toMatchObject({
       hasTemplate: true,
       publishedAt: savedCalendar.workspace.publishedAt,
@@ -1792,7 +1885,7 @@ describe('admin control plane routes', () => {
     const bootstrapResponse = await current.app.inject({
       method: 'GET',
       url: '/api/academic/bootstrap',
-      headers: { cookie: facultyLogin.cookie },
+      headers: { ...demoHeaders, cookie: facultyLogin.cookie },
     })
     expect(bootstrapResponse.statusCode).toBe(200)
     expect(bootstrapResponse.json().runtime.adminCalendarByFacultyId.t1.markers).toEqual(expect.arrayContaining([
@@ -1806,7 +1899,7 @@ describe('admin control plane routes', () => {
     const recentAuditResponse = await current.app.inject({
       method: 'GET',
       url: '/api/admin/audit-events/recent?limit=20',
-      headers: { cookie: adminLogin.cookie },
+      headers: { ...demoHeaders, cookie: adminLogin.cookie },
     })
     expect(recentAuditResponse.statusCode).toBe(200)
     expect(recentAuditResponse.json().items).toEqual(expect.arrayContaining([
@@ -1836,7 +1929,7 @@ describe('admin control plane routes', () => {
     const markerOnlySave = await current.app.inject({
       method: 'PUT',
       url: '/api/admin/faculty-calendar/t1',
-      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      headers: { ...demoHeaders, cookie: adminLogin.cookie, origin: TEST_ORIGIN },
       payload: {
         template,
         workspace: {
@@ -1854,10 +1947,26 @@ describe('admin control plane routes', () => {
     expect(markerOnlySave.statusCode).toBe(200)
     expect(markerOnlySave.json().classEditingLocked).toBe(true)
 
+    const refreshedProfileResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/faculty-profile/t1',
+      headers: { ...demoHeaders, cookie: facultyLogin.cookie },
+    })
+    expect(refreshedProfileResponse.statusCode).toBe(200)
+    expect(refreshedProfileResponse.json().calendarWorkspace).toMatchObject({
+      publishedAt: '2026-02-01T00:00:00.000Z',
+      markers: expect.arrayContaining([
+        expect.objectContaining({
+          markerId: 'marker-1',
+          note: 'Opening day updated by admin after the class edit window.',
+        }),
+      ]),
+    })
+
     const blockedTemplateSave = await current.app.inject({
       method: 'PUT',
       url: '/api/admin/faculty-calendar/t1',
-      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      headers: { ...demoHeaders, cookie: adminLogin.cookie, origin: TEST_ORIGIN },
       payload: {
         template: {
           ...template,

@@ -50,6 +50,11 @@ export function resolveRoleSyncState(input: {
   return null
 }
 
+export function getMenteeScopeIds(menteeId: string) {
+  const rawId = menteeId.replace(/^mentee-/, '')
+  return Array.from(new Set([menteeId, rawId, `mentee-${rawId}`]))
+}
+
 export function resolveAssignedMentees(
   allMentees: Mentee[],
   currentTeacher: FacultyAccount | null,
@@ -58,12 +63,12 @@ export function resolveAssignedMentees(
   if (!currentTeacher) return allMentees
 
   if (facultyProfile) {
-    const scopedIds = facultyProfile.mentorScope.studentIds.flatMap(studentId => [studentId, `mentee-${studentId}`])
+    const scopedIds = facultyProfile.mentorScope.studentIds.flatMap(getMenteeScopeIds)
     const scopedIdSet = new Set(scopedIds)
     return allMentees.filter(mentee => scopedIdSet.has(mentee.id))
   }
 
-  const menteeIds = new Set(currentTeacher.menteeIds)
+  const menteeIds = new Set(currentTeacher.menteeIds.flatMap(getMenteeScopeIds))
   return allMentees.filter(mentee => menteeIds.has(mentee.id))
 }
 

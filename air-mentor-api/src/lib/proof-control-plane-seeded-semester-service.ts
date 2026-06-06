@@ -22,6 +22,16 @@ export type ProofControlPlaneSeededSemesterServiceDeps = {
   stableUnit: (seed: string) => number
 }
 
+type ActiveBacklogItem = {
+  key: string
+  courseCode: string
+  title: string
+  credits: number
+  failedSemester: number
+  reason: 'see' | 'ce' | 'attendance' | 'overall'
+  severity: number
+}
+
 export type BuildSeededHistoricalSemesterRowsInput = {
   courseLeaderFaculty: Array<{ facultyId: string }>
   deterministicPolicy: MsruasDeterministicPolicy
@@ -47,12 +57,16 @@ export type BuildSeededHistoricalSemesterRowsInput = {
 
 export type BuildSeededHistoricalSemesterRowsResult = {
   activeBacklogCount: number
+  activeBacklogCredits: number
+  historicalBacklogCredits: number
   courseScores: Map<string, number>
   currentCgpa: number
 }
 
 export type BuildSeededSemesterSixRowsInput = {
   activeBacklogCount: number
+  activeBacklogCredits: number
+  historicalBacklogCredits: number
   attendanceRows: any[]
   assessmentRows: any[]
   currentCgpa: number
@@ -89,6 +103,57 @@ export function buildSeededHistoricalSemesterRows(
   const cumulativeAttempts: GradePointSubjectAttempt[][] = []
   let currentCgpa = 0
   let activeBacklogCount = 0
+  let activeBacklogCredits = 0
+  let historicalBacklogCredits = 0
+  const activeBacklogItems: ActiveBacklogItem[] = []
+  const unit = (value: unknown, fallback: number) => {
+    const numeric = typeof value === 'number' ? value : Number(value)
+    return Number.isFinite(numeric) ? Math.max(0, Math.min(1, numeric)) : fallback
+  }
+  const cePassPct = (input.deterministicPolicy.passRules.ceMinimum / input.deterministicPolicy.passRules.ceMaximum) * 100
+  const seePassPct = (input.deterministicPolicy.passRules.seeMinimum / input.deterministicPolicy.passRules.seeMaximum) * 100
+  const classifyBacklogReason = (subject: Record<string, unknown>): Pick<ActiveBacklogItem, 'reason' | 'severity'> => {
+    const seePct = Number(subject.seePct ?? 100)
+    const cePct = Number(subject.cePct ?? 100)
+    const attendancePct = Number(subject.attendancePct ?? 100)
+    const score = Number(subject.score ?? 100)
+    if (Number.isFinite(seePct) && seePct < seePassPct) return { reason: 'see', severity: seePassPct - seePct }
+    if (Number.isFinite(cePct) && cePct < cePassPct) return { reason: 'ce', severity: cePassPct - cePct }
+    if (Number.isFinite(attendancePct) && attendancePct < input.deterministicPolicy.attendanceRules.minimumPercent) {
+      return { reason: 'attendance', severity: input.deterministicPolicy.attendanceRules.minimumPercent - attendancePct }
+    }
+    return { reason: 'overall', severity: Math.max(0, input.deterministicPolicy.passRules.overallMinimum - score) }
+  }
+  const backlogClearanceProbability = (item: ActiveBacklogItem, semesterNumber: number) => {
+    const profile = input.trajectory.profile ?? {}
+    const latent = input.trajectory.latentBase ?? {}
+    const behavior = profile.behavior ?? {}
+    const dynamics = profile.dynamics ?? {}
+    const intervention = profile.intervention ?? {}
+    const responsiveness = unit(latent.supportResponsiveness, 0.5)
+    const selfRegulation = unit(latent.selfRegulation, 0.5)
+    const practiceCompliance = unit(behavior.practiceCompliance, 0.5)
+    const recoveryTendency = unit(dynamics.recoveryTendency, 0.5)
+    const interventionReceptivity = unit(intervention.interventionReceptivity, 0.5)
+    const ageBoost = Math.min(0.22, Math.max(0, semesterNumber - item.failedSemester) * 0.08)
+    const nearMissBoost = item.severity <= 4 ? 0.14 : item.severity <= 8 ? 0.06 : item.severity >= 16 ? -0.08 : 0
+    const reasonBase = item.reason === 'attendance'
+      ? 0.62
+      : item.reason === 'see'
+        ? 0.56
+        : item.reason === 'ce'
+          ? 0.52
+          : 0.48
+    const probability = reasonBase
+      + (responsiveness * 0.08)
+      + (selfRegulation * 0.06)
+      + (practiceCompliance * 0.08)
+      + (recoveryTendency * 0.07)
+      + (interventionReceptivity * 0.06)
+      + ageBoost
+      + nearMissBoost
+    return Math.max(0.18, Math.min(0.92, probability))
+  }
 
   for (let semesterNumber = 1; semesterNumber <= 5; semesterNumber += 1) {
     const semesterCourses = input.runtimeCourses.filter(course => course.semesterNumber === semesterNumber)
@@ -296,7 +361,66 @@ export function buildSeededHistoricalSemesterRows(
     })
     const registeredCredits = semesterCourses.reduce((sum, course) => sum + course.credits, 0)
     const earnedCredits = subjectScores.filter(subject => subject.result === 'Passed').reduce((sum, subject) => sum + Number(subject.credits ?? 0), 0)
-    activeBacklogCount += subjectScores.filter(subject => subject.result === 'Failed').length
+    const failedSubjects = subjectScores.filter(subject => subject.result === 'Failed')
+    const failedCredits = failedSubjects.reduce((sum, subject) => sum + Number(subject.credits ?? 0), 0)
+    historicalBacklogCredits += failedCredits
+    const newBacklogItems = failedSubjects.map(subject => {
+      const record = subject as Record<string, unknown>
+      const courseCode = String(record.courseCode ?? 'NA')
+      const title = String(record.title ?? courseCode)
+      const classified = classifyBacklogReason(record)
+      return {
+        key: `${semesterNumber}::${courseCode}::${title}`,
+        courseCode,
+        title,
+        credits: Number(record.credits ?? 0),
+        failedSemester: semesterNumber,
+        ...classified,
+      }
+    })
+    activeBacklogItems.push(...newBacklogItems)
+    const unresolvedBacklogItems: ActiveBacklogItem[] = []
+    const backlogResolutionEvents: Array<{
+      courseCode: string
+      title: string
+      failedSemester: number
+      resolvedSemester: number
+      reason: ActiveBacklogItem['reason']
+      resolutionProbability: number
+    }> = []
+    activeBacklogItems.forEach(item => {
+      const resolutionProbability = backlogClearanceProbability(item, semesterNumber)
+      const resolved = deps.stableUnit(`run-${input.runSeed}-${input.trajectory.studentId}-${item.key}-backlog-resolution-sem-${semesterNumber}`) < resolutionProbability
+      if (resolved) {
+        backlogResolutionEvents.push({
+          courseCode: item.courseCode,
+          title: item.title,
+          failedSemester: item.failedSemester,
+          resolvedSemester: semesterNumber,
+          reason: item.reason,
+          resolutionProbability: deps.roundToTwo(resolutionProbability),
+        })
+      } else {
+        unresolvedBacklogItems.push(item)
+      }
+    })
+    activeBacklogItems.splice(0, activeBacklogItems.length, ...unresolvedBacklogItems)
+    activeBacklogCount = activeBacklogItems.length
+    activeBacklogCredits = activeBacklogItems.reduce((sum, item) => sum + item.credits, 0)
+    const activeBacklogKeys = new Set(activeBacklogItems.map(item => item.key))
+    const resolvedBacklogByKey = new Map<string, typeof backlogResolutionEvents[number]>(
+      backlogResolutionEvents.map(item => [`${item.failedSemester}::${item.courseCode}::${item.title}`, item]),
+    )
+    subjectScores.forEach(subject => {
+      if (subject.result !== 'Failed') return
+      const key = `${semesterNumber}::${String(subject.courseCode ?? 'NA')}::${String(subject.title ?? subject.courseCode ?? 'NA')}`
+      const classified = classifyBacklogReason(subject as Record<string, unknown>)
+      const resolution = resolvedBacklogByKey.get(key) ?? null
+      subject.backlogReason = classified.reason
+      subject.backlogActive = activeBacklogKeys.has(key)
+      subject.backlogResolutionStatus = resolution ? 'resolved-in-historical-window' : 'active'
+      if (resolution) subject.backlogResolution = resolution
+    })
     const term = deps.PROOF_TERM_DEFS.find(item => item.semesterNumber === semesterNumber)
     if (!term) continue
     const transcriptTermResultId = deps.createId('transcript_term')
@@ -339,6 +463,11 @@ export function buildSeededHistoricalSemesterRows(
         registeredCredits,
         earnedCredits,
         backlogCount: activeBacklogCount,
+        activeBacklogCredits,
+        historicalBacklogCredits,
+        clearedBacklogCredits: Math.max(0, historicalBacklogCredits - activeBacklogCredits),
+        lowerYearBlockerCredits: activeBacklogCredits > 15 ? activeBacklogCredits : 0,
+        backlogResolutionEvents,
         weakCoCount: semesterWeakCoCount,
         questionResultCoverage: semesterQuestionCoverage,
         interventionCount: semesterInterventionCount,
@@ -357,6 +486,10 @@ export function buildSeededHistoricalSemesterRows(
         summaryJson: JSON.stringify({
           cgpa: currentCgpa,
           backlogCount: activeBacklogCount,
+          activeBacklogCredits,
+          historicalBacklogCredits,
+          clearedBacklogCredits: Math.max(0, historicalBacklogCredits - activeBacklogCredits),
+          lowerYearBlockerCredits: activeBacklogCredits > 15 ? activeBacklogCredits : 0,
           transitionReadiness: activeBacklogCount === 0 && currentCgpa >= 6 ? 'stable' : activeBacklogCount <= 1 ? 'review' : 'support-required',
         }),
         createdAt: input.now,
@@ -366,6 +499,8 @@ export function buildSeededHistoricalSemesterRows(
 
   return {
     activeBacklogCount,
+    activeBacklogCredits,
+    historicalBacklogCredits,
     courseScores,
     currentCgpa,
   }
@@ -580,6 +715,9 @@ export function buildSeededSemesterSixRows(
         questionEvidenceSummary: questionResults.summary,
         cgpa: input.currentCgpa,
         backlogCount: input.activeBacklogCount,
+        activeBacklogCredits: input.activeBacklogCredits,
+        historicalBacklogCredits: input.historicalBacklogCredits,
+        lowerYearBlockerCredits: input.activeBacklogCredits > 15 ? input.activeBacklogCredits : 0,
         riskBand: inference.riskBand,
         riskProb: inference.riskProb,
         drivers: inference.observableDrivers,

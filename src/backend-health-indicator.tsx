@@ -64,11 +64,23 @@ export function useBackendHealthMonitor(apiBaseUrl: string, options: BackendHeal
   const [checking, setChecking] = useState(false)
   const [lastHealthyAt, setLastHealthyAt] = useState<number | null>(null)
   const consecutiveFailures = useRef(0)
+  const checkSequence = useRef(0)
+
+  useEffect(() => {
+    checkSequence.current += 1
+    consecutiveFailures.current = 0
+    setIsOffline(false)
+    setChecking(false)
+    setLastHealthyAt(null)
+  }, [enabled, normalizedBaseUrl])
 
   const runCheck = useCallback(async () => {
     if (!enabled || !normalizedBaseUrl) return
+    const sequence = checkSequence.current + 1
+    checkSequence.current = sequence
     setChecking(true)
     const healthy = await probeBackendHealth(normalizedBaseUrl, timeoutMs)
+    if (sequence !== checkSequence.current) return
     if (healthy) {
       consecutiveFailures.current = 0
       setIsOffline(false)

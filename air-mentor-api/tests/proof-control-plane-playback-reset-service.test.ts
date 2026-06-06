@@ -365,7 +365,7 @@ describe('proof-control-plane-playback-reset-service', () => {
       status: 'completed',
     })
     expect(deps.deleteProofCredentials).toHaveBeenCalledWith(db, 'batch_001')
-    expect(deps.invalidateProofBatchSessions).toHaveBeenCalledWith(db, 'batch_001')
+    expect(deps.invalidateProofBatchSessions).toHaveBeenCalledWith(db, 'batch_001', null)
     expect(deps.emitSimulationAudit).toHaveBeenCalledWith(db, expect.objectContaining({
       actionType: 'stopped',
       payload: expect.objectContaining({

@@ -51,7 +51,8 @@ describe('vite live API proxy config', () => {
 
     const config = await loadConfig()
 
-    expect(config.server).toBeUndefined()
+    expect(config.server?.proxy).toBeUndefined()
+    expect(config.server?.watch).toBeTruthy()
     expect(config.preview).toBeUndefined()
   })
 })

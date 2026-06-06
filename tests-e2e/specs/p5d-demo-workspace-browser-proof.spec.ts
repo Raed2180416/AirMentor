@@ -176,16 +176,23 @@ test('P5-D browser proof provisions seeded demo workspace, surfaces demo-bound r
 
     const adminRoute = `/#/admin/faculties/${hierarchy.academicFacultyId}/departments/${hierarchy.departmentId}/branches/${hierarchy.branchId}/batches/${hierarchy.batchId}`
     await page.goto(adminRoute, { waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('tab', { name: /Provision/i })).toBeVisible({ timeout: 60_000 })
-    await page.getByRole('tab', { name: /Provision/i }).click()
-    await expect(page.getByRole('button', { name: /Provision Seeded Demo Workspace/i })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('tab', { name: /^Provision$/i })).toHaveCount(0)
 
-    const [provisionResponse] = await Promise.all([
-      page.waitForResponse(response => response.url().includes('/api/admin/demo-workspaces/') && response.url().includes('/provision') && response.status() === 200, { timeout: 180_000 }),
-      page.getByRole('button', { name: /Provision Seeded Demo Workspace/i }).click(),
-    ])
-    const provisioned = await provisionResponse.json() as ProvisionedDemoWorkspace
-    demoWorkspaceId = provisioned.demoWorkspaceId
+    const createdWorkspace = await postJson<{ demoWorkspaceId: string }>(request, apiPath('/api/admin/demo-workspaces'), {
+      headers: csrfHeaders(sysadminSession.csrfToken),
+      data: {
+        name: `Playwright isolated proof workspace ${Date.now()}`,
+        ownerFacultyId: sysadminSession.faculty?.facultyId,
+        batchId: hierarchy.batchId,
+      },
+    }, 'Create isolated demo workspace through the backend test API')
+    demoWorkspaceId = createdWorkspace.demoWorkspaceId
+    const provisioned = await postJson<ProvisionedDemoWorkspace>(
+      request,
+      apiPath(`/api/admin/demo-workspaces/${encodeURIComponent(demoWorkspaceId)}/provision`),
+      { headers: csrfHeaders(sysadminSession.csrfToken), data: {} },
+      'Provision isolated demo workspace through the backend test API',
+    )
     expect(demoWorkspaceId).toMatch(/^demo_ws_/)
     expect(provisioned.activeSimulationRunId).toMatch(/^demo_/)
     expect(provisioned.provisionedCounts.students).toBeGreaterThan(0)
@@ -193,12 +200,6 @@ test('P5-D browser proof provisions seeded demo workspace, surfaces demo-bound r
     expect(provisioned.provisionedCounts.checkpoints).toBeGreaterThan(0)
     expect(provisioned.provisionedCounts.observedStates).toBeGreaterThan(0)
     expect(provisioned.provisionedCounts.riskAssessments).toBeGreaterThan(0)
-
-    await page.waitForFunction(
-      ([key, value]) => window.localStorage.getItem(key)?.includes(value),
-      [DEMO_POINTER_STORAGE_KEY, demoWorkspaceId],
-      { timeout: 30_000 },
-    )
 
     const { session: demoCourseLeaderSession } = await loginWithOptionalDemo(request, 'course-leader', demoWorkspaceId)
     expect(demoCourseLeaderSession.demoWorkspaceId).toBe(demoWorkspaceId)
@@ -217,9 +218,11 @@ test('P5-D browser proof provisions seeded demo workspace, surfaces demo-bound r
     )
     await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
     await signInAcademicThroughUi(page, 'rohit.menon', 'faculty1234')
-    const courseLeaderSummary = page.locator('[data-proof-surface="academic-proof-summary"][data-proof-scope="course-leader-dashboard"]').first()
-    await expect(courseLeaderSummary).toBeVisible({ timeout: 45_000 })
-    await expect(courseLeaderSummary).toContainText(/Course Leader Dashboard/i)
+    await expect(page.locator('[data-proof-surface="academic-proof-summary"]')).toHaveCount(0)
+    await page.locator('[data-proof-action="open-faculty-profile"]').click()
+    const courseLeaderProofPanel = page.locator('[data-proof-surface="teacher-proof-panel"]').first()
+    await expect(courseLeaderProofPanel).toBeVisible({ timeout: 45_000 })
+    await expect(courseLeaderProofPanel).toContainText(/Proof Control Plane/i)
 
     const { session: demoHodSession } = await loginWithOptionalDemo(request, 'hod', demoWorkspaceId)
     expect(demoHodSession.demoWorkspaceId).toBe(demoWorkspaceId)

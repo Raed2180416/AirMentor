@@ -60,12 +60,14 @@ export function AllStudentsPage({
   onOpenStudent,
   onOpenHistory,
   onOpenUpload,
+  proofStageKey,
 }: {
   onBack: () => void
   offerings: Offering[]
   onOpenStudent: (student: Student, offering: Offering) => void
   onOpenHistory: (student: Student, offering: Offering) => void
   onOpenUpload: (offering: Offering, kind: EntryKind) => void
+  proofStageKey?: string | null
 }) {
   const { getStudentsPatched } = useAppSelectors()
   const [query, setQuery] = useState('')
@@ -76,9 +78,9 @@ export function AllStudentsPage({
   const rows = useMemo(() => offerings.flatMap(offering => getStudentsPatched(offering).map(student => {
     const hasAttendance = student.totalClasses > 0
     const attendancePct = hasAttendance ? Math.round((student.present / Math.max(1, student.totalClasses)) * 100) : null
-    const riskApplicable = offering.stage >= 2 && student.riskBand != null && student.riskProb != null
+    const riskApplicable = (proofStageKey ? proofStageKey !== 'pre-tt1' : offering.stage >= 2) && student.riskBand != null && student.riskProb != null
     return { offering, student, attendancePct, hasAttendance, riskApplicable }
-  })), [getStudentsPatched, offerings])
+  })), [getStudentsPatched, offerings, proofStageKey])
 
   const filteredRows = useMemo(() => {
     const search = query.trim().toLowerCase()
@@ -625,8 +627,10 @@ export function EntryWorkspacePage({
   onUpdateStudentAttendance,
   schemeByOffering,
   ttBlueprintsByOffering,
+  studentHistoryByUsn,
   lockAuditByTarget,
   availableOfferings,
+  proofStageKey,
 }: {
   capabilities: FacultyCapabilitySet
   offeringId: string
@@ -644,8 +648,10 @@ export function EntryWorkspacePage({
   onUpdateStudentAttendance: (offeringId: string, studentId: string, patch: StudentRuntimePatch) => void
   schemeByOffering: Record<string, SchemeState>
   ttBlueprintsByOffering: Record<string, Record<TTKind, TermTestBlueprint>>
+  studentHistoryByUsn?: Record<string, StudentHistoryRecord>
   lockAuditByTarget: Record<string, QueueTransition[]>
   availableOfferings: Offering[]
+  proofStageKey?: string | null
 }) {
   const { deriveAcademicProjection, getStudentPatch, getStudentsPatched } = useAppSelectors()
   const selectedOffering = availableOfferings.find(item => item.offId === offeringId) ?? null
@@ -778,7 +784,7 @@ export function EntryWorkspacePage({
                     </thead>
                     <tbody>
                       {students.map(student => {
-                        const projection = deriveAcademicProjection({ offering: section, student, scheme: currentScheme })
+                        const projection = deriveAcademicProjection({ offering: section, student, scheme: currentScheme, history: studentHistoryByUsn?.[student.usn] ?? null, stageKey: proofStageKey })
                         const exactPatch = getStudentPatch(section.offId, student.id)
                         return (
                           <tr key={student.id} data-dense-row="true">
@@ -902,7 +908,7 @@ export function EntryWorkspacePage({
                                 />
                               </TD>
                             )}
-                            <TD><div style={{ ...mono, fontSize: 10, color: T.muted }}>CE {projection.ce60.toFixed(1)}/{currentScheme.policyContext.ce}<br />CGPA {projection.predictedCgpa.toFixed(2)}</div></TD>
+                            <TD><div style={{ ...mono, fontSize: 10, color: T.muted }}>CE {projection.ce60.toFixed(1)}/{currentScheme.policyContext.ce}<br />CGPA {projection.predictedCgpa?.toFixed(2) ?? '—'}</div></TD>
                             <TD><button aria-label={`Open ${student.name} profile`} title="Open profile" onClick={() => onOpenStudent(student, section)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                             <TD><button aria-label={`Add task for ${student.name}`} title="Add task" onClick={() => onOpenTaskComposer({ offeringId: section.offId, studentId: student.id, taskType: 'Follow-up' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 11 }}>+Task</button></TD>
                           </tr>

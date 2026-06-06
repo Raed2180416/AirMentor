@@ -75,11 +75,11 @@ export type DerivedAcademicProjection = {
   asgnScaled: number
   ce60: number
   seeRaw: number | null
-  seeScaled40: number
-  finalScore100: number
-  bandLabel: 'O' | 'A+' | 'A' | 'B+' | 'B' | 'C' | 'P' | 'F'
-  gradePoint: 0 | 4 | 5 | 6 | 7 | 8 | 9 | 10
-  predictedCgpa: number
+  seeScaled40: number | null
+  finalScore100: number | null
+  bandLabel: 'O' | 'A+' | 'A' | 'B+' | 'B' | 'C' | 'P' | 'F' | null
+  gradePoint: 0 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | null
+  predictedCgpa: number | null
 }
 
 export type FacultyAccount = {

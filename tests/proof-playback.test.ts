@@ -3,6 +3,7 @@ import {
   clearProofPlaybackSelection,
   PROOF_PLAYBACK_SELECTION_STORAGE_KEY,
   readProofPlaybackSelection,
+  readSharedProofPlaybackSelection,
   writeProofPlaybackSelection,
 } from '../src/proof-playback'
 
@@ -47,5 +48,29 @@ describe('proof playback storage helpers', () => {
 
     expect(readProofPlaybackSelection()).toBeNull()
     expect(localStorage.getItem(PROOF_PLAYBACK_SELECTION_STORAGE_KEY)).toBeNull()
+  })
+
+  it('restores a shared selection across admin and academic workspaces', () => {
+    const localStorage = new MemoryStorage()
+    vi.stubGlobal('window', { localStorage })
+
+    writeProofPlaybackSelection({
+      simulationRunId: 'run_001',
+      simulationStageCheckpointId: 'checkpoint_002',
+      updatedAt: '2026-06-04T15:00:00.000Z',
+      workspace: 'system-admin',
+      source: 'system-admin-proof-dashboard:auto',
+    })
+
+    expect(readSharedProofPlaybackSelection('academic')).toMatchObject({
+      simulationRunId: 'run_001',
+      simulationStageCheckpointId: 'checkpoint_002',
+      workspace: 'system-admin',
+    })
+    expect(readSharedProofPlaybackSelection('system-admin')).toMatchObject({
+      simulationRunId: 'run_001',
+      simulationStageCheckpointId: 'checkpoint_002',
+      workspace: 'system-admin',
+    })
   })
 })

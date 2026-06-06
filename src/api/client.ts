@@ -77,6 +77,7 @@ import type {
   ApiOfferingStageEligibility,
   ApiProofDashboard,
   ApiProofRunCheckpointDetail,
+  ApiProofRunCheckpointStudentSummary,
   ApiProofRunCheckpointStudentDetail,
   ApiProofReassessmentResolveRequest,
   ApiProofReassessmentResolveResponse,
@@ -154,6 +155,7 @@ export interface AirMentorApiClientLike {
   saveAcademicCellValues(payload: Record<string, number>): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
   saveAcademicLockByOffering(payload: Record<string, Record<string, boolean>>): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
   saveAcademicLockAuditByTarget(payload: Record<string, Array<{ action: string; actorRole: string; at?: number }>>): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
+  saveAcademicResolvedTasks(payload: Record<string, number>): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
   listAcademicTasks(): Promise<ApiAcademicTaskListResponse>
   saveAcademicTask(taskId: string, payload: ApiUpsertAcademicTaskRequest): Promise<ApiUpsertAcademicTaskResponse>
   listAcademicTaskPlacements(): Promise<ApiAcademicTaskPlacementListResponse>
@@ -265,6 +267,7 @@ export interface AirMentorApiClientLike {
   restoreProofRunSnapshot(simulationRunId: string, payload?: { simulationResetSnapshotId?: string }): Promise<{ simulationRunId: string; activeFlag: boolean }>
   getProofRunCheckpoints(simulationRunId: string): Promise<{ items: ApiSimulationStageCheckpointSummary[] }>
   getProofRunCheckpointDetail(simulationRunId: string, simulationStageCheckpointId: string): Promise<ApiProofRunCheckpointDetail>
+  listProofRunCheckpointStudents(simulationRunId: string, simulationStageCheckpointId: string): Promise<{ items: ApiProofRunCheckpointStudentSummary[] }>
   getProofRunCheckpointStudentDetail(simulationRunId: string, simulationStageCheckpointId: string, studentId: string): Promise<ApiProofRunCheckpointStudentDetail>
   getProofStudentEvidenceTimeline(simulationRunId: string, studentId: string): Promise<{ items: ApiProofStudentEvidenceTimelineItem[] }>
   listOfferings(): Promise<{ items: ApiAdminOffering[] }>
@@ -336,6 +339,14 @@ export interface AirMentorApiClientLike {
   previewCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, proposedOutcomes: Array<{ id: string; bloom: string }>): Promise<ApiCurriculumFeatureConfigPreview>
   getCurriculumFeatureConfigHistory(batchId: string, curriculumCourseId: string): Promise<{ events: ApiCurriculumFeatureConfigHistoryEvent[] }>
   getCurriculumGraph(batchId: string): Promise<ApiCurriculumGraphBundle>
+  saveCurriculumGraphDraft(batchId: string, payload: { nodes: any[]; edges: any[]; command?: any }): Promise<{ ok: boolean; draftId: string; savedAt: string }>
+  validateCurriculumGraph(batchId: string, payload?: { nodes?: any[]; edges?: any[] }): Promise<{ valid: boolean; errors: string[]; warnings: string[] }>
+  publishCurriculumGraph(batchId: string): Promise<{ ok: boolean; newImportVersionId: string; validation: { valid: boolean; errors: string[]; warnings: string[] }; publishedAt: string }>
+  undoCurriculumGraph(batchId: string): Promise<{ ok: boolean; reversePayload: any; commandType: string }>
+  redoCurriculumGraph(batchId: string): Promise<{ ok: boolean; forwardPayload: any; commandType: string }>
+  suggestCurriculumGraph(batchId: string, payload?: { targetCurriculumNodeIds?: string[] }): Promise<{ ok: boolean; candidateCount: number; candidateGenerationStatus: string }>
+  approveCurriculumGraphSuggestion(batchId: string, suggestionId: string): Promise<{ ok: boolean; suggestionId: string; status: string }>
+  rejectCurriculumGraphSuggestion(batchId: string, suggestionId: string): Promise<{ ok: boolean; suggestionId: string; status: string }>
   provisionBatch(batchId: string, payload: ApiBatchProvisioningRequest): Promise<ApiBatchProvisioningResponse>
   saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }): Promise<{ offeringId: string; scheme: SchemeState; version: number; policySnapshot: unknown }>
   saveOfferingQuestionPaper(offeringId: string, kind: TTKind, payload: { blueprint: TermTestBlueprint }): Promise<{ paperId: string; offeringId: string; kind: TTKind; blueprint: TermTestBlueprint; version: number }>
@@ -372,6 +383,7 @@ export interface AirMentorApiClientLike {
 }
 
 type FetchLike = typeof fetch
+const DEFAULT_API_REQUEST_TIMEOUT_MS = 30_000
 type DemoWorkspacePointerProvider = () => ActiveDemoWorkspacePointer | null
 
 function getDefaultFetch(): FetchLike {
@@ -413,12 +425,19 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   private readonly baseUrl: string
   private readonly fetchImpl: FetchLike
   private readonly demoWorkspacePointerProvider?: DemoWorkspacePointerProvider
+  private readonly requestTimeoutMs: number
   private csrfToken: string | null = null
 
-  constructor(baseUrl: string, fetchImpl?: FetchLike, demoWorkspacePointerProvider?: DemoWorkspacePointerProvider) {
+  constructor(
+    baseUrl: string,
+    fetchImpl?: FetchLike,
+    demoWorkspacePointerProvider?: DemoWorkspacePointerProvider,
+    requestTimeoutMs = DEFAULT_API_REQUEST_TIMEOUT_MS,
+  ) {
     this.baseUrl = baseUrl.replace(/\/$/, '')
     this.fetchImpl = fetchImpl ?? getDefaultFetch()
     this.demoWorkspacePointerProvider = demoWorkspacePointerProvider
+    this.requestTimeoutMs = Math.max(1, requestTimeoutMs)
   }
 
   async restoreSession() {
@@ -661,6 +680,13 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
 
   async saveAcademicLockAuditByTarget(payload: Record<string, Array<{ action: string; actorRole: string; at?: number }>>) {
     return this.request<{ ok: true; stateKey: ApiAcademicRuntimeKey }>('/api/academic/runtime/lock-audit-by-target', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async saveAcademicResolvedTasks(payload: Record<string, number>) {
+    return this.request<{ ok: true; stateKey: ApiAcademicRuntimeKey }>('/api/academic/runtime/resolvedTasks', {
       method: 'PUT',
       body: JSON.stringify(payload),
     })
@@ -1194,6 +1220,10 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<ApiProofRunCheckpointDetail>(`/api/admin/proof-runs/${simulationRunId}/checkpoints/${encodeURIComponent(simulationStageCheckpointId)}`)
   }
 
+  async listProofRunCheckpointStudents(simulationRunId: string, simulationStageCheckpointId: string) {
+    return this.request<{ items: ApiProofRunCheckpointStudentSummary[] }>(`/api/admin/proof-runs/${simulationRunId}/checkpoints/${encodeURIComponent(simulationStageCheckpointId)}/students`)
+  }
+
   async getProofRunCheckpointStudentDetail(simulationRunId: string, simulationStageCheckpointId: string, studentId: string) {
     return this.request<ApiProofRunCheckpointStudentDetail>(`/api/admin/proof-runs/${simulationRunId}/checkpoints/${encodeURIComponent(simulationStageCheckpointId)}/students/${encodeURIComponent(studentId)}`)
   }
@@ -1421,6 +1451,57 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
 
   async getCurriculumGraph(batchId: string) {
     return this.request<ApiCurriculumGraphBundle>(`/api/admin/batches/${batchId}/curriculum-graph`)
+  }
+
+  async saveCurriculumGraphDraft(batchId: string, payload: { nodes: any[]; edges: any[]; command?: any }) {
+    return this.request<{ ok: boolean; draftId: string; savedAt: string }>(`/api/admin/batches/${batchId}/curriculum-graph/draft`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async validateCurriculumGraph(batchId: string, payload?: { nodes?: any[]; edges?: any[] }) {
+    return this.request<{ valid: boolean; errors: string[]; warnings: string[] }>(`/api/admin/batches/${batchId}/curriculum-graph/validate`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    })
+  }
+
+  async publishCurriculumGraph(batchId: string) {
+    return this.request<{ ok: boolean; newImportVersionId: string; validation: { valid: boolean; errors: string[]; warnings: string[] }; publishedAt: string }>(`/api/admin/batches/${batchId}/curriculum-graph/publish`, {
+      method: 'POST',
+    })
+  }
+
+  async undoCurriculumGraph(batchId: string) {
+    return this.request<{ ok: boolean; reversePayload: any; commandType: string }>(`/api/admin/batches/${batchId}/curriculum-graph/undo`, {
+      method: 'POST',
+    })
+  }
+
+  async redoCurriculumGraph(batchId: string) {
+    return this.request<{ ok: boolean; forwardPayload: any; commandType: string }>(`/api/admin/batches/${batchId}/curriculum-graph/redo`, {
+      method: 'POST',
+    })
+  }
+
+  async suggestCurriculumGraph(batchId: string, payload?: { targetCurriculumNodeIds?: string[] }) {
+    return this.request<{ ok: boolean; candidateCount: number; candidateGenerationStatus: string }>(`/api/admin/batches/${batchId}/curriculum-graph/suggest`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    })
+  }
+
+  async approveCurriculumGraphSuggestion(batchId: string, suggestionId: string) {
+    return this.request<{ ok: boolean; suggestionId: string; status: string }>(`/api/admin/batches/${batchId}/curriculum-graph/suggestions/${suggestionId}/approve`, {
+      method: 'POST',
+    })
+  }
+
+  async rejectCurriculumGraphSuggestion(batchId: string, suggestionId: string) {
+    return this.request<{ ok: boolean; suggestionId: string; status: string }>(`/api/admin/batches/${batchId}/curriculum-graph/suggestions/${suggestionId}/reject`, {
+      method: 'POST',
+    })
   }
 
   async provisionBatch(batchId: string, payload: ApiBatchProvisioningRequest) {
@@ -1653,13 +1734,34 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
       ...(demoWorkspacePointer ? { 'X-AirMentor-Demo-Workspace': demoWorkspacePointer.demoWorkspaceId } : {}),
       ...(isMutatingRequestMethod(method) && this.csrfToken ? { 'X-AirMentor-CSRF': this.csrfToken } : {}),
     }
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      credentials: 'include',
-      ...init,
-      cache: cacheMode,
-      headers: resolvedHeaders,
-      method,
-    })
+    const abortController = new AbortController()
+    const callerSignal = init?.signal ?? null
+    const abortFromCaller = () => abortController.abort(callerSignal?.reason)
+    if (callerSignal?.aborted) abortFromCaller()
+    else callerSignal?.addEventListener('abort', abortFromCaller, { once: true })
+    const timeout = setTimeout(() => abortController.abort(new Error('API request timed out')), this.requestTimeoutMs)
+    let response: Response
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        credentials: 'include',
+        ...init,
+        cache: cacheMode,
+        headers: resolvedHeaders,
+        method,
+        signal: abortController.signal,
+      })
+    } catch (error) {
+      if (abortController.signal.aborted && callerSignal?.aborted !== true) {
+        throw new AirMentorApiError(0, `API request timed out after ${this.requestTimeoutMs}ms`, {
+          path,
+          timeoutMs: this.requestTimeoutMs,
+        })
+      }
+      throw error
+    } finally {
+      clearTimeout(timeout)
+      callerSignal?.removeEventListener('abort', abortFromCaller)
+    }
 
     if (response.status === 204) {
       return undefined as T

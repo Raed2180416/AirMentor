@@ -1,5 +1,5 @@
-import { eq } from 'drizzle-orm'
-import { stableAnchoredBeta } from './proof-world-realism-engine.js'
+import { count, eq, like } from 'drizzle-orm'
+import { stableAnchoredBeta, betaQuantile } from './proof-world-realism-engine.js'
 import type { AppDb } from '../db/client.js'
 import curriculumSeedJson from '../db/seeds/msruas-mnc-curriculum.json' with { type: 'json' }
 import {
@@ -15,6 +15,7 @@ import {
   batches,
   branches,
   bridgeModules,
+  courseOutcomeOverrides,
   courseTopicPartitions,
   courses,
   curriculumCourses,
@@ -37,6 +38,8 @@ import {
   sectionOfferings,
   simulationResetSnapshots,
   simulationRuns,
+  simulationStageCheckpoints,
+  simulationStageStudentProjections,
   semesterTransitionLogs,
   studentAcademicProfiles,
   studentAssessmentScores,
@@ -183,6 +186,13 @@ export const MSRUAS_PROOF_BRANCH_ID = 'branch_mnc_btech'
 export const MSRUAS_PROOF_BATCH_ID = 'batch_branch_mnc_btech_2023'
 export const MSRUAS_PROOF_SIMULATION_RUN_ID = 'sim_mnc_2023_first6_v1'
 export const MSRUAS_PROOF_CURRICULUM_IMPORT_ID = 'curriculum_import_mnc_2023_first6_v1'
+const MSRUAS_PROOF_STUDENT_ID_PREFIX = 'mnc_student_'
+const MSRUAS_PROOF_EXPECTED_STUDENT_COUNT = 120
+const MSRUAS_PROOF_EXPECTED_CURRICULUM_NODE_COUNT = curriculumSeed.courses.length
+const MSRUAS_PROOF_EXPECTED_CHECKPOINT_COUNT = 30
+const MSRUAS_PROOF_EXPECTED_PROJECTION_ROW_COUNT = MSRUAS_PROOF_EXPECTED_STUDENT_COUNT
+  * curriculumSeed.courses.filter(course => course.semester >= 1 && course.semester <= 6).length
+  * 5
 
 async function ensureProofAcademicFaculty(db: AppDb, institutionId: string, now: string) {
   const [existingAcademicFaculty] = await db.select().from(academicFaculties).where(eq(academicFaculties.academicFacultyId, 'academic_faculty_engineering_and_technology'))
@@ -327,17 +337,80 @@ export async function rehydrateProofFacultyCredentials(db: AppDb, now: string) {
   return { rehydratedCount }
 }
 
+async function readMsruasProofSandboxCompleteness(db: AppDb) {
+  const [
+    proofStudents,
+    proofMentorAssignments,
+    proofSimulationRuns,
+    proofCurriculumNodes,
+    proofCheckpointCount,
+    proofProjectionRowCount,
+  ] = await Promise.all([
+    db.select({ studentId: students.studentId }).from(students).where(like(students.studentId, `${MSRUAS_PROOF_STUDENT_ID_PREFIX}%`)),
+    db.select({ studentId: mentorAssignments.studentId, facultyId: mentorAssignments.facultyId }).from(mentorAssignments).where(like(mentorAssignments.studentId, `${MSRUAS_PROOF_STUDENT_ID_PREFIX}%`)),
+    db.select({ simulationRunId: simulationRuns.simulationRunId }).from(simulationRuns).where(eq(simulationRuns.simulationRunId, MSRUAS_PROOF_SIMULATION_RUN_ID)),
+    db.select({ curriculumNodeId: curriculumNodes.curriculumNodeId }).from(curriculumNodes).where(eq(curriculumNodes.curriculumImportVersionId, MSRUAS_PROOF_CURRICULUM_IMPORT_ID)),
+    db.select({ count: count() }).from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, MSRUAS_PROOF_SIMULATION_RUN_ID)),
+    db.select({ count: count() }).from(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationRunId, MSRUAS_PROOF_SIMULATION_RUN_ID)),
+  ])
+  const expectedMentorFacultyIds = new Set(PROOF_FACULTY.filter(faculty => faculty.permissions.includes('MENTOR')).map(faculty => faculty.facultyId))
+  const assignedMentorFacultyIds = new Set(proofMentorAssignments.map(row => row.facultyId).filter(facultyId => expectedMentorFacultyIds.has(facultyId)))
+  const counts = {
+    studentCount: proofStudents.length,
+    mentorAssignmentCount: proofMentorAssignments.length,
+    assignedMentorFacultyCount: assignedMentorFacultyIds.size,
+    expectedMentorFacultyCount: expectedMentorFacultyIds.size,
+    simulationRunCount: proofSimulationRuns.length,
+    curriculumNodeCount: proofCurriculumNodes.length,
+    expectedCurriculumNodeCount: MSRUAS_PROOF_EXPECTED_CURRICULUM_NODE_COUNT,
+    checkpointCount: Number(proofCheckpointCount[0]?.count ?? 0),
+    expectedCheckpointCount: MSRUAS_PROOF_EXPECTED_CHECKPOINT_COUNT,
+    projectionRowCount: Number(proofProjectionRowCount[0]?.count ?? 0),
+    expectedProjectionRowCount: MSRUAS_PROOF_EXPECTED_PROJECTION_ROW_COUNT,
+  }
+  const hasPlaybackPayload = counts.checkpointCount > 0 || counts.projectionRowCount > 0
+  const playbackLedgerComplete = !hasPlaybackPayload
+    || (
+      counts.checkpointCount === MSRUAS_PROOF_EXPECTED_CHECKPOINT_COUNT
+      && counts.projectionRowCount === MSRUAS_PROOF_EXPECTED_PROJECTION_ROW_COUNT
+    )
+  return {
+    ...counts,
+    complete: counts.studentCount === MSRUAS_PROOF_EXPECTED_STUDENT_COUNT
+      && counts.mentorAssignmentCount === MSRUAS_PROOF_EXPECTED_STUDENT_COUNT
+      && counts.assignedMentorFacultyCount === counts.expectedMentorFacultyCount
+      && counts.simulationRunCount === 1
+      && counts.curriculumNodeCount >= MSRUAS_PROOF_EXPECTED_CURRICULUM_NODE_COUNT
+      && playbackLedgerComplete,
+    hasSeedPayload: counts.studentCount > 0
+      || counts.mentorAssignmentCount > 0
+      || counts.simulationRunCount > 0
+      || counts.curriculumNodeCount > 0
+      || counts.checkpointCount > 0
+      || counts.projectionRowCount > 0,
+  }
+}
+
 export async function ensureMsruasProofSandboxSeeded(db: AppDb, options: {
   institutionId?: string
   now: string
   policy: ResolvedPolicy
 }) {
-  const [existingBatch] = await db.select().from(batches).where(eq(batches.batchId, MSRUAS_PROOF_BATCH_ID))
-  if (existingBatch) {
-    return {
-      seeded: false,
-      batchId: existingBatch.batchId,
+  // Check if the proof sandbox curriculum import version exists (not just the batch,
+  // because generic seed.ts may have created the batch without the rich curriculum data)
+  const [existingImport] = await db.select().from(curriculumImportVersions).where(eq(curriculumImportVersions.curriculumImportVersionId, MSRUAS_PROOF_CURRICULUM_IMPORT_ID))
+  if (existingImport) {
+    const completeness = await readMsruasProofSandboxCompleteness(db)
+    if (completeness.complete) {
+      return {
+        seeded: false,
+        batchId: MSRUAS_PROOF_BATCH_ID,
+      }
     }
+    if (completeness.hasSeedPayload) {
+      throw new Error(`MSRUAS proof sandbox import exists but cohort is incomplete: students=${completeness.studentCount}/${MSRUAS_PROOF_EXPECTED_STUDENT_COUNT}, mentorAssignments=${completeness.mentorAssignmentCount}/${MSRUAS_PROOF_EXPECTED_STUDENT_COUNT}, mentorFaculty=${completeness.assignedMentorFacultyCount}/${completeness.expectedMentorFacultyCount}, simulationRuns=${completeness.simulationRunCount}, curriculumNodes=${completeness.curriculumNodeCount}/${completeness.expectedCurriculumNodeCount}, checkpoints=${completeness.checkpointCount}/${completeness.expectedCheckpointCount}, projectionRows=${completeness.projectionRowCount}/${completeness.expectedProjectionRowCount}. Refusing to skip proof seed.`)
+    }
+    await db.delete(curriculumImportVersions).where(eq(curriculumImportVersions.curriculumImportVersionId, MSRUAS_PROOF_CURRICULUM_IMPORT_ID))
   }
 
   const resolvedInstitutionId = options.institutionId ?? (
@@ -407,6 +480,15 @@ function stableBetween(seed: string, min: number, max: number) {
   return min + (stableUnit(seed) * (max - min))
 }
 
+// Deterministic Beta distribution sample. Maps the stable hash through the Beta
+// inverse CDF to produce non-uniform latent trait distributions. Outcome rates
+// are validated from realized attendance/mark rows, not inferred from this
+// latent CDF alone.
+function stableBeta(seed: string, a: number, b: number): number {
+  const u = Math.max(stableUnit(seed), 1e-6)
+  return betaQuantile(Math.min(u, 1 - 1e-6), a, b)
+}
+
 function pickName(index: number) {
   const first = FIRST_NAMES[index % FIRST_NAMES.length]
   const last = LAST_NAMES[Math.floor(index / FIRST_NAMES.length) % LAST_NAMES.length]
@@ -464,10 +546,57 @@ function sectionForIndex(index: number): 'A' | 'B' {
   return index < 60 ? 'A' : 'B'
 }
 
+function proofCourseSlug(course: Pick<CurriculumSeedCourse, 'internalCompilerId'>) {
+  return course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+}
+
+function proofOfferingId(semesterNumber: number, course: Pick<CurriculumSeedCourse, 'internalCompilerId'>, sectionCode: 'A' | 'B') {
+  return `mnc_s${semesterNumber}_${proofCourseSlug(course)}_${sectionCode.toLowerCase()}`
+}
+
+function proofOfferingYearLabel(semesterNumber: number) {
+  if (semesterNumber <= 2) return '1st Year'
+  if (semesterNumber <= 4) return '2nd Year'
+  return '3rd Year'
+}
+
+function proofSeedOfferingStage(semesterNumber: number) {
+  if (semesterNumber === 6) {
+    return {
+      stage: 2,
+      stageLabel: 'TT1 Review',
+      stageDescription: 'Observable monitoring window after TT1; reassessment stays active.',
+      stageColor: '#f59e0b',
+      tt1Done: 1,
+      tt2Done: 0,
+      tt1Locked: 1,
+      tt2Locked: 0,
+      quizLocked: 1,
+      assignmentLocked: 1,
+      finalsLocked: 0,
+      pendingAction: 'Adaptive reassessment window active',
+    }
+  }
+  return {
+    stage: 1,
+    stageLabel: 'Pre-TT1',
+    stageDescription: 'Watch and early evidence window before TT1 closes.',
+    stageColor: '#64748b',
+    tt1Done: 0,
+    tt2Done: 0,
+    tt1Locked: 0,
+    tt2Locked: 0,
+    quizLocked: 0,
+    assignmentLocked: 0,
+    finalsLocked: 0,
+    pendingAction: null,
+  }
+}
+
 function buildStudentTrajectory(index: number): StudentTrajectory {
   const sectionCode = sectionForIndex(index)
-  const sectionAbility = sectionCode === 'A' ? 0.64 : 0.5
-  const sectionDiscipline = sectionCode === 'A' ? 0.66 : 0.56
+  const sectionAbilityShift = sectionCode === 'A' ? 0.04 : -0.04
+  const sectionDisciplineShift = sectionCode === 'A' ? 0.03 : -0.03
   const seedBase = `student-${index + 1}`
   return {
     studentId: `mnc_student_${String(index + 1).padStart(3, '0')}`,
@@ -475,12 +604,14 @@ function buildStudentTrajectory(index: number): StudentTrajectory {
     name: pickName(index),
     sectionCode,
     latentBase: {
-      academicPotential: clamp(sectionAbility + stableBetween(`${seedBase}-ability`, -0.18, 0.18), 0.2, 0.94),
-      mathematicsFoundation: clamp((sectionAbility + 0.04) + stableBetween(`${seedBase}-math`, -0.2, 0.2), 0.2, 0.96),
-      computingFoundation: clamp((sectionAbility - 0.02) + stableBetween(`${seedBase}-computing`, -0.2, 0.2), 0.18, 0.96),
-      selfRegulation: clamp(sectionDiscipline + stableBetween(`${seedBase}-self`, -0.18, 0.18), 0.2, 0.95),
-      attendanceDiscipline: clamp((sectionDiscipline + 0.03) + stableBetween(`${seedBase}-attendance`, -0.2, 0.2), 0.2, 0.98),
-      supportResponsiveness: clamp(0.56 + stableBetween(`${seedBase}-support`, -0.2, 0.2), 0.15, 0.96),
+      // Beta-distributed traits keep the cohort non-uniform while stage/run
+      // audits validate the realized attendance and mark distributions.
+      academicPotential: clamp(stableBeta(`${seedBase}-ability`, 8, 2) + sectionAbilityShift, 0.2, 0.94),
+      mathematicsFoundation: clamp(stableBeta(`${seedBase}-math`, 7, 2.5) + sectionAbilityShift, 0.2, 0.96),
+      computingFoundation: clamp(stableBeta(`${seedBase}-computing`, 7, 2.5) + sectionAbilityShift, 0.18, 0.96),
+      selfRegulation: clamp(stableBeta(`${seedBase}-self`, 8, 2) + sectionDisciplineShift, 0.2, 0.95),
+      attendanceDiscipline: clamp(stableBeta(`${seedBase}-attendance`, 8, 2) + sectionDisciplineShift, 0.2, 0.98),
+      supportResponsiveness: clamp(stableBeta(`${seedBase}-support`, 5, 3), 0.15, 0.96),
     },
   }
 }
@@ -555,8 +686,15 @@ function simulateSemesterCourse(input: {
   const volatility = clamp(1.0 - student.latentBase.selfRegulation, 0.04, 0.62)
   const concentration = clamp(35 * (1 - volatility), 6, 50)
 
-  // Calibrated attendance anchor (0.7 base) ensures majority cross 75% unless heavily undisciplined
-  const anchorAtt = clamp(0.70 + (student.latentBase.attendanceDiscipline * 0.25) - (difficulty * 0.05), 0.65, 0.98)
+  const lowDisciplineAttendancePenalty = student.latentBase.attendanceDiscipline < 0.75 ? 0.06 : 0
+  const anchorAtt = clamp(
+    0.76
+      + (student.latentBase.attendanceDiscipline * 0.24)
+      - (difficulty * 0.04)
+      - lowDisciplineAttendancePenalty,
+    0.60,
+    0.98,
+  )
   const attendancePct = Math.round(stableAnchoredBeta({ seed: `${student.studentId}-${course.internalCompilerId}-att`, anchor: anchorAtt, concentration }) * 100)
 
   // Calibrated mastery-to-score anchor. 0.5 mastery now realistically maps to ~65% passing score.
@@ -694,17 +832,35 @@ function weeklyContactHoursForCourse(course: CurriculumSeedCourse) {
   return Math.max(2, Math.round(totalContactHours / 16))
 }
 
-function buildTimetablePayload(loadsByFacultyId: Map<string, Array<{ offeringId: string; courseCode: string; courseName: string; sectionCode: string; semesterNumber: number; weeklyHours: number }>>) {
+function buildTimetablePayload(loadsByFacultyId: Map<string, Array<{ offeringId: string; courseCode: string; courseName: string; sectionCode: string; semesterNumber: number; weeklyHours: number }>>, now: string) {
   const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const
-  const slots = [
+  const baseSlots = [
     { id: 'slot_1', label: '08:30-09:30', startTime: '08:30', endTime: '09:30' },
     { id: 'slot_2', label: '09:30-10:30', startTime: '09:30', endTime: '10:30' },
     { id: 'slot_3', label: '10:45-11:45', startTime: '10:45', endTime: '11:45' },
     { id: 'slot_4', label: '11:45-12:45', startTime: '11:45', endTime: '12:45' },
     { id: 'slot_5', label: '13:30-14:30', startTime: '13:30', endTime: '14:30' },
     { id: 'slot_6', label: '14:30-15:30', startTime: '14:30', endTime: '15:30' },
-  ] as const
-  const cells = weekdays.flatMap(day => slots.map(slot => ({ day, slot })))
+  ]
+  const minutesToTime = (minutes: number) => `${Math.floor(minutes / 60).toString().padStart(2, '0')}:${(minutes % 60).toString().padStart(2, '0')}`
+  const slotEndMinutes = (slot: { endTime: string }) => Number(slot.endTime.slice(0, 2)) * 60 + Number(slot.endTime.slice(3, 5))
+  const buildSlotsForRequiredCapacity = (requiredSlotsPerDay: number) => {
+    const slots = [...baseSlots]
+    let nextStartMinutes = slotEndMinutes(slots[slots.length - 1]!) + 15
+    while (slots.length < requiredSlotsPerDay) {
+      const nextEndMinutes = nextStartMinutes + 60
+      const startTime = minutesToTime(nextStartMinutes)
+      const endTime = minutesToTime(nextEndMinutes)
+      slots.push({
+        id: `slot_${slots.length + 1}`,
+        label: `${startTime}-${endTime}`,
+        startTime,
+        endTime,
+      })
+      nextStartMinutes = nextEndMinutes + (slots.length % 2 === 0 ? 15 : 0)
+    }
+    return slots
+  }
   const result: Record<string, Record<string, unknown>> = {}
   for (const [facultyId, entries] of loadsByFacultyId.entries()) {
     const classBlocks: Array<Record<string, unknown>> = []
@@ -715,6 +871,9 @@ function buildTimetablePayload(loadsByFacultyId: Map<string, Array<{ offeringId:
       if (left.sectionCode !== right.sectionCode) return left.sectionCode.localeCompare(right.sectionCode)
       return left.courseCode.localeCompare(right.courseCode)
     })
+    const totalRequiredBlocks = sortedEntries.reduce((total, entry) => total + Math.max(1, entry.weeklyHours), 0)
+    const slots = buildSlotsForRequiredCapacity(Math.max(baseSlots.length, Math.ceil(totalRequiredBlocks / weekdays.length)))
+    const cells = weekdays.flatMap(day => slots.map(slot => ({ day, slot })))
     sortedEntries.forEach((entry, entryIndex) => {
       const repeatCount = Math.max(1, Math.min(cells.length, entry.weeklyHours))
       for (let blockIndex = 0; blockIndex < repeatCount; blockIndex += 1) {
@@ -750,9 +909,9 @@ function buildTimetablePayload(loadsByFacultyId: Map<string, Array<{ offeringId:
       facultyId,
       slots,
       dayStartMinutes: 8 * 60 + 30,
-      dayEndMinutes: 15 * 60 + 30,
+      dayEndMinutes: Math.max(15 * 60 + 30, slotEndMinutes(slots[slots.length - 1]!)),
       classBlocks,
-      updatedAt: Date.now(),
+      updatedAt: new Date(now).getTime(),
     }
   }
   return result
@@ -777,6 +936,14 @@ async function upsertRuntimeSlice(db: AppDb, stateKey: string, payload: unknown,
 }
 
 export async function seedMsruasProofSandbox(db: AppDb, options: {
+  institutionId: string
+  now: string
+  policy: ResolvedPolicy
+}) {
+  return db.transaction(async tx => seedMsruasProofSandboxUnsafe(tx as unknown as AppDb, options))
+}
+
+async function seedMsruasProofSandboxUnsafe(db: AppDb, options: {
   institutionId: string
   now: string
   policy: ResolvedPolicy
@@ -845,7 +1012,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     version: 1,
     createdAt: now,
     updatedAt: now,
-  })
+  }).onConflictDoNothing()
 
   await db.insert(academicTerms).values(PROOF_TERM_DEFS.map(term => ({
     termId: term.termId,
@@ -859,7 +1026,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     version: 1,
     createdAt: now,
     updatedAt: now,
-  })))
+  }))).onConflictDoNothing()
 
   for (const faculty of PROOF_FACULTY) {
     await db.insert(userAccounts).values({
@@ -964,7 +1131,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     createdAt: now,
     updatedAt: now,
   }))
-  await db.insert(courses).values(courseRows)
+  await db.insert(courses).values(courseRows).onConflictDoNothing()
 
   const curriculumNodeRows: Array<typeof curriculumNodes.$inferInsert> = curriculumSeed.courses.map((course, index) => ({
     curriculumNodeId: `curriculum_node_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
@@ -999,7 +1166,32 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     version: 1,
     createdAt: now,
     updatedAt: now,
-  })))
+  }))).onConflictDoNothing()
+
+  // Seed default course outcomes for the proof curriculum (skip if seed.ts already created them)
+  const existingOutcomes = await db.select().from(courseOutcomeOverrides).where(eq(courseOutcomeOverrides.scopeId, MSRUAS_PROOF_BATCH_ID))
+  const existingCourseIds = new Set(existingOutcomes.map(o => o.courseId))
+  const proofOutcomeRows: Array<typeof courseOutcomeOverrides.$inferInsert> = []
+  for (const course of curriculumSeed.courses) {
+    const cid = courseRows.find(cr => cr.courseId === `course_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`)?.courseId
+    if (!cid || existingCourseIds.has(cid)) continue
+    proofOutcomeRows.push({
+      courseOutcomeOverrideId: `outcome_override_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+      courseId: cid,
+      scopeType: 'batch',
+      scopeId: MSRUAS_PROOF_BATCH_ID,
+      outcomesJson: JSON.stringify([
+        { id: 'co_1', desc: `Understand core concepts of ${course.title}`, bloom: 'understand', masteryTarget: 0.6 },
+        { id: 'co_2', desc: `Apply ${course.title} principles to solve problems`, bloom: 'apply', masteryTarget: 0.7 },
+        { id: 'co_3', desc: `Analyze and evaluate ${course.title} scenarios`, bloom: 'analyze', masteryTarget: 0.75 },
+      ]),
+      status: 'active',
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+  if (proofOutcomeRows.length > 0) await db.insert(courseOutcomeOverrides).values(proofOutcomeRows)
 
   const curriculumNodeIdByTitle = new Map(curriculumSeed.courses.map((course, index) => [course.title, curriculumNodeRows[index].curriculumNodeId]))
   const curriculumEdgeRows: Array<typeof curriculumEdges.$inferInsert> = [
@@ -1140,7 +1332,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     facultyCount: PROOF_FACULTY.length,
     semesterStart: 1,
     semesterEnd: 6,
-    activeOperationalSemester: 6,
+    activeOperationalSemester: 1,
     activeStageKey: 'pre-tt1',
     sourceType: 'simulation',
     policySnapshotJson: JSON.stringify(policy),
@@ -1157,66 +1349,74 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     updatedAt: now,
   })
 
+  const proofOfferingRows: Array<typeof sectionOfferings.$inferInsert> = []
   const sem6OfferingRows: Array<typeof sectionOfferings.$inferInsert> = []
-  const sem6OwnershipRows: Array<typeof facultyOfferingOwnerships.$inferInsert> = []
+  const proofOwnershipRows: Array<typeof facultyOfferingOwnerships.$inferInsert> = []
   const offeringFacultyById = new Map<string, ProofFacultySeed>()
   const activeOfferingLoads = new Map<string, Array<{ offeringId: string; courseCode: string; courseName: string; sectionCode: string; semesterNumber: number; weeklyHours: number }>>()
-  ;(['A', 'B'] as const).forEach((sectionCode, sectionOffset) => {
-    sem6Courses.forEach((course, courseIndex) => {
-      const courseRow = courseRows.find(row => row.title === course.title)
-      if (!courseRow) return
-      const offeringId = `mnc_s6_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${sectionCode.toLowerCase()}`
-      const faculty = sem6CourseLeaderFaculty[(courseIndex + (sectionOffset * 3)) % sem6CourseLeaderFaculty.length]
-      offeringFacultyById.set(offeringId, faculty)
-      sem6OfferingRows.push({
-        offeringId,
-        courseId: courseRow.courseId,
-        termId: 'term_mnc_sem6',
-        branchId: MSRUAS_PROOF_BRANCH_ID,
-        sectionCode,
-        yearLabel: '3rd Year',
-        attendance: sectionCode === 'A' ? 82 : 74,
-        studentCount: 60,
-        stage: 2,
-        stageLabel: 'TT1 Review',
-        stageDescription: 'Observable monitoring window after TT1; reassessment stays active.',
-        stageColor: '#f59e0b',
-        tt1Done: 1,
-        tt2Done: 0,
-        tt1Locked: 1,
-        tt2Locked: 0,
-        quizLocked: 1,
-        assignmentLocked: 1,
-        pendingAction: 'Adaptive reassessment window active',
-        status: 'active',
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
+  for (let semesterNumber = 1; semesterNumber <= 6; semesterNumber += 1) {
+    const semesterCourseRows = semesterCourses(semesterNumber)
+    const stageSeed = proofSeedOfferingStage(semesterNumber)
+    ;(['A', 'B'] as const).forEach((sectionCode, sectionOffset) => {
+      semesterCourseRows.forEach((course, courseIndex) => {
+        const courseRow = courseRows.find(row => row.title === course.title)
+        if (!courseRow) return
+        const offeringId = proofOfferingId(semesterNumber, course, sectionCode)
+        const faculty = sem6CourseLeaderFaculty[(courseIndex + (sectionOffset * 3) + (semesterNumber - 1)) % sem6CourseLeaderFaculty.length]
+        offeringFacultyById.set(offeringId, faculty)
+        const offeringRow = {
+          offeringId,
+          courseId: courseRow.courseId,
+          termId: `term_mnc_sem${semesterNumber}`,
+          branchId: MSRUAS_PROOF_BRANCH_ID,
+          sectionCode,
+          yearLabel: proofOfferingYearLabel(semesterNumber),
+          attendance: semesterNumber === 6 ? (sectionCode === 'A' ? 82 : 74) : 0,
+          studentCount: 60,
+          stage: stageSeed.stage,
+          stageLabel: stageSeed.stageLabel,
+          stageDescription: stageSeed.stageDescription,
+          stageColor: stageSeed.stageColor,
+          tt1Done: stageSeed.tt1Done,
+          tt2Done: stageSeed.tt2Done,
+          tt1Locked: stageSeed.tt1Locked,
+          tt2Locked: stageSeed.tt2Locked,
+          quizLocked: stageSeed.quizLocked,
+          assignmentLocked: stageSeed.assignmentLocked,
+          finalsLocked: stageSeed.finalsLocked,
+          pendingAction: stageSeed.pendingAction,
+          status: 'active',
+          version: 1,
+          createdAt: now,
+          updatedAt: now,
+        }
+        proofOfferingRows.push(offeringRow)
+        if (semesterNumber === 6) sem6OfferingRows.push(offeringRow)
+        proofOwnershipRows.push({
+          ownershipId: `ownership_${faculty.facultyId}_${offeringId}`,
+          offeringId,
+          facultyId: faculty.facultyId,
+          ownershipRole: 'owner',
+          status: 'active',
+          version: 1,
+          createdAt: now,
+          updatedAt: now,
+        })
+        const facultyLoads = activeOfferingLoads.get(faculty.facultyId) ?? []
+        facultyLoads.push({
+          offeringId,
+          courseCode: courseCodeForSeed(course),
+          courseName: course.title,
+          sectionCode,
+          semesterNumber,
+          weeklyHours: weeklyContactHoursForCourse(course),
+        })
+        activeOfferingLoads.set(faculty.facultyId, facultyLoads)
       })
-      sem6OwnershipRows.push({
-        ownershipId: `ownership_${faculty.facultyId}_${offeringId}`,
-        offeringId,
-        facultyId: faculty.facultyId,
-        ownershipRole: 'owner',
-        status: 'active',
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
-      })
-      const facultyLoads = activeOfferingLoads.get(faculty.facultyId) ?? []
-      facultyLoads.push({
-        offeringId,
-        courseCode: courseCodeForSeed(course),
-        courseName: course.title,
-        sectionCode,
-        semesterNumber: 6,
-        weeklyHours: weeklyContactHoursForCourse(course),
-      })
-      activeOfferingLoads.set(faculty.facultyId, facultyLoads)
     })
-  })
-  await db.insert(sectionOfferings).values(sem6OfferingRows)
-  await db.insert(facultyOfferingOwnerships).values(sem6OwnershipRows)
+  }
+  await db.insert(sectionOfferings).values(proofOfferingRows)
+  await db.insert(facultyOfferingOwnerships).values(proofOwnershipRows)
 
   const trajectories = Array.from({ length: 120 }, (_, index) => buildStudentTrajectory(index))
   const studentRows: Array<typeof students.$inferInsert> = []
@@ -1254,9 +1454,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     ;(['A', 'B'] as const).forEach((sectionCode, sectionOffset) => {
       semesterCourseRows.forEach((course, courseIndex) => {
         const faculty = facultyPool[(courseIndex + sectionOffset) % facultyPool.length]
-        const offeringId = semesterNumber === 6
-          ? `mnc_s6_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${sectionCode.toLowerCase()}`
-          : null
+        const offeringId = proofOfferingId(semesterNumber, course, sectionCode)
         teacherAllocationRows.push({
           teacherAllocationId: `allocation_${faculty.facultyId}_s${semesterNumber}_${sectionCode}_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
           simulationRunId: MSRUAS_PROOF_SIMULATION_RUN_ID,
@@ -1307,6 +1505,8 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     const cumulativeAttempts: GradePointSubjectAttempt[][] = []
     let currentCgpa = 0
     let activeBacklogCount = 0
+    let activeBacklogCredits = 0
+    let progressionGateExceeded = false
 
     for (const term of PROOF_TERM_DEFS) {
       enrollmentRows.push({
@@ -1325,16 +1525,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
       })
     }
 
-    let hasDroppedOut = false;
     for (let semesterNumber = 1; semesterNumber <= 5; semesterNumber += 1) {
-      if (hasDroppedOut) {
-        const term = PROOF_TERM_DEFS.find(item => item.semesterNumber === semesterNumber)
-        if (term) {
-           const eRow = enrollmentRows.find(r => r.termId === term.termId && r.studentId === trajectory.studentId)
-           if (eRow) eRow.academicStatus = 'dropped-out'
-        }
-        continue;
-      }
       const term = PROOF_TERM_DEFS.find(item => item.semesterNumber === semesterNumber)
       if (!term) continue
       const facultyPool = courseFacultyBySemester.get(semesterNumber) ?? sem6CourseLeaderFaculty
@@ -1397,8 +1588,15 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
 
       const registeredCredits = semesterSubjectRows.reduce((sum, row) => sum + row.course.credits, 0)
       const earnedCredits = semesterSubjectRows.filter(row => row.result === 'Passed').reduce((sum, row) => sum + row.course.credits, 0)
-      const failuresThisSemester = semesterSubjectRows.filter(row => row.result === 'Failed').length
-      activeBacklogCount += failuresThisSemester
+      const failedSubjects = semesterSubjectRows.filter(row => row.result === 'Failed')
+      const failedCreditsThisSem = failedSubjects.reduce((sum, row) => sum + row.course.credits, 0)
+      activeBacklogCount += failedSubjects.length
+      activeBacklogCredits += failedCreditsThisSem
+      // Keep all proof students auditable across six semesters; expose the
+      // progression gate as risk context instead of deleting later evidence.
+      if (semesterNumber % 2 === 0 && activeBacklogCredits > 15) {
+        progressionGateExceeded = true
+      }
       const sgpa = calculateSgpa({
         attempts: semesterAttempts,
         policy: {
@@ -1426,8 +1624,8 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
           },
         },
       })
-      if (activeBacklogCount > 6) {
-        hasDroppedOut = true;
+      if (activeBacklogCount > 6 || (semesterNumber % 2 === 0 && activeBacklogCredits > 15)) {
+        progressionGateExceeded = true
       }
       const transcriptTermResultId = `transcript_${trajectory.studentId}_${term.termId}`
       transcriptTermRows.push({
@@ -1467,6 +1665,8 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
           registeredCredits,
           earnedCredits,
           backlogCount: activeBacklogCount,
+          activeBacklogCredits,
+          progressionGateExceeded,
           subjectScores: semesterSubjectRows.map(row => ({
             courseCode: courseCodeForSeed(row.course),
             title: row.course.title,
@@ -1551,7 +1751,15 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
         const volatility = clamp(1.0 - trajectory.latentBase.selfRegulation, 0.04, 0.62)
         const concentration = clamp(35 * (1 - volatility), 6, 50)
 
-        const anchorAtt = clamp(0.70 + (trajectory.latentBase.attendanceDiscipline * 0.25) - (difficulty * 0.05), 0.65, 0.98)
+        const lowDisciplineAttendancePenalty = trajectory.latentBase.attendanceDiscipline < 0.75 ? 0.06 : 0
+        const anchorAtt = clamp(
+          0.76
+            + (trajectory.latentBase.attendanceDiscipline * 0.24)
+            - (difficulty * 0.04)
+            - lowDisciplineAttendancePenalty,
+          0.60,
+          0.98,
+        )
         const attendancePct = Math.round(stableAnchoredBeta({ seed: `${trajectory.studentId}-${offering.offeringId}-att`, anchor: anchorAtt, concentration }) * 100)
 
         const anchorCe = clamp(0.38 + (mastery * 0.5) + (prereq * 0.1) - (difficulty * 0.08), 0.1, 0.97)
@@ -1569,7 +1777,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
         const inference = inferObservableRisk({
           attendancePct,
           currentCgpa,
-          backlogCount: Math.max(0, Math.round(stableBetween(`${trajectory.studentId}-backlog-observed`, currentCgpa < 6 ? 1 : 0, currentCgpa < 5.2 ? 3 : 1))),
+          backlogCount: activeBacklogCount,
           tt1Pct,
           tt2Pct,
           quizPct,
@@ -1883,13 +2091,13 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
       batchId: MSRUAS_PROOF_BATCH_ID,
       facultyCount: PROOF_FACULTY.length,
       studentCount: trajectories.length,
-      offeringCount: sem6OfferingRows.length,
-      generatedAt: now,
+      offeringCount: proofOfferingRows.length,
+          generatedAt: now,
     }),
     createdAt: now,
   })
 
-  const timetablePayload = buildTimetablePayload(activeOfferingLoads)
+  const timetablePayload = buildTimetablePayload(activeOfferingLoads, now)
   const currentTimetableSlice = await db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, 'timetableByFacultyId'))
   const mergedTimetable = currentTimetableSlice[0]
     ? { ...(JSON.parse(currentTimetableSlice[0].payloadJson) as Record<string, unknown>), ...timetablePayload }

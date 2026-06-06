@@ -15,6 +15,7 @@ import {
   createProofCurriculumImport,
   getProofStudentEvidenceTimeline,
   getProofRunCheckpointDetail,
+  listProofRunCheckpointStudents,
   getProofRunCheckpointStudentDetail,
   getProofRiskModelActive,
   getProofRiskModelCorrelations,
@@ -32,7 +33,6 @@ import {
   retryQueuedProofSimulationRun,
 } from '../lib/proof-run-queue.js'
 import {
-  ensureMsruasProofBatchStructure,
   ensureMsruasProofSandboxSeeded,
   MSRUAS_PROOF_BATCH_ID,
   rehydrateProofFacultyCredentials,
@@ -87,8 +87,17 @@ async function requireProofRunBatchId(context: RouteContext, auth: ReturnType<ty
 }
 
 async function ensureProofSandboxBatch(context: RouteContext, batchId: string) {
-  if (batchId !== MSRUAS_PROOF_BATCH_ID) return
-  await ensureMsruasProofBatchStructure(context.db, context.now())
+  if (batchId !== MSRUAS_PROOF_BATCH_ID) {
+    throw new AppError(
+      409,
+      'PROOF_SANDBOX_BATCH_REQUIRED',
+      'Proof simulation runs are available only for the canonical MSRUAS demo batch.',
+    )
+  }
+  await ensureMsruasProofSandboxSeeded(context.db, {
+    now: context.now(),
+    policy: DEFAULT_POLICY,
+  })
 }
 
 const createImportSchema = z.object({
@@ -234,6 +243,18 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const params = parseOrThrow(checkpointParamsSchema, request.params)
     await requireScopedProofRun(context, auth, params.simulationRunId)
     return getProofRunCheckpointDetail(context.db, {
+      simulationRunId: params.simulationRunId,
+      simulationStageCheckpointId: params.checkpointId,
+    })
+  })
+
+  app.get('/api/admin/proof-runs/:simulationRunId/checkpoints/:checkpointId/students', {
+    schema: { tags: ['admin-proof'], summary: 'List checkpoint-scoped student summaries for a proof playback checkpoint' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(checkpointParamsSchema, request.params)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
+    return listProofRunCheckpointStudents(context.db, {
       simulationRunId: params.simulationRunId,
       simulationStageCheckpointId: params.checkpointId,
     })

@@ -193,6 +193,8 @@ export function FacultyProfilePage({
           simulationRunId: activeProofRun.simulationRunId,
           simulationStageCheckpointId: targetCheckpointId,
           updatedAt: new Date().toISOString(),
+          workspace: 'academic',
+          source: 'teacher-profile',
         })
       } else if (direction === 'end') {
         clearProofPlaybackSelection()
@@ -212,6 +214,51 @@ export function FacultyProfilePage({
     <PageShell size="standard">
       <div style={{ display: 'grid', gap: 16, paddingTop: 18, paddingBottom: 26 }}>
         <PageBackButton onClick={onBack} />
+
+        {proofOps && activeProofRun && onAdvanceProofRun ? (
+          <Card data-proof-section="teacher-proof-inline-controls" style={{ padding: 16, display: 'grid', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Shared Proof Controls
+                </div>
+                <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 6 }}>
+                  Semester {selectedProofCheckpoint?.semesterNumber ?? proofOps.activeOperationalSemester ?? 'NA'} · {selectedProofCheckpoint?.stageLabel ?? 'Current checkpoint'}
+                </div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.7 }}>
+                  Advance stages, step playback, or stop the active proof run here before diving into the detailed teacher proof evidence below.
+                </div>
+              </div>
+              <Btn
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  if (typeof document === 'undefined') return
+                  document.getElementById('teacher-proof-panel-surface')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+              >
+                Open Detailed Proof Panel
+              </Btn>
+            </div>
+            <ProofSimulationControls
+              activeRunDetail={activeProofRun}
+              activeRunCheckpoints={activeRunCheckpoints}
+              selectedProofCheckpoint={selectedProofCheckpoint}
+              selectedProofCheckpointCanStepForward={Boolean(selectedProofCheckpoint?.nextCheckpointId)}
+              selectedProofCheckpointCanPlayToEnd={Boolean(selectedProofCheckpoint?.nextCheckpointId)}
+              baselineSnapshot={null}
+              resetStageSnapshot={null}
+              createDisabled
+              stopDisabled={!onStopProofRun}
+              onCreateProofSimulation={() => undefined}
+              onStopProofRun={onStopProofRun ?? (() => undefined)}
+              onAdvanceProofRun={onAdvanceProofRun}
+              onRestoreProofSnapshot={() => undefined}
+              onResetProofRunFromScratch={() => undefined}
+              onStepProofPlayback={handleProofPlaybackStep}
+            />
+          </Card>
+        ) : null}
 
         <Card style={{ padding: 20, display: 'grid', gap: 14, background: `linear-gradient(160deg, ${T.surface}, ${T.surface2})` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -254,6 +301,24 @@ export function FacultyProfilePage({
           <div data-proof-section="proof-mode-authority">
             <InfoBanner tone="neutral" message={describeProofProvenance(proofOps)} />
           </div>
+        ) : null}
+
+        {proofOps ? (
+          <Card style={{ padding: 12, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+              Shared proof controls remain available on this profile page and now stay near the top of the proof-mode surface so stage playback is visible before the deeper teacher detail cards.
+            </div>
+            <Btn
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                if (typeof document === 'undefined') return
+                document.getElementById('teacher-proof-panel-surface')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }}
+            >
+              Jump to proof controls
+            </Btn>
+          </Card>
         ) : null}
 
         {loading ? <InfoBanner message="Loading faculty profile..." /> : null}
@@ -453,6 +518,7 @@ export function FacultyProfilePage({
             eyebrow="Proof Control Plane"
             title="Proof Control Plane"
             description="This panel only surfaces rerunnable proof data: active simulation runs, observed risk queue items, and elective-fit summaries. It does not expose latent-state internals."
+            style={{ order: -1, gridColumn: '1 / -1' }}
             headerActions={activeProofRun && onAdvanceProofRun ? (
               <ProofSimulationControls
                 activeRunDetail={activeProofRun}
@@ -539,8 +605,8 @@ export function FacultyProfilePage({
                             </div>
                           ) : null}
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {item.drivers.slice(0, 3).map(driver => (
-                              <Chip key={`${item.riskAssessmentId}-${driver.feature}`} color={driver.impact >= 0 ? T.danger : T.success}>{driver.label}</Chip>
+                            {item.drivers.slice(0, 3).map((driver, index) => (
+                              <Chip key={`${item.riskAssessmentId}-${driver.feature}-${index}-${driver.label}`} color={driver.impact >= 0 ? T.danger : T.success}>{driver.label}</Chip>
                             ))}
                             {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
                             {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Counterfactual lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}

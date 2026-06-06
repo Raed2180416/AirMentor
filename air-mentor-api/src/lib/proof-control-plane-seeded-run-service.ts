@@ -208,6 +208,17 @@ export async function finalizeSeededProofRun(
   const activeStageKey = preserveExplicitStartAuthority
     ? currentRun?.activeStageKey ?? 'pre-tt1'
     : entrySemester?.entryStageKey ?? currentRun?.activeStageKey ?? 'pre-tt1'
+
+  console.log('--- DEBUG finalizeSeededProofRunService ---')
+  console.log('stageBoundary.semesters length:', stageBoundary.semesters.length)
+  console.log('entrySemester:', entrySemester)
+  console.log('currentRunStartSemester:', currentRunStartSemester)
+  console.log('preserveExplicitStartAuthority:', preserveExplicitStartAuthority)
+  console.log('currentRun.activeStageKey:', currentRun?.activeStageKey)
+  console.log('activeOperationalSemester:', activeOperationalSemester)
+  console.log('activeStageKey:', activeStageKey)
+  console.log('-------------------------------------------')
+
   const lifecycleState = input.activate ? 'completed-inspectable' : 'completed'
   const setupConfig = {
     activate: input.activate,

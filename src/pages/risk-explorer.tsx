@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Activity, Eye, TrendingDown } from 'lucide-react'
 import { T, mono, sora } from '../data'
-import type { Role, StudentExplorerProfile } from '../domain'
+import type { Role } from '../domain'
 import { ReevaluatingRiskLoader } from '../components/reevaluating-risk-loader'
 import type { ApiFeatureCompleteness, ApiFeatureProvenance, ApiRiskHeadDisplay, ApiStudentRiskExplorer } from '../api/types'
 import { describeProofModelUsefulness, describeProofProvenance } from '../proof-provenance'
@@ -59,6 +59,11 @@ function renderHeadHelper(display: ApiRiskHeadDisplay | undefined, baseHelper: s
 
 function formatEvidencePct(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not recorded yet'
+}
+
+function formatSignedPoints(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'NA'
+  return `${value > 0 ? '+' : ''}${Math.round(value * 100) / 100} pts`
 }
 
 function renderFeatureCompletenessLabel(featureCompleteness: ApiFeatureCompleteness | null) {
@@ -186,6 +191,7 @@ export function RiskExplorerPage({
   const counterfactual = explorer.counterfactual
   const featureCompleteness = explorer.featureCompleteness ?? explorer.riskCompleteness ?? explorer.prerequisiteMap.completeness ?? null
   const featureProvenance = explorer.featureProvenance ?? null
+  const xaiRiskReduction = explorer.xaiRiskReduction ?? null
   const policyComparisonCandidates = policyComparison && 'candidates' in policyComparison
     ? policyComparison.candidates
     : []
@@ -322,7 +328,7 @@ export function RiskExplorerPage({
               <InfoBanner message="Read the current risk view, no-action view, and intervention path together. This popup stays locked to the selected proof run and stage." />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                 <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Model output</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current status</div>
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{explorer.currentStatus.riskBand ?? 'Unavailable'}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted }}>{humanLabelForActionCode(explorer.currentStatus.recommendedAction) ?? 'No simulated intervention'}</div>
                 </Card>
@@ -414,7 +420,7 @@ export function RiskExplorerPage({
             <div style={{ flex: '1 1 320px', maxWidth: 360, display: 'grid', gap: 14 }}>
               {(activeTab === 'overview' || activeTab === 'advanced') && (
                 <Card data-proof-section="current-status" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Model Output</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current Status</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {explorer.currentStatus.riskBand ? <Chip color={explorer.currentStatus.riskBand === 'High' ? T.danger : explorer.currentStatus.riskBand === 'Medium' ? T.warning : T.success}>{explorer.currentStatus.riskBand}</Chip> : null}
                     {explorer.currentStatus.riskProbScaled != null ? <Chip color={T.dim}>{`${explorer.currentStatus.riskProbScaled}%`}</Chip> : null}
@@ -423,7 +429,7 @@ export function RiskExplorerPage({
                   </div>
                   <div style={{ display: 'grid', gap: 8 }}>
                     <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.7, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
-                      Model output: {humanLabelForActionCode(explorer.currentStatus.recommendedAction) ?? 'None'}
+                      Recommended action: {humanLabelForActionCode(explorer.currentStatus.recommendedAction) ?? 'None'}
                     </div>
                     {explorer.currentStatus.recommendedAction ? (
                       <div style={{ ...mono, fontSize: 10, color: T.accent, lineHeight: 1.7, border: `1px solid ${T.border2}`, borderRadius: 10, background: T.surface2, padding: '6px 8px', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
@@ -454,35 +460,86 @@ export function RiskExplorerPage({
               )}
 
               {activeTab === 'advanced' && (
-                <Card data-proof-section="policy-comparison" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Simulated Intervention / Realized Path</div>
-                  {policyComparison ? (
-                    <>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {'policyPhenotype' in policyComparison && policyComparison.policyPhenotype ? <Chip color={T.orange}>{policyComparison.policyPhenotype}</Chip> : null}
-                        {policyComparison.recommendedAction ? <Chip color={T.accent}>{humanLabelForActionCode(policyComparison.recommendedAction)}</Chip> : null}
-                        {policyComparison.simulatedActionTaken ? <Chip color={T.warning}>{humanLabelForActionCode(policyComparison.simulatedActionTaken)}</Chip> : null}
-                      </div>
-                      {policyComparisonCandidates.length > 0 ? (
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                          Top action candidates: {policyComparisonCandidates.slice(0, 3).map((item: { action: string; utility: number }) => `${item.action} (${item.utility.toFixed(2)})`).join(' · ')}
+                <>
+                  <Card data-proof-section="policy-comparison" style={{ padding: 16, display: 'grid', gap: 10 }}>
+                    <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Simulated Intervention / Realized Path</div>
+                    {policyComparison ? (
+                      <>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {'policyPhenotype' in policyComparison && policyComparison.policyPhenotype ? <Chip color={T.orange}>{policyComparison.policyPhenotype}</Chip> : null}
+                          {policyComparison.recommendedAction ? <Chip color={T.accent}>{humanLabelForActionCode(policyComparison.recommendedAction)}</Chip> : null}
+                          {policyComparison.simulatedActionTaken ? <Chip color={T.warning}>{humanLabelForActionCode(policyComparison.simulatedActionTaken)}</Chip> : null}
                         </div>
-                      ) : null}
-                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>{policyComparisonRationale}</div>
-                    </>
-                  ) : counterfactual ? (
-                    <>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {counterfactual.noActionRiskBand ? <Chip color={T.warning}>{counterfactual.noActionRiskBand}</Chip> : null}
-                        {counterfactual.noActionRiskProbScaled != null ? <Chip color={T.dim}>{`${counterfactual.noActionRiskProbScaled}% no action`}</Chip> : null}
-                        {counterfactual.counterfactualLiftScaled != null ? <Chip color={counterfactual.counterfactualLiftScaled > 0 ? T.success : counterfactual.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`${counterfactual.counterfactualLiftScaled > 0 ? '+' : ''}${counterfactual.counterfactualLiftScaled} pts`}</Chip> : null}
-                      </div>
-                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>{counterfactual.note}</div>
-                    </>
-                  ) : (
-                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>No checkpoint-bound no-action comparator is available on the active-risk view.</div>
-                  )}
-                </Card>
+                        {policyComparisonCandidates.length > 0 ? (
+                          <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                            Top action candidates: {policyComparisonCandidates.slice(0, 3).map((item: { action: string; utility: number }) => `${item.action} (${item.utility.toFixed(2)})`).join(' · ')}
+                          </div>
+                        ) : null}
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>{policyComparisonRationale}</div>
+                      </>
+                    ) : counterfactual ? (
+                      <>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {counterfactual.noActionRiskBand ? <Chip color={T.warning}>{counterfactual.noActionRiskBand}</Chip> : null}
+                          {counterfactual.noActionRiskProbScaled != null ? <Chip color={T.dim}>{`${counterfactual.noActionRiskProbScaled}% no action`}</Chip> : null}
+                          {counterfactual.counterfactualLiftScaled != null ? <Chip color={counterfactual.counterfactualLiftScaled > 0 ? T.success : counterfactual.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`${counterfactual.counterfactualLiftScaled > 0 ? '+' : ''}${counterfactual.counterfactualLiftScaled} pts`}</Chip> : null}
+                        </div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>{counterfactual.note}</div>
+                      </>
+                    ) : (
+                      <div style={{ ...mono, fontSize: 10, color: T.muted }}>No checkpoint-bound no-action comparator is available on the active-risk view.</div>
+                    )}
+                  </Card>
+
+                  <Card data-proof-section="xai-risk-reduction" style={{ padding: 16, display: 'grid', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <TrendingDown size={16} color={T.success} />
+                      <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>XAI Risk Reduction</div>
+                    </div>
+                    {xaiRiskReduction ? (
+                      <>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <Chip color={T.accent}>{xaiRiskReduction.explanationMode}</Chip>
+                          <Chip color={T.dim}>deterministic replay</Chip>
+                          {xaiRiskReduction.topDriverEvidence?.length ? <Chip color={T.dim}>observable drivers attached</Chip> : null}
+                        </div>
+                        {xaiRiskReduction.summary ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+                            <MetricCard label="Risk reduced by" value={formatSignedPoints(xaiRiskReduction.summary.riskReducedByProbScaled)} helper={xaiRiskReduction.summary.label} />
+                            <MetricCard label="No action" value={xaiRiskReduction.summary.baselineRiskProbScaled == null ? 'NA' : `${xaiRiskReduction.summary.baselineRiskProbScaled}%`} helper="Deterministic no-action replay." />
+                            <MetricCard label="Realized path" value={xaiRiskReduction.summary.simulatedRiskProbScaled == null ? 'NA' : `${xaiRiskReduction.summary.simulatedRiskProbScaled}%`} helper="Saved checkpoint projection rows." />
+                          </div>
+                        ) : null}
+                        <div style={{ display: 'grid', gap: 6 }}>
+                          {xaiRiskReduction.deltaTimeline.slice(-5).map(point => (
+                            <div key={`${point.stageKey}-${point.label}`} style={{ display: 'grid', gap: 4, border: `1px solid ${T.border2}`, borderRadius: 8, padding: 8, background: T.surface2 }}>
+                              <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                                <div style={{ ...mono, fontSize: 10, color: T.text }}>{point.label}</div>
+                                <Chip color={point.riskReducedByProbScaled > 0 ? T.success : point.riskReducedByProbScaled < 0 ? T.warning : T.dim}>{formatSignedPoints(point.riskReducedByProbScaled)}</Chip>
+                              </div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                no action {point.baselineRiskProbScaled}% · realized {point.simulatedRiskProbScaled}%{point.activeInterventions.length > 0 ? ` · ${point.activeInterventions.map(action => humanLabelForActionCode(action) ?? action).join(' · ')}` : ''}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: 'grid', gap: 6 }}>
+                          {xaiRiskReduction.componentImpacts.map(component => (
+                            <div key={component.componentKey} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', borderTop: `1px solid ${T.border2}`, paddingTop: 6 }}>
+                              <div style={{ ...mono, fontSize: 10, color: T.text }}>{component.componentLabel}</div>
+                              <div style={{ ...mono, fontSize: 10, color: component.direction === 'risk-reduction' ? T.success : T.muted }}>
+                                {component.baselineScore == null || component.simulatedScore == null ? 'NA' : `${component.baselineScore} -> ${component.simulatedScore} (${formatSignedPoints(component.lift)})`}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <InfoBanner tone="neutral" message={xaiRiskReduction.disclaimer} />
+                      </>
+                    ) : (
+                      <div style={{ ...mono, fontSize: 10, color: T.muted }}>No checkpoint replay evidence is available for a risk-reduction explanation.</div>
+                    )}
+                  </Card>
+                </>
               )}
             </div>
 
@@ -531,7 +588,7 @@ export function RiskExplorerPage({
                     <Card key={item.coCode} style={{ padding: 10, background: T.surface2 }}>
                       <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.coCode} · {item.coTitle}</div>
                       <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.7 }}>
-                        TT1 {item.tt1Pct}% · TT2 {item.tt2Pct}% · SEE {item.seePct}% · trend {item.trend} · gap {item.transferGap}
+                        TT1 {formatEvidencePct(item.tt1Pct)} · TT2 {formatEvidencePct(item.tt2Pct)} · SEE {formatEvidencePct(item.seePct)} · trend {item.trend} · gap {item.transferGap}
                       </div>
                       <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>{item.topics.join(' · ')}</div>
                     </Card>
@@ -620,7 +677,7 @@ export function RiskExplorerPage({
               <Card key={`${component.courseCode}-${component.sectionCode ?? 'na'}`} style={{ padding: 10, background: T.surface2 }}>
                 <div style={{ ...mono, fontSize: 10, color: T.text }}>{component.courseCode} · {component.courseTitle}{component.sectionCode ? ` · Section ${component.sectionCode}` : ''}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8, marginTop: 4 }}>
-                  Attendance {component.attendancePct}% · TT1 {component.tt1Pct}% · TT2 {component.tt2Pct}% · Quiz {component.quizPct}% · Assignment {component.assignmentPct}% · SEE {component.seePct}% · Focus Outcomes {component.weakCoCount} · Weak questions {component.weakQuestionCount}
+                  Attendance {component.attendancePct}% · TT1 {formatEvidencePct(component.tt1Pct)} · TT2 {formatEvidencePct(component.tt2Pct)} · Quiz {formatEvidencePct(component.quizPct)} · Assignment {formatEvidencePct(component.assignmentPct)} · SEE {formatEvidencePct(component.seePct)} · Focus Outcomes {component.weakCoCount} · Weak questions {component.weakQuestionCount}
                 </div>
               </Card>
             )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No component-level evidence rows are available on this proof explorer.</div>}

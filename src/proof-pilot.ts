@@ -26,6 +26,19 @@ export function isCanonicalProofBatchId(batchId?: string | null) {
   return batchId === CANONICAL_PROOF_BATCH_ID
 }
 
+export function scopeTargetsCanonicalProofHierarchy(scope?: {
+  academicFacultyId?: string | null
+  departmentId?: string | null
+  branchId?: string | null
+  batchId?: string | null
+} | null) {
+  if (!scope) return false
+  return scope.academicFacultyId === CANONICAL_PROOF_ACADEMIC_FACULTY_ID
+    || scope.departmentId === CANONICAL_PROOF_DEPARTMENT_ID
+    || scope.branchId === CANONICAL_PROOF_BRANCH_ID
+    || isCanonicalProofBatchId(scope.batchId)
+}
+
 export function resolveCanonicalProofBatch(data: Pick<LiveAdminDataset, 'batches'>): ApiBatch | null {
   return data.batches.find(item => item.batchId === CANONICAL_PROOF_BATCH_ID) ?? null
 }
@@ -35,9 +48,10 @@ export function resolveAuthoritativeOperationalSemester(input: {
   selectedBatch?: Pick<ApiBatch, 'batchId' | 'currentSemester'> | null
   activeOperationalSemester?: number | null
 }) {
+  const explicitNonCanonicalBatchSelected = !!input.route.batchId && !isCanonicalProofBatchId(input.route.batchId)
   if (
-    input.route.section === 'faculties'
-    && isCanonicalProofBatchId(input.route.batchId)
+    routeTargetsCanonicalProofHierarchy(input.route)
+    && !explicitNonCanonicalBatchSelected
     && input.activeOperationalSemester != null
   ) {
     return {
@@ -61,10 +75,12 @@ export function resolveAuthoritativeOperationalSemester(input: {
 
 export function routeTargetsCanonicalProofHierarchy(route: LiveAdminRoute) {
   if (route.section !== 'faculties') return false
-  return route.academicFacultyId === CANONICAL_PROOF_ACADEMIC_FACULTY_ID
-    || route.departmentId === CANONICAL_PROOF_DEPARTMENT_ID
-    || route.branchId === CANONICAL_PROOF_BRANCH_ID
-    || isCanonicalProofBatchId(route.batchId)
+  return scopeTargetsCanonicalProofHierarchy({
+    academicFacultyId: route.academicFacultyId,
+    departmentId: route.departmentId,
+    branchId: route.branchId,
+    batchId: route.batchId,
+  })
 }
 
 export function shouldResolveCanonicalProofRoute(
@@ -81,11 +97,14 @@ export function shouldResolveCanonicalProofRoute(
 export function resolveProofDashboardBatchId(input: {
   route: LiveAdminRoute
   routeScopedBatchId?: string | null
+  directoryScope?: Pick<LiveAdminSearchScope, 'academicFacultyId' | 'departmentId' | 'branchId' | 'batchId'> | null
   data: Pick<LiveAdminDataset, 'batches'>
 }) {
-  if (input.routeScopedBatchId) return input.routeScopedBatchId
-  if (input.route.section !== 'proof-dashboard') return null
-  return resolveCanonicalProofBatch(input.data)?.batchId ?? CANONICAL_PROOF_BATCH_ID
+  const canonicalProofBatchId = resolveCanonicalProofBatch(input.data)?.batchId ?? CANONICAL_PROOF_BATCH_ID
+  if (input.route.section === 'proof-dashboard') return canonicalProofBatchId
+  if (input.route.section === 'students') return canonicalProofBatchId
+  if (isCanonicalProofBatchId(input.routeScopedBatchId)) return canonicalProofBatchId
+  return scopeTargetsCanonicalProofHierarchy(input.directoryScope) ? canonicalProofBatchId : null
 }
 
 function normalizeScopeValue(value?: string | null) {

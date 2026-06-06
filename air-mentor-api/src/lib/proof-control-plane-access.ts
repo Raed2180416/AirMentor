@@ -36,7 +36,7 @@ export function queueReassessmentStatusFromStatus(status: string | null | undefi
   return 'Open'
 }
 
-export type PublicProofQueueStatus = 'open' | 'watch' | 'deferred' | 'resolved' | 'suppressed'
+export type PublicProofQueueStatus = 'open' | 'watch' | 'deferred' | 'resolved' | 'suppressed' | 'reevaluating'
 
 export function canonicalPublicProofQueueStatus(status: string | null | undefined): PublicProofQueueStatus | null {
   const normalized = status?.trim().toLowerCase()
@@ -45,6 +45,7 @@ export function canonicalPublicProofQueueStatus(status: string | null | undefine
   if (normalized === 'watch' || normalized === 'watching') return 'watch'
   if (normalized === 'deferred') return 'deferred'
   if (normalized === 'resolved') return 'resolved'
+  if (normalized === 'reevaluating' || normalized === 'reevaluating risk' || normalized === 'reevaluating-risk') return 'reevaluating'
   if (normalized === 'suppressed' || normalized === 'dismissed' || normalized === 'idle') return null
   return null
 }

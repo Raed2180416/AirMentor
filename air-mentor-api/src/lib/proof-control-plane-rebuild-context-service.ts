@@ -275,14 +275,31 @@ export async function preparePlaybackRebuildContext(
     checkpointBySemesterStage.set(`${row.semesterNumber}::${row.stageKey}`, row)
   })
 
-  const previousSemesterSummaryByStudentSemester = new Map<string, { cgpa: number; backlogCount: number }>()
+  const toNonNegativeNumber = (value: unknown, fallback = 0) => {
+    const numeric = typeof value === 'number' ? value : Number(value)
+    return Number.isFinite(numeric) ? Math.max(0, numeric) : fallback
+  }
+  const previousSemesterSummaryByStudentSemester = new Map<string, {
+    cgpa: number
+    backlogCount: number
+    activeBacklogCredits: number
+    historicalBacklogCredits: number
+    lowerYearBlockerCredits: number
+  }>()
   observedRows
     .filter(row => row.semesterNumber <= 5)
     .forEach(row => {
       const payload = parseObservedStateRow(row)
+      const activeBacklogCredits = toNonNegativeNumber(payload.activeBacklogCredits)
       previousSemesterSummaryByStudentSemester.set(`${row.studentId}::${row.semesterNumber}`, {
-        cgpa: Number(payload.cgpaAfterSemester ?? 0),
-        backlogCount: Number(payload.backlogCount ?? 0),
+        cgpa: toNonNegativeNumber(payload.cgpaAfterSemester),
+        backlogCount: toNonNegativeNumber(payload.backlogCount),
+        activeBacklogCredits,
+        historicalBacklogCredits: toNonNegativeNumber(payload.historicalBacklogCredits, activeBacklogCredits),
+        lowerYearBlockerCredits: toNonNegativeNumber(
+          payload.lowerYearBlockerCredits,
+          activeBacklogCredits > 15 ? activeBacklogCredits : 0,
+        ),
       })
     })
 
@@ -309,7 +326,22 @@ export async function preparePlaybackRebuildContext(
     .forEach(row => {
       const student = studentById.get(row.studentId)
       const payload = parseObservedStateRow(row)
-      const previousSummary = previousSemesterSummaryByStudentSemester.get(`${row.studentId}::${row.semesterNumber - 1}`) ?? { cgpa: 0, backlogCount: 0 }
+      const previousSummary = previousSemesterSummaryByStudentSemester.get(`${row.studentId}::${row.semesterNumber - 1}`) ?? {
+        cgpa: 0,
+        backlogCount: 0,
+        activeBacklogCredits: 0,
+        historicalBacklogCredits: 0,
+        lowerYearBlockerCredits: 0,
+      }
+      const closingActiveBacklogCredits = toNonNegativeNumber(payload.activeBacklogCredits, previousSummary.activeBacklogCredits)
+      const historicalBacklogCredits = toNonNegativeNumber(payload.historicalBacklogCredits, previousSummary.historicalBacklogCredits)
+      const lowerYearBlockerCredits = toNonNegativeNumber(
+        payload.lowerYearBlockerCredits,
+        closingActiveBacklogCredits > 15 ? closingActiveBacklogCredits : previousSummary.lowerYearBlockerCredits,
+      )
+      const backlogSensitivityScore = typeof payload.backlogSensitivityScore === 'number' && Number.isFinite(payload.backlogSensitivityScore)
+        ? payload.backlogSensitivityScore
+        : undefined
       if (row.semesterNumber <= 5 && typeof payload.offeringId !== 'string') {
         const subjectScores = Array.isArray(payload.subjectScores) ? payload.subjectScores : []
         subjectScores.forEach(subject => {
@@ -349,8 +381,14 @@ export async function preparePlaybackRebuildContext(
             result: String(record.result ?? 'Unknown'),
             previousCgpa: previousSummary.cgpa,
             previousBacklogCount: previousSummary.backlogCount,
-            closingCgpa: Number(payload.cgpaAfterSemester ?? previousSummary.cgpa),
-            closingBacklogCount: Number(payload.backlogCount ?? previousSummary.backlogCount),
+            closingCgpa: toNonNegativeNumber(payload.cgpaAfterSemester, previousSummary.cgpa),
+            closingBacklogCount: toNonNegativeNumber(payload.backlogCount, previousSummary.backlogCount),
+            previousBacklogCredits: previousSummary.activeBacklogCredits,
+            closingBacklogCredits: closingActiveBacklogCredits,
+            activeBacklogCredits: closingActiveBacklogCredits,
+            historicalBacklogCredits,
+            lowerYearBlockerCredits,
+            backlogSensitivityScore,
             questionRows: questionSourceRows,
             coRows: coSourceRows,
             interventionResponse: deps.toInterventionResponse(record.interventionResponse),
@@ -387,8 +425,14 @@ export async function preparePlaybackRebuildContext(
         result: String(payload.result ?? 'Unknown'),
         previousCgpa: previousSummary.cgpa,
         previousBacklogCount: previousSummary.backlogCount,
-        closingCgpa: Number(payload.cgpa ?? previousSummary.cgpa),
-        closingBacklogCount: Number(payload.backlogCount ?? previousSummary.backlogCount),
+        closingCgpa: toNonNegativeNumber(payload.cgpa, previousSummary.cgpa),
+        closingBacklogCount: toNonNegativeNumber(payload.backlogCount, previousSummary.backlogCount),
+        previousBacklogCredits: previousSummary.activeBacklogCredits,
+        closingBacklogCredits: closingActiveBacklogCredits,
+        activeBacklogCredits: closingActiveBacklogCredits,
+        historicalBacklogCredits,
+        lowerYearBlockerCredits,
+        backlogSensitivityScore,
         questionRows: questionRowsBySourceKey.get(sourceKey) ?? [],
         coRows: coRowsBySourceKey.get(sourceKey) ?? [],
         interventionResponse: deps.toInterventionResponse(payload.interventionResponse),

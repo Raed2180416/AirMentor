@@ -16,6 +16,7 @@ import {
   departments,
   facultyAppointments,
   facultyCalendarAdminWorkspaces,
+  facultyCalendarCanonicalTemplates,
   facultyCalendarWorkspaces,
   facultyOfferingOwnerships,
   facultyProfiles,
@@ -23,6 +24,7 @@ import {
   reassessmentEvents,
   roleGrants,
   sectionOfferings,
+  simulationStageCheckpoints,
   studentEnrollments,
   students,
   userAccounts,
@@ -41,6 +43,7 @@ import {
   requireRole,
 } from './support.js'
 import { buildFacultyProofView } from '../lib/msruas-proof-control-plane.js'
+import { resolveAcademicStageCheckpoint } from './academic.js'
 
 const reminderCreateSchema = z.object({
   title: z.string().min(1),
@@ -192,18 +195,39 @@ function mapFacultyCalendarTemplateRow(row: typeof facultyCalendarWorkspaces.$in
   return parsed.success ? parsed.data : null
 }
 
+function mapFacultyCalendarCanonicalTemplateRow(row: typeof facultyCalendarCanonicalTemplates.$inferSelect) {
+  const parsed = facultyCalendarTemplateSchema.safeParse(parseJson(row.templateJson, {}))
+  return parsed.success ? parsed.data : null
+}
+
 function mapFacultyCalendarAdminWorkspaceRow(row: typeof facultyCalendarAdminWorkspaces.$inferSelect) {
   const parsed = facultyCalendarWorkspaceSchema.safeParse(parseJson(row.workspaceJson, {}))
   return parsed.success ? parsed.data : null
 }
 
+async function loadFacultyCalendarCanonicalTemplate(context: RouteContext, facultyId: string) {
+  const [row] = await context.db
+    .select()
+    .from(facultyCalendarCanonicalTemplates)
+    .where(eq(facultyCalendarCanonicalTemplates.facultyId, facultyId))
+  if (row) {
+    const parsed = mapFacultyCalendarCanonicalTemplateRow(row)
+    if (parsed) return parsed
+  }
+  const runtimePayload = await getRuntimeSlice(context, 'canonicalTimetableByFacultyId', {} as Record<string, unknown>)
+  const runtimeParsed = facultyCalendarTemplateSchema.safeParse(runtimePayload?.[facultyId])
+  return runtimeParsed.success ? runtimeParsed.data : null
+}
+
 async function loadFacultyCalendarTemplate(context: RouteContext, facultyId: string) {
-  const [templateRow] = await context.db
+  const [teacherRow] = await context.db
     .select()
     .from(facultyCalendarWorkspaces)
     .where(eq(facultyCalendarWorkspaces.facultyId, facultyId))
-  const templateFromTable = templateRow ? mapFacultyCalendarTemplateRow(templateRow) : null
-  if (templateFromTable) return templateFromTable
+  const teacherLocal = teacherRow ? mapFacultyCalendarTemplateRow(teacherRow) : null
+  if (teacherLocal) return teacherLocal
+  const canonical = await loadFacultyCalendarCanonicalTemplate(context, facultyId)
+  if (canonical) return canonical
   const timetablePayload = await getRuntimeSlice(context, 'timetableByFacultyId', {} as Record<string, unknown>)
   const parsedFallback = facultyCalendarTemplateSchema.safeParse(timetablePayload?.[facultyId])
   return parsedFallback.success ? parsedFallback.data : null
@@ -221,25 +245,82 @@ async function loadFacultyCalendarAdminWorkspace(context: RouteContext, facultyI
   return parsedFallback.success ? parsedFallback.data : { publishedAt: null, markers: [] }
 }
 
-async function saveFacultyCalendarTemplateProjection(
+function mergeTimetableTemplates(
+  oldCanonical: z.infer<typeof facultyCalendarTemplateSchema> | null,
+  teacherLocal: z.infer<typeof facultyCalendarTemplateSchema>,
+  newCanonical: z.infer<typeof facultyCalendarTemplateSchema> | null,
+): z.infer<typeof facultyCalendarTemplateSchema> {
+  if (!newCanonical) return teacherLocal
+  if (!oldCanonical) return newCanonical
+
+  const oldCanonicalMap = new Map(oldCanonical.classBlocks.map(b => [b.id, b]))
+  const newCanonicalMap = new Map(newCanonical.classBlocks.map(b => [b.id, b]))
+
+  const mergedBlocks = [...newCanonical.classBlocks]
+
+  for (const localBlock of teacherLocal.classBlocks) {
+    if (localBlock.kind === 'extra') {
+      if (!newCanonicalMap.has(localBlock.id)) {
+        mergedBlocks.push(localBlock)
+      }
+      continue
+    }
+
+    const oldBlock = oldCanonicalMap.get(localBlock.id)
+    const newBlock = newCanonicalMap.get(localBlock.id)
+
+    if (oldBlock && newBlock) {
+      const teacherModified = (
+        oldBlock.day !== localBlock.day ||
+        oldBlock.startMinutes !== localBlock.startMinutes ||
+        oldBlock.endMinutes !== localBlock.endMinutes ||
+        oldBlock.dateISO !== localBlock.dateISO
+      )
+      if (teacherModified) {
+        const idx = mergedBlocks.findIndex(b => b.id === localBlock.id)
+        if (idx >= 0) {
+          mergedBlocks[idx] = {
+            ...newBlock,
+            day: localBlock.day,
+            startMinutes: localBlock.startMinutes,
+            endMinutes: localBlock.endMinutes,
+            dateISO: localBlock.dateISO,
+          }
+        }
+      }
+    } else if (!oldBlock && !newBlock) {
+      if (!mergedBlocks.some(b => b.id === localBlock.id)) {
+        mergedBlocks.push(localBlock)
+      }
+    }
+  }
+
+  return {
+    ...newCanonical,
+    classBlocks: mergedBlocks,
+    updatedAt: Date.now(),
+  }
+}
+
+async function saveFacultyCalendarCanonicalTemplate(
   context: RouteContext,
   facultyId: string,
   template: z.infer<typeof facultyCalendarTemplateSchema> | null,
 ) {
-  const [currentTemplateRow, timetablePayload] = await Promise.all([
-    context.db.select().from(facultyCalendarWorkspaces).where(eq(facultyCalendarWorkspaces.facultyId, facultyId)).then(rows => rows[0] ?? null),
-    getRuntimeSlice(context, 'timetableByFacultyId', {} as Record<string, unknown>),
+  const [currentRow, canonicalRuntimePayload] = await Promise.all([
+    context.db.select().from(facultyCalendarCanonicalTemplates).where(eq(facultyCalendarCanonicalTemplates.facultyId, facultyId)).then(rows => rows[0] ?? null),
+    getRuntimeSlice(context, 'canonicalTimetableByFacultyId', {} as Record<string, unknown>),
   ])
   const now = context.now()
   if (template) {
-    if (currentTemplateRow) {
-      await context.db.update(facultyCalendarWorkspaces).set({
+    if (currentRow) {
+      await context.db.update(facultyCalendarCanonicalTemplates).set({
         templateJson: stringifyJson(template),
-        version: currentTemplateRow.version + 1,
+        version: currentRow.version + 1,
         updatedAt: now,
-      }).where(eq(facultyCalendarWorkspaces.facultyId, facultyId))
+      }).where(eq(facultyCalendarCanonicalTemplates.facultyId, facultyId))
     } else {
-      await context.db.insert(facultyCalendarWorkspaces).values({
+      await context.db.insert(facultyCalendarCanonicalTemplates).values({
         facultyId,
         templateJson: stringifyJson(template),
         version: 1,
@@ -247,13 +328,48 @@ async function saveFacultyCalendarTemplateProjection(
         updatedAt: now,
       })
     }
-  } else if (currentTemplateRow) {
-    await context.db.delete(facultyCalendarWorkspaces).where(eq(facultyCalendarWorkspaces.facultyId, facultyId))
+  } else if (currentRow) {
+    await context.db.delete(facultyCalendarCanonicalTemplates).where(eq(facultyCalendarCanonicalTemplates.facultyId, facultyId))
   }
-  const nextTimetablePayload = { ...timetablePayload }
-  if (template) nextTimetablePayload[facultyId] = template
-  else delete nextTimetablePayload[facultyId]
-  await saveRuntimeSlice(context, 'timetableByFacultyId', nextTimetablePayload)
+  const nextCanonicalPayload = { ...canonicalRuntimePayload }
+  if (template) nextCanonicalPayload[facultyId] = template
+  else delete nextCanonicalPayload[facultyId]
+  await saveRuntimeSlice(context, 'canonicalTimetableByFacultyId', nextCanonicalPayload)
+}
+
+async function saveFacultyCalendarTemplateProjection(
+  context: RouteContext,
+  facultyId: string,
+  template: z.infer<typeof facultyCalendarTemplateSchema> | null,
+) {
+  const oldCanonical = await loadFacultyCalendarCanonicalTemplate(context, facultyId)
+  const [teacherRow, timetablePayload] = await Promise.all([
+    context.db.select().from(facultyCalendarWorkspaces).where(eq(facultyCalendarWorkspaces.facultyId, facultyId)).then(rows => rows[0] ?? null),
+    getRuntimeSlice(context, 'timetableByFacultyId', {} as Record<string, unknown>),
+  ])
+  const teacherLocal = teacherRow ? mapFacultyCalendarTemplateRow(teacherRow) : null
+
+  await saveFacultyCalendarCanonicalTemplate(context, facultyId, template)
+
+  const now = context.now()
+  if (teacherLocal && template) {
+    const merged = mergeTimetableTemplates(oldCanonical, teacherLocal, template)
+    await context.db.update(facultyCalendarWorkspaces).set({
+      templateJson: stringifyJson(merged),
+      version: teacherRow.version + 1,
+      updatedAt: now,
+    }).where(eq(facultyCalendarWorkspaces.facultyId, facultyId))
+    const nextTimetablePayload = { ...timetablePayload, [facultyId]: merged }
+    await saveRuntimeSlice(context, 'timetableByFacultyId', nextTimetablePayload)
+  } else if (teacherLocal && !template) {
+    await context.db.delete(facultyCalendarWorkspaces).where(eq(facultyCalendarWorkspaces.facultyId, facultyId))
+    const nextTimetablePayload = { ...timetablePayload }
+    delete nextTimetablePayload[facultyId]
+    await saveRuntimeSlice(context, 'timetableByFacultyId', nextTimetablePayload)
+  } else if (template) {
+    const nextTimetablePayload = { ...timetablePayload, [facultyId]: template }
+    await saveRuntimeSlice(context, 'timetableByFacultyId', nextTimetablePayload)
+  }
 }
 
 async function saveFacultyCalendarAdminWorkspaceProjection(
@@ -613,7 +729,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
     const params = parseOrThrow(facultyCalendarParamsSchema, request.params)
     const [profile, template, workspace] = await Promise.all([
       context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId)).then(rows => rows[0] ?? null),
-      loadFacultyCalendarTemplate(context, params.facultyId),
+      loadFacultyCalendarCanonicalTemplate(context, params.facultyId),
       loadFacultyCalendarAdminWorkspace(context, params.facultyId),
     ])
     if (!profile) throw notFound('Faculty profile not found')
@@ -636,17 +752,10 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
     const body = parseOrThrow(facultyCalendarSaveSchema, request.body)
     const [profile, currentTemplate, currentWorkspace] = await Promise.all([
       context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId)).then(rows => rows[0] ?? null),
-      loadFacultyCalendarTemplate(context, params.facultyId),
+      loadFacultyCalendarCanonicalTemplate(context, params.facultyId),
       loadFacultyCalendarAdminWorkspace(context, params.facultyId),
     ])
     if (!profile) throw notFound('Faculty profile not found')
-
-    const directEditWindowEndsAt = currentWorkspace.publishedAt ? addDays(currentWorkspace.publishedAt, 14) : null
-    const classEditingLocked = !!directEditWindowEndsAt && new Date(directEditWindowEndsAt).getTime() < new Date(context.now()).getTime()
-    const templateChanged = stringifyJson(currentTemplate) !== stringifyJson(body.template)
-    if (templateChanged && classEditingLocked) {
-      throw forbidden('The direct timetable edit window has ended for this faculty member. Route permanent class changes through the request workflow.')
-    }
 
     const nextWorkspace = {
       publishedAt: currentWorkspace.publishedAt ?? (body.template ? context.now() : null),
@@ -710,6 +819,16 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
     ) {
       throw forbidden()
     }
+    if (query.simulationStageCheckpointId) {
+      const [requestedCheckpoint] = await context.db
+        .select({
+          simulationRunId: simulationStageCheckpoints.simulationRunId,
+        })
+        .from(simulationStageCheckpoints)
+        .where(eq(simulationStageCheckpoints.simulationStageCheckpointId, query.simulationStageCheckpointId))
+      if (!requestedCheckpoint) throw notFound('Simulation stage checkpoint not found')
+      await resolveAcademicStageCheckpoint(context, auth, requestedCheckpoint.simulationRunId, query.simulationStageCheckpointId)
+    }
 
     const [
       profileRows,
@@ -730,6 +849,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       alertDecisionRows,
       enrollmentRows,
       timetableRows,
+      canonicalRows,
       calendarWorkspaceRows,
       viewerAppointmentRows,
     ] = await Promise.all([
@@ -751,6 +871,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       context.db.select().from(alertDecisions),
       context.db.select().from(studentEnrollments),
       context.db.select().from(facultyCalendarWorkspaces).where(eq(facultyCalendarWorkspaces.facultyId, params.facultyId)),
+      context.db.select().from(facultyCalendarCanonicalTemplates).where(eq(facultyCalendarCanonicalTemplates.facultyId, params.facultyId)),
       context.db.select().from(facultyCalendarAdminWorkspaces).where(eq(facultyCalendarAdminWorkspaces.facultyId, params.facultyId)),
       auth.activeRoleGrant.roleCode === 'HOD' && auth.facultyId
         ? context.db.select().from(facultyAppointments).where(eq(facultyAppointments.facultyId, auth.facultyId))
@@ -778,7 +899,9 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
     const termById = Object.fromEntries(termRows.map(row => [row.termId, row]))
     const courseById = Object.fromEntries(courseRows.map(row => [row.courseId, row]))
     const primaryAppointment = appointmentRows.find(row => row.isPrimary === 1) ?? appointmentRows[0] ?? null
-    const timetableTemplate = timetableRows[0] ? mapFacultyCalendarTemplateRow(timetableRows[0]) : null
+    const teacherLocalTemplate = timetableRows[0] ? mapFacultyCalendarTemplateRow(timetableRows[0]) : null
+    const canonicalTemplate = canonicalRows[0] ? mapFacultyCalendarCanonicalTemplateRow(canonicalRows[0]) : null
+    const timetableTemplate = teacherLocalTemplate ?? canonicalTemplate ?? null
     const calendarWorkspace = calendarWorkspaceRows[0] ? mapFacultyCalendarAdminWorkspaceRow(calendarWorkspaceRows[0]) : null
 
     const activeOwnerships = ownershipRows.filter(row => row.status === 'active')
@@ -879,6 +1002,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       facultyId: params.facultyId,
       viewerRoleCode: auth.activeRoleGrant.roleCode,
       simulationStageCheckpointId: query.simulationStageCheckpointId,
+      demoWorkspaceId: auth.demoWorkspaceId ?? null,
     })
     const proofScopeDescriptor = (
       proofView.scopeDescriptor && typeof proofView.scopeDescriptor === 'object'
@@ -1109,6 +1233,8 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
           ? (calendarWorkspace?.publishedAt ? addDays(calendarWorkspace.publishedAt, 14) : (timetableRows[0]?.updatedAt ? addDays(timetableRows[0].updatedAt, 14) : null))
           : null,
       },
+      timetableTemplate,
+      calendarWorkspace,
       requestSummary: {
         openCount: relatedRequests.filter(row => row.status !== 'Closed').length,
         recent: relatedRequests.slice(0, 5).map(row => ({

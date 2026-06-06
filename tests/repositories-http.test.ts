@@ -84,6 +84,56 @@ function createApiClientMock(overrides: Partial<AirMentorApiClientLike>): AirMen
   })
 }
 
+function createMinimalAcademicBootstrap(overrides: Partial<ApiAcademicBootstrap> = {}): ApiAcademicBootstrap {
+  const base: ApiAcademicBootstrap = {
+    professor: {
+      name: 'Dr. Devika Shetty',
+      id: 'mnc_t1',
+      dept: 'Mathematics and Computing',
+      role: 'Course Leader',
+      initials: 'DS',
+      email: 'devika.shetty@msruas.ac.in',
+    },
+    faculty: [],
+    offerings: [],
+    yearGroups: [],
+    mentees: [],
+    teachers: [],
+    subjectRuns: [],
+    studentsByOffering: {},
+    studentHistoryByUsn: {},
+    courseOutcomesByOffering: {},
+    assessmentSchemesByOffering: {},
+    questionPapersByOffering: {},
+    coAttainmentByOffering: {},
+    meetings: [],
+    runtime: {
+      studentPatches: {},
+      schemeByOffering: {},
+      ttBlueprintsByOffering: {},
+      drafts: {},
+      cellValues: {},
+      lockByOffering: {},
+      lockAuditByTarget: {},
+      tasks: [],
+      resolvedTasks: {},
+      timetableByFacultyId: {},
+      adminCalendarByFacultyId: {},
+      taskPlacements: {},
+      calendarAudit: [],
+    },
+  }
+
+  return {
+    ...base,
+    ...overrides,
+    runtime: {
+      ...base.runtime,
+      ...(overrides.runtime ?? {}),
+    },
+  }
+}
+
 describe('HTTP repository mode', () => {
   it('uses the remote session adapter without exposing local operational repositories before bootstrap', async () => {
     const storage = new MemoryStorage()
@@ -727,6 +777,92 @@ describe('HTTP repository mode', () => {
         id: 'audit-2',
       }),
     }))
+  })
+
+  it('keeps newer task queue state when an older overlapping save fails late', async () => {
+    let rejectFirstSave!: (error: Error) => void
+    const firstSave = new Promise<{
+      task: SharedTask & { version: number }
+      created: boolean
+    }>((_resolve, reject) => {
+      rejectFirstSave = reject
+    })
+
+    const saveAcademicTask = vi.fn(async (_taskId: string, payload: { task: SharedTask; expectedVersion?: number }) => {
+      if (payload.task.title === 'First dismiss attempt') return firstSave
+      return {
+        task: {
+          ...payload.task,
+          version: 1,
+        },
+        created: !payload.expectedVersion,
+      }
+    })
+    const originalTask: SharedTask = {
+      id: 'task-1',
+      studentId: 'student-1',
+      studentName: 'Aarav Sharma',
+      studentUsn: '1MS23CS001',
+      offeringId: 'off-1',
+      courseCode: 'MCC301A',
+      courseName: 'Graph Theory',
+      year: '3rd Year',
+      riskProb: 0.62,
+      riskBand: 'Medium',
+      title: 'Initial follow-up',
+      due: 'Today',
+      status: 'New',
+      actionHint: 'Meet the student',
+      priority: 62,
+      createdAt: 1_710_000_000_000,
+      updatedAt: 1_710_000_000_500,
+      assignedTo: 'Course Leader',
+    }
+    const repositories = createAirMentorRepositories({
+      repositoryMode: 'http',
+      apiClient: createApiClientMock({ saveAcademicTask }),
+      academicBootstrap: createMinimalAcademicBootstrap({
+        runtime: {
+          tasks: [originalTask],
+        } as Partial<ApiAcademicBootstrap['runtime']> as ApiAcademicBootstrap['runtime'],
+      }),
+    })
+    const firstVersion: SharedTask = {
+      ...originalTask,
+      title: 'First dismiss attempt',
+      updatedAt: 1_710_000_001_000,
+    }
+    const secondVersion: SharedTask = {
+      ...originalTask,
+      title: 'Second dismiss attempt',
+      updatedAt: 1_710_000_002_000,
+    }
+
+    const pendingOlderSave = repositories.tasks.saveTasks([firstVersion])
+    await repositories.tasks.saveTasks([secondVersion])
+    rejectFirstSave(new Error('stale network failure'))
+
+    await expect(pendingOlderSave).rejects.toThrow('stale network failure')
+    expect(repositories.tasks.getTasksSnapshot(() => [])).toEqual([secondVersion])
+  })
+
+  it('persists HTTP-mode resolved task ids through academic runtime state', async () => {
+    const storage = new MemoryStorage()
+    const saveAcademicResolvedTasks = vi.fn(async () => ({ ok: true as const, stateKey: 'resolvedTasks' as const }))
+    const repositories = createAirMentorRepositories({
+      storage,
+      repositoryMode: 'http',
+      apiClient: createApiClientMock({ saveAcademicResolvedTasks }),
+      academicBootstrap: createMinimalAcademicBootstrap(),
+    })
+    const resolved = {
+      'proof-monitoring-risk_001-run_001-student_001-off_001-6-post_tt1': 1_710_000_000_000,
+    }
+
+    await repositories.tasks.saveResolvedTasks(resolved)
+
+    expect(saveAcademicResolvedTasks).toHaveBeenCalledWith(resolved)
+    expect(repositories.tasks.getResolvedTasksSnapshot({})).toEqual(resolved)
   })
 
   it('does not call restoreSession during loginRemoteSession or switchRemoteRoleContext (no extra RTT on happy path)', async () => {

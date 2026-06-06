@@ -53,6 +53,10 @@ import {
   requireRole,
 } from './support.js'
 
+function rejectRetiredBatchProvisioning(): void {
+  throw badRequest('Batch provisioning is retired. Start the canonical demo simulation from the System Admin Proof Dashboard.')
+}
+
 export async function registerAcademicAdminOfferingRoutes(
   app: FastifyInstance,
   context: RouteContext,
@@ -275,10 +279,11 @@ export async function registerAcademicAdminOfferingRoutes(
   app.post('/api/admin/batches/:batchId/provision', {
     schema: {
       tags: ['academic-admin'],
-      summary: 'Provision offerings, ownership, timetables, students, mentors, and academic scaffolding for a batch term',
+      summary: 'Retired batch provisioning endpoint',
     },
   }, async request => {
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    rejectRetiredBatchProvisioning()
     const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
     const body = parseOrThrow(batchProvisioningSchema, request.body)
     const now = context.now()
@@ -852,6 +857,7 @@ export async function registerAcademicAdminOfferingRoutes(
     const snapshot = await buildAcademicBootstrap(context, {
       facultyId: auth.facultyId ?? null,
       roleCode: auth.activeRoleGrant.roleCode ?? null,
+      demoWorkspaceId: auth.demoWorkspaceId ?? null,
     })
     return { items: snapshot.offerings }
   })

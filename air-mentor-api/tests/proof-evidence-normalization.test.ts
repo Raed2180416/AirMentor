@@ -64,4 +64,66 @@ describe('proof evidence normalization', () => {
     expect(labels).toMatch(/TT2 performance is very low \(0%\)/)
     expect(labels).toMatch(/SEE performance is very low \(0%\)/)
   })
+
+  it('attaches policy-floor drivers when institutional rules elevate a row to Medium or High', () => {
+    const inferred = inferObservableRisk({
+      attendancePct: 78,
+      currentCgpa: 8.2,
+      backlogCount: 0,
+      tt1Pct: 82,
+      tt2Pct: null,
+      seePct: null,
+      quizPct: null,
+      assignmentPct: null,
+      weakCoCount: 0,
+      attendanceHistoryRiskCount: 0,
+      questionWeaknessCount: 0,
+      interventionResponseScore: null,
+      policy: {
+        ...DEFAULT_POLICY,
+        attendanceRules: {
+          ...DEFAULT_POLICY.attendanceRules,
+          minimumRequiredPercent: 80,
+        },
+      },
+    })
+
+    expect(inferred.riskBand).toBe('Medium')
+    expect(inferred.observableDrivers.length).toBeGreaterThan(0)
+    expect(inferred.observableDrivers[0]).toMatchObject({
+      feature: 'attendance',
+    })
+    expect(inferred.recommendedAction).toMatch(/attendance|absenteeism/i)
+  })
+
+  it('sanitizes non-finite generated evidence before deriving risk drivers', () => {
+    const inferred = inferObservableRisk({
+      attendancePct: 82,
+      currentCgpa: Number.POSITIVE_INFINITY,
+      backlogCount: Number.NaN,
+      tt1Pct: 58,
+      tt2Pct: Number.NEGATIVE_INFINITY,
+      seePct: Number.NaN,
+      cePct: Number.POSITIVE_INFINITY,
+      overallPct: Number.NEGATIVE_INFINITY,
+      quizPct: Number.NaN,
+      assignmentPct: Number.POSITIVE_INFINITY,
+      weakCoCount: Number.POSITIVE_INFINITY,
+      attendanceHistoryRiskCount: Number.POSITIVE_INFINITY,
+      questionWeaknessCount: Number.NEGATIVE_INFINITY,
+      interventionResponseScore: Number.NEGATIVE_INFINITY,
+      policy: DEFAULT_POLICY,
+    })
+
+    expect(Number.isFinite(inferred.riskProb)).toBe(true)
+    expect(JSON.stringify(inferred.observableDrivers)).not.toMatch(/Infinity|NaN/)
+    const features = inferred.observableDrivers.map(driver => driver.feature)
+    expect(features).not.toContain('cgpa')
+    expect(features).not.toContain('backlog')
+    expect(features).not.toContain('tt2')
+    expect(features).not.toContain('see')
+    expect(features).not.toContain('co')
+    expect(features).not.toContain('attendance-history')
+    expect(features).not.toContain('intervention-response')
+  })
 })

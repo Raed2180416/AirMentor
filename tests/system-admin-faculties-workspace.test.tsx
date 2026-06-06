@@ -781,7 +781,7 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('Provisioning mode')
     expect(markup).toContain('Live Empty')
     expect(markup).toContain('Manual')
-    expect(markup).toContain('Mock / Synthetic (advanced test only)')
+    expect(markup).toContain('Synthetic Fixture (advanced test only)')
     expect(markup).toContain('Enable Synthetic Test Mode')
     expect(markup).toContain('Synthetic student creation is hidden in the default operator flow')
     expect(markup).toContain('Bulk Mentor Assignment')
@@ -832,7 +832,7 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('Locked until a live offering exists')
   })
 
-  it('surfaces backend-aligned prerequisite validation before saving draft curriculum inputs', () => {
+  it('keeps the overview workspace free of stale prerequisite warning copy', () => {
     const markup = renderWorkspace('overview', {
       curriculumSemesterEntries: [
         {
@@ -922,9 +922,9 @@ describe('system-admin faculties workspace parity', () => {
       },
     })
 
-    expect(markup).toContain('Prerequisite validation failed for 1 parsed line')
-    expect(markup).toContain('Found semester 5 -&gt; 5.')
-    expect(markup).toContain('Save Model Inputs')
+    expect(markup).not.toContain('Prerequisite validation failed')
+    expect(markup).not.toContain('Found semester 5 -&gt; 5.')
+    expect(markup).toContain('Course editor')
   })
 
   it('does not block same-semester added prerequisite links in model inputs', () => {
@@ -982,7 +982,7 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).not.toContain('Found semester 5 -&gt; 5.')
   })
 
-  it('renders canonical proof scope provenance when the proof pilot batch is active', () => {
+  it('renders canonical proof semester chips when the proof pilot batch is active', () => {
     const canonicalProofBatch = {
       ...data.batches[0],
       batchId: 'batch_branch_mnc_btech_2023',
@@ -1001,10 +1001,9 @@ describe('system-admin faculties workspace parity', () => {
       authoritativeOperationalSemesterSource: 'proof-run',
     })
 
-    expect(markup).toContain('Pilot Scope Provenance')
-    expect(markup).toContain('Active simulation batch')
+    expect(markup).toContain('Batch 2023 Proof')
     expect(markup).toContain('Proof operational semester · Sem 4')
-    expect(markup).toContain('Canonical batch 2023 Proof')
+    expect(markup).toContain('3rd Year')
   })
 
   it('renders stable batch chips for the selected year overview', () => {

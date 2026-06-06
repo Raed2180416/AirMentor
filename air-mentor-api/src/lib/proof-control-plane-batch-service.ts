@@ -84,6 +84,41 @@ async function resolveProofCheckpointForRun(
   return checkpoint
 }
 
+function checkpointRiskBandWeight(riskBand: string | null | undefined) {
+  const normalized = (riskBand ?? '').trim().toLowerCase()
+  if (normalized === 'high') return 3
+  if (normalized === 'medium') return 2
+  if (normalized === 'low') return 1
+  return 0
+}
+
+function checkpointNullablePct(value: unknown) {
+  if (value === null || value === undefined) return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function checkpointProjectionGovernance(row: typeof simulationStageStudentProjections.$inferSelect) {
+  const payload = parseJson(row.projectionJson, {} as Record<string, unknown>)
+  const governance = (payload.governance ?? {}) as Record<string, unknown>
+  return {
+    primaryCase: governance.primaryCase === true,
+    countsTowardCapacity: governance.countsTowardCapacity === true,
+    priorityRank: Number.isFinite(Number(governance.priorityRank)) ? Number(governance.priorityRank) : Number.MAX_SAFE_INTEGER,
+  }
+}
+
+function sortCheckpointProjectionRows(rows: Array<typeof simulationStageStudentProjections.$inferSelect>) {
+  return rows.slice().sort((left, right) => {
+    const leftGovernance = checkpointProjectionGovernance(left)
+    const rightGovernance = checkpointProjectionGovernance(right)
+    if (leftGovernance.primaryCase !== rightGovernance.primaryCase) return Number(rightGovernance.primaryCase) - Number(leftGovernance.primaryCase)
+    if (leftGovernance.countsTowardCapacity !== rightGovernance.countsTowardCapacity) return Number(rightGovernance.countsTowardCapacity) - Number(leftGovernance.countsTowardCapacity)
+    if (leftGovernance.priorityRank !== rightGovernance.priorityRank) return leftGovernance.priorityRank - rightGovernance.priorityRank
+    return right.riskProbScaled - left.riskProbScaled || left.courseCode.localeCompare(right.courseCode)
+  })
+}
+
 export async function listProofRunCheckpoints(db: AppDb, input: {
   simulationRunId: string
 }, deps: ProofControlPlaneBatchServiceDeps) {
@@ -229,6 +264,90 @@ export async function getProofRunCheckpointStudentDetail(db: AppDb, input: {
         counterfactualLiftScaled: Number((parseJson(row.projectionJson, {} as Record<string, unknown>).counterfactualLiftScaled) ?? (row.noActionRiskProbScaled ?? row.riskProbScaled) - row.riskProbScaled),
         projection: parseJson(row.projectionJson, {} as Record<string, unknown>),
       })),
+  }
+}
+
+export async function listProofRunCheckpointStudents(db: AppDb, input: {
+  simulationRunId: string
+  simulationStageCheckpointId: string
+}, deps: ProofControlPlaneBatchServiceDeps) {
+  const { parseProofCheckpointSummary, withProofPlaybackGate } = deps
+  const [checkpoint, projectionRows, queueCaseRows, studentRows] = await Promise.all([
+    resolveProofCheckpointForRun(db, input.simulationRunId, input.simulationStageCheckpointId),
+    db.select().from(simulationStageStudentProjections).where(and(
+      eq(simulationStageStudentProjections.simulationRunId, input.simulationRunId),
+      eq(simulationStageStudentProjections.simulationStageCheckpointId, input.simulationStageCheckpointId),
+    )),
+    db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, input.simulationRunId)),
+    db.select().from(students),
+  ])
+  const orderedCheckpointRows = await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)).orderBy(
+    asc(simulationStageCheckpoints.semesterNumber),
+    asc(simulationStageCheckpoints.stageOrder),
+  )
+  const checkpointSummary = withProofPlaybackGate(orderedCheckpointRows.map(parseProofCheckpointSummary), queueCaseRows)
+    .find(item => item.simulationStageCheckpointId === input.simulationStageCheckpointId)
+    ?? parseProofCheckpointSummary(checkpoint)
+  const studentById = new Map(studentRows.map(row => [row.studentId, row]))
+  const rowsByStudentId = new Map<string, Array<typeof simulationStageStudentProjections.$inferSelect>>()
+  for (const row of projectionRows) {
+    rowsByStudentId.set(row.studentId, [...(rowsByStudentId.get(row.studentId) ?? []), row])
+  }
+  const items = Array.from(rowsByStudentId.entries())
+    .map(([studentId, rowsForStudent]) => {
+      const primary = sortCheckpointProjectionRows(rowsForStudent)[0] ?? null
+      if (!primary) return null
+      const student = studentById.get(studentId) ?? null
+      const payload = parseJson(primary.projectionJson, {} as Record<string, unknown>)
+      const currentEvidence = (payload.currentEvidence ?? {}) as Record<string, unknown>
+      const currentStatus = (payload.currentStatus ?? {}) as Record<string, unknown>
+      const counterfactualPolicy = (payload.counterfactualPolicyDiagnostics ?? {}) as Record<string, unknown>
+      return {
+        studentId,
+        studentName: student?.name ?? studentId,
+        usn: student?.usn ?? '',
+        sectionCode: primary.sectionCode,
+        currentSemester: checkpointSummary.semesterNumber,
+        currentRiskBand: primary.riskBand,
+        currentRiskProbScaled: primary.riskProbScaled,
+        currentQueueState: primary.queueState ?? (typeof currentStatus.queueState === 'string' ? currentStatus.queueState : null),
+        currentReassessmentStatus: primary.reassessmentState,
+        primaryCourseCode: primary.courseCode,
+        primaryCourseTitle: primary.courseTitle,
+        nextDueAt: typeof currentStatus.dueAt === 'string' ? currentStatus.dueAt : null,
+        riskChangeFromPreviousCheckpointScaled: Number(payload.riskChangeFromPreviousCheckpointScaled ?? 0),
+        counterfactualLiftScaled: Number(
+          counterfactualPolicy.counterfactualLiftScaled
+          ?? payload.counterfactualLiftScaled
+          ?? (primary.noActionRiskProbScaled ?? primary.riskProbScaled) - primary.riskProbScaled,
+        ),
+        observedEvidence: {
+          attendancePct: Number(currentEvidence.attendancePct ?? 0),
+          tt1Pct: checkpointNullablePct(currentEvidence.tt1Pct),
+          tt2Pct: checkpointNullablePct(currentEvidence.tt2Pct),
+          quizPct: checkpointNullablePct(currentEvidence.quizPct),
+          assignmentPct: checkpointNullablePct(currentEvidence.assignmentPct),
+          seePct: checkpointNullablePct(currentEvidence.seePct),
+          cgpa: Number(currentStatus.currentCgpa ?? 0),
+          backlogCount: Number(currentStatus.backlogCount ?? 0),
+          weakCoCount: Number(currentEvidence.weakCoCount ?? 0),
+          weakQuestionCount: Number(currentEvidence.weakQuestionCount ?? 0),
+          coEvidenceMode: typeof currentEvidence.coEvidenceMode === 'string' ? currentEvidence.coEvidenceMode : null,
+          interventionRecoveryStatus: typeof currentEvidence.interventionRecoveryStatus === 'string'
+            ? currentEvidence.interventionRecoveryStatus
+            : null,
+        },
+      }
+    })
+    .filter((item): item is NonNullable<typeof item> => !!item)
+    .sort((left, right) => (
+      checkpointRiskBandWeight(right.currentRiskBand) - checkpointRiskBandWeight(left.currentRiskBand)
+      || right.currentRiskProbScaled - left.currentRiskProbScaled
+      || left.studentName.localeCompare(right.studentName)
+    ))
+  return {
+    checkpoint: checkpointSummary,
+    items,
   }
 }
 

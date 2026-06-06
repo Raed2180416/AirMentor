@@ -1,15 +1,13 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, Eye, Mail, Phone, Search, Users, X } from 'lucide-react'
 import { T, mono, sora, yearColor, type Mentee, type Offering, type Student, type StudentHistoryRecord, type YearGroup } from './data'
-import { type EntryKind, type Role, type SharedTask } from './domain'
+import { type EntryKind, type RiskBand, type Role, type SharedTask } from './domain'
 import type { ApiAcademicFacultyProfile, ApiProofReassessmentResolveResponse, ApiStudentAgentCard, ApiStudentRiskExplorer } from './api/types'
 import type { ProofAdvanceControlMode, ProofPlaybackControlDirection } from './proof-simulation-controls'
-import { AcademicProofSummaryStrip } from './academic-proof-summary-strip'
 import { humanLabelForActionCode } from './action-code-humaniser'
-import { DemoRealityLoopPanel } from './demo-reality-loop'
 import { useAppSelectors } from './selectors'
 import { inferKindFromPendingAction } from './page-utils'
-import { Bar, Btn, Card, Chip, PageBackButton, PageShell, StagePips } from './ui-primitives'
+import { Bar, Btn, Card, Chip, PageBackButton, PageShell, StagePips, withAlpha } from './ui-primitives'
 
 function formatDateTime(timestamp?: number) {
   if (!timestamp) return 'Pending'
@@ -42,6 +40,7 @@ type CLDashboardProps = {
   onOpenStudents?: () => void
   onOpenUpload: (offering?: Offering, kind?: EntryKind) => void
   onOpenCalendar: () => void
+  onOpenFacultyProfile?: () => void
   onOpenPendingActions: () => void
   loadStudentRiskExplorer?: (studentId: string) => Promise<ApiStudentRiskExplorer>
   loadStudentAgentCard?: (studentId: string) => Promise<ApiStudentAgentCard>
@@ -66,6 +65,7 @@ export function CLDashboard({
   onOpenStudents,
   onOpenUpload,
   onOpenCalendar,
+  onOpenFacultyProfile,
   onOpenPendingActions,
   loadStudentRiskExplorer,
   loadStudentAgentCard,
@@ -84,6 +84,7 @@ export function CLDashboard({
   const proofCheckpoint = proofProfile?.proofOperations?.scopeMode === 'proof'
     ? proofProfile.proofOperations.selectedCheckpoint
     : null
+  const activeProofRun = proofProfile?.proofOperations?.activeRunContexts[0] ?? null
   const proofScopedStudentCount = proofCheckpoint?.studentCount ?? null
   const total = proofScopedStudentCount ?? offerings.reduce((count, offering) => count + getStudentsPatched(offering).length, 0)
   const proofAlertItems = useMemo<DashboardAlertItem[]>(() => {
@@ -157,15 +158,7 @@ export function CLDashboard({
 
   return (
     <PageShell size="wide">
-      <AcademicProofSummaryStrip
-        profile={proofProfile ?? null}
-        surfaceId="course-leader-dashboard"
-        surfaceLabel="Course Leader Dashboard"
-        onAdvanceProofRun={onAdvanceProofRun}
-        onStopProofRun={onStopProofRun}
-        onStepProofPlayback={onStepProofPlayback}
-      />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <div style={{ width: 50, height: 50, borderRadius: 14, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 18, color: '#fff' }}>{teacherInitials}</div>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 18, color: T.text }}>{greetingHeadline}</div>
@@ -195,16 +188,26 @@ export function CLDashboard({
         ))}
       </div>
 
-      <DemoRealityLoopPanel
-        proofProfile={proofProfile ?? null}
-        offerings={offerings}
-        loadStudentRiskExplorer={loadStudentRiskExplorer}
-        loadStudentAgentCard={loadStudentAgentCard}
-        onCommitAttendanceEdit={onCommitDemoAttendanceEdit}
-        onRecomputeProofRunRisk={onRecomputeProofRunRisk}
-        onResolveReassessment={onResolveProofReassessment}
-        onAdvanceProofRun={onAdvanceProofRun}
-      />
+      {(proofCheckpoint || activeProofRun) && (
+        <Card data-proof-section="dashboard-proof-controls-cta" style={{ padding: '16px 18px', marginBottom: 24, display: 'grid', gap: 10, borderColor: `${T.accent}2f` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Shared Proof Controls
+              </div>
+              <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text, marginTop: 6 }}>
+                {proofCheckpoint
+                  ? `Semester ${proofCheckpoint.semesterNumber} · ${proofCheckpoint.stageLabel}`
+                  : activeProofRun?.runLabel ?? 'Active proof run'}
+              </div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
+                Advance stages and review the shared proof panel from Faculty Profile. The dashboard stays stage-aware, but the authoritative controls live there.
+              </div>
+            </div>
+            {onOpenFacultyProfile ? <Btn size="sm" onClick={onOpenFacultyProfile}>Open Faculty Profile</Btn> : null}
+          </div>
+        </Card>
+      )}
 
       {highRiskCount > 0 && (
         <Card glow={T.danger} style={{ padding: '18px 22px', marginBottom: 24 }}>
@@ -270,7 +273,7 @@ function YearSection({
   onOpenUpload: (offering?: Offering, kind?: EntryKind) => void
 }) {
   const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
-  const { year, color, stageInfo, offerings } = group
+  const { year, stageInfo, offerings } = group
   const [collapsed, setCollapsed] = useState(false)
   const totalStudents = offerings.reduce((count, offering) => count + getStudentsPatched(offering).length, 0)
   const avgAtt = Math.round(offerings.reduce((count, offering) => count + getOfferingAttendancePatched(offering), 0) / (offerings.length || 1))
@@ -279,8 +282,8 @@ function YearSection({
 
   return (
     <div style={{ marginBottom: 22 }}>
-      <div data-pressable="true" onClick={() => setCollapsed(current => !current)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: `${color}0c`, border: `1px solid ${color}28`, borderRadius: collapsed ? 10 : '10px 10px 0 0', marginBottom: collapsed ? 0 : 12, cursor: 'pointer', transition: 'background-color 0.2s ease, border-color 0.2s ease, border-radius 0.2s ease, margin-bottom 0.2s ease', flexWrap: 'wrap' }}>
-        <div style={{ ...sora, fontWeight: 800, fontSize: 13, color, background: `${color}18`, border: `1px solid ${color}40`, padding: '3px 12px', borderRadius: 6 }}>{year}</div>
+      <div data-pressable="true" onClick={() => setCollapsed(current => !current)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: collapsed ? 10 : '10px 10px 0 0', marginBottom: collapsed ? 0 : 12, cursor: 'pointer', transition: 'background-color 0.2s ease, border-color 0.2s ease, border-radius 0.2s ease, margin-bottom 0.2s ease', flexWrap: 'wrap' }}>
+        <div style={{ ...sora, fontWeight: 800, fontSize: 13, color: T.accent, background: withAlpha(T.accent, '12'), border: `1px solid ${withAlpha(T.accent, '30')}`, padding: '3px 12px', borderRadius: 6 }}>{year}</div>
         <Chip color={stageInfo.color}>{stageInfo.label} · {stageInfo.desc}</Chip>
         <StagePips current={stageInfo.stage} />
         <div style={{ ...mono, fontSize: 11, color: T.muted }}>{offerings.length} class{offerings.length > 1 ? 'es' : ''} · {totalStudents} students · {avgAtt}% att</div>
@@ -290,7 +293,7 @@ function YearSection({
       </div>
       {!collapsed ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12 }}>
-          {offerings.map(offering => <OfferingCard key={offering.offId} offering={offering} yearColorTone={color} onOpen={onOpenCourse} onOpenUpload={onOpenUpload} />)}
+          {offerings.map(offering => <OfferingCard key={offering.offId} offering={offering} onOpen={onOpenCourse} onOpenUpload={onOpenUpload} />)}
         </div>
       ) : null}
     </div>
@@ -299,12 +302,10 @@ function YearSection({
 
 function OfferingCard({
   offering,
-  yearColorTone,
   onOpen,
   onOpenUpload,
 }: {
   offering: Offering
-  yearColorTone: string
   onOpen: (offering: Offering) => void
   onOpenUpload: (offering?: Offering, kind?: EntryKind) => void
 }) {
@@ -317,11 +318,11 @@ function OfferingCard({
   const highRisk = offering.stage >= 2 ? getStudentsPatched(offering).filter(student => student.riskBand === 'High').length : 0
 
   return (
-    <Card onClick={() => onOpen(offering)} glow={yearColorTone} style={{ position: 'relative', overflow: 'hidden', padding: '16px 18px', borderRadius: 12 }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${yearColorTone},${stageColor})` }} />
+    <Card onClick={() => onOpen(offering)} style={{ position: 'relative', overflow: 'hidden', padding: '16px 18px', borderRadius: 12 }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${withAlpha(T.accent, '44')}, ${withAlpha(T.accent, '22')})` }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div>
-          <div style={{ ...mono, fontSize: 10, color: yearColorTone, marginBottom: 2 }}>{offering.code} · {offering.dept} · Sec {offering.section}</div>
+          <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 2 }}>{offering.code} · {offering.dept} · Sec {offering.section}</div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, lineHeight: 1.25 }}>{offering.title}</div>
         </div>
         <Chip color={stageColor} size={10}>{offering.stageInfo.label}</Chip>
@@ -373,6 +374,39 @@ type MentorViewProps = {
   onOpenRiskExplorer?: (studentId: string) => void
 }
 
+function getMenteeCurrentRiskProb(mentee: Mentee) {
+  return typeof mentee.primaryRiskProb === 'number' && Number.isFinite(mentee.primaryRiskProb)
+    ? mentee.primaryRiskProb
+    : mentee.avs
+}
+
+function getMenteeCurrentRiskBand(mentee: Mentee): RiskBand | null {
+  if (mentee.primaryRiskBand) return mentee.primaryRiskBand
+  const risk = getMenteeCurrentRiskProb(mentee)
+  return risk >= 0.6 ? 'High' : risk >= 0.35 ? 'Medium' : risk >= 0 ? 'Low' : null
+}
+
+function getRiskColorForBand(band: RiskBand | null) {
+  return band === 'High' ? T.danger : band === 'Medium' ? T.warning : band === 'Low' ? T.success : T.dim
+}
+
+function sortMenteeCourseRisksByCurrentAuthority(mentee: Mentee) {
+  return [...mentee.courseRisks]
+    .filter(risk => risk.risk >= 0)
+    .sort((left, right) => {
+      if ((left.primaryCase ?? false) !== (right.primaryCase ?? false)) return Number(right.primaryCase === true) - Number(left.primaryCase === true)
+      if ((left.countsTowardCapacity ?? false) !== (right.countsTowardCapacity ?? false)) return Number(right.countsTowardCapacity === true) - Number(left.countsTowardCapacity === true)
+      if (mentee.primaryCourseCode && left.code !== right.code) {
+        if (left.code === mentee.primaryCourseCode) return -1
+        if (right.code === mentee.primaryCourseCode) return 1
+      }
+      const leftRank = left.priorityRank ?? Number.MAX_SAFE_INTEGER
+      const rightRank = right.priorityRank ?? Number.MAX_SAFE_INTEGER
+      if (leftRank !== rightRank) return leftRank - rightRank
+      return right.risk - left.risk || left.code.localeCompare(right.code)
+    })
+}
+
 export function MentorView({
   mentees,
   tasks,
@@ -383,10 +417,18 @@ export function MentorView({
 }: MentorViewProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all')
-  const sorted = [...mentees].sort((left, right) => right.avs - left.avs)
-  const highRisk = mentees.filter(mentee => mentee.avs >= 0.6).length
-  const medRisk = mentees.filter(mentee => mentee.avs >= 0.35 && mentee.avs < 0.6).length
-  const lowRisk = mentees.filter(mentee => mentee.avs >= 0 && mentee.avs < 0.35).length
+  const proofCheckpoint = proofProfile?.proofOperations?.scopeMode === 'proof'
+    ? proofProfile.proofOperations.selectedCheckpoint
+    : null
+  const proofStageKey = proofCheckpoint?.stageKey ?? null
+  const proofSemesterNumber = proofCheckpoint?.semesterNumber ?? null
+  const proofModeActive = proofProfile?.proofOperations?.scopeMode === 'proof'
+  const preTt1Checkpoint = proofStageKey === 'pre-tt1'
+  const showCheckpointCgpa = !proofModeActive || (proofSemesterNumber != null && proofSemesterNumber > 1 && !preTt1Checkpoint)
+  const sorted = [...mentees].sort((left, right) => getMenteeCurrentRiskProb(right) - getMenteeCurrentRiskProb(left))
+  const highRisk = mentees.filter(mentee => getMenteeCurrentRiskBand(mentee) === 'High').length
+  const medRisk = mentees.filter(mentee => getMenteeCurrentRiskBand(mentee) === 'Medium').length
+  const lowRisk = mentees.filter(mentee => getMenteeCurrentRiskBand(mentee) === 'Low').length
   const filteredMentees = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     return sorted.filter(mentee => {
@@ -394,10 +436,10 @@ export function MentorView({
         activeFilter === 'all'
           ? true
           : activeFilter === 'high'
-            ? mentee.avs >= 0.6
+            ? getMenteeCurrentRiskBand(mentee) === 'High'
             : activeFilter === 'medium'
-              ? mentee.avs >= 0.35 && mentee.avs < 0.6
-              : mentee.avs >= 0 && mentee.avs < 0.35
+              ? getMenteeCurrentRiskBand(mentee) === 'Medium'
+              : getMenteeCurrentRiskBand(mentee) === 'Low'
       if (!byRisk) return false
       if (!query) return true
       const matchesText = [
@@ -431,13 +473,16 @@ export function MentorView({
 
   return (
     <PageShell size="standard">
-      <AcademicProofSummaryStrip profile={proofProfile ?? null} surfaceId="mentor-view" surfaceLabel="Mentor View" />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Users size={22} color={T.accent} />
           <div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text }}>My Mentees</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Student-centric view · Cross-course watchlist summary from current observable evidence</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>
+              {proofCheckpoint
+                ? `Student-centric checkpoint view · Semester ${proofCheckpoint.semesterNumber} / ${proofCheckpoint.stageLabel}`
+                : 'Student-centric view · Cross-course watchlist summary from current observable evidence'}
+            </div>
           </div>
         </div>
         <div style={{ minWidth: 220, flex: '1 1 280px', maxWidth: 360, position: 'relative' }}>
@@ -471,10 +516,29 @@ export function MentorView({
         </div>
       </div>
 
+      {proofCheckpoint ? (
+        <Card data-proof-section="mentor-checkpoint-banner" style={{ padding: '12px 14px', marginBottom: 18, display: 'grid', gap: 6 }}>
+          <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Shared Proof Checkpoint
+          </div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text }}>
+            Semester {proofCheckpoint.semesterNumber} · {proofCheckpoint.stageLabel}
+          </div>
+          <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+            Mentor cards below are pinned to the currently selected proof checkpoint. Student-shell and risk-explorer drilldowns follow this same semester and stage.
+          </div>
+          {preTt1Checkpoint ? (
+            <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.7 }}>
+              Pre-TT1 is an early-semester evidence window, so later-semester cues like carry-forward CGPA framing and assessment percentage bars stay suppressed here.
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 22 }}>
         {[
           { lbl: 'Total Mentees', val: mentees.length, col: T.accent, key: 'all' as const, clickable: true },
-          { lbl: 'High Vulnerability', val: highRisk, col: T.danger, key: 'high' as const, clickable: true },
+          { lbl: proofCheckpoint ? 'High Watch' : 'High Vulnerability', val: highRisk, col: T.danger, key: 'high' as const, clickable: true },
           { lbl: 'Medium Risk', val: medRisk, col: T.warning, key: 'medium' as const, clickable: true },
           { lbl: 'Low Risk', val: lowRisk, col: T.success, key: 'low' as const, clickable: true },
         ].map((stat, index) => (
@@ -549,20 +613,21 @@ export function MentorView({
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {filteredMentees.map(mentee => {
-          const avsBand = mentee.avs >= 0.6 ? 'High' : mentee.avs >= 0.35 ? 'Medium' : mentee.avs >= 0 ? 'Low' : null
-          const avsColor = avsBand === 'High' ? T.danger : avsBand === 'Medium' ? T.warning : avsBand === 'Low' ? T.success : T.dim
+          const currentRiskProb = getMenteeCurrentRiskProb(mentee)
+          const currentRiskBand = getMenteeCurrentRiskBand(mentee)
+          const currentRiskColor = getRiskColorForBand(currentRiskBand)
           return (
-            <Card key={mentee.id} glow={avsColor} style={{ padding: '16px 20px', cursor: 'pointer' }} onClick={() => onOpenMentee(mentee)}>
+            <Card key={mentee.id} glow={currentRiskColor} style={{ padding: '16px 20px', cursor: 'pointer' }} onClick={() => onOpenMentee(mentee)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                 <div>
                   <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text }}>{mentee.name}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 1 }}>{mentee.usn} · {mentee.year} · Sec {mentee.section} · {mentee.dept}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  {mentee.avs >= 0 ? (
+                  {currentRiskProb >= 0 ? (
                     <>
-                      <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: avsColor }}>{Math.round(mentee.avs * 100)}%</div>
-                      <div style={{ ...mono, fontSize: 9, color: T.muted }}>Aggregate Vulnerability</div>
+                      <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: currentRiskColor }}>{Math.round(currentRiskProb * 100)}%</div>
+                      <div style={{ ...mono, fontSize: 9, color: T.muted }}>Current Risk{mentee.primaryCourseCode ? ` · ${mentee.primaryCourseCode}` : ''}</div>
                     </>
                   ) : (
                     <Chip color={T.dim} size={10}>Awaiting TT1</Chip>
@@ -571,16 +636,31 @@ export function MentorView({
               </div>
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                {mentee.avs >= 0 && currentRiskProb !== mentee.avs ? (
+                  <Chip color={T.dim} size={9}>Avg {Math.round(mentee.avs * 100)}%</Chip>
+                ) : null}
+                {currentRiskBand ? <Chip color={currentRiskColor} size={9}>{currentRiskBand}</Chip> : null}
+                {mentee.primaryQueueState ? <Chip color={T.orange} size={9}>{mentee.primaryQueueState}</Chip> : null}
                 {mentee.courseRisks.map(courseRisk => {
                   const riskColor = courseRisk.risk >= 0.7 ? T.danger : courseRisk.risk >= 0.35 ? T.warning : courseRisk.risk >= 0 ? T.success : T.dim
                   return (
                     <div key={courseRisk.code} style={{ flex: '1 1 140px', background: T.surface2, borderRadius: 6, padding: '8px 10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span style={{ ...mono, fontSize: 10, color: T.muted }}>{courseRisk.code}</span>
-                        <span style={{ ...mono, fontSize: 10, fontWeight: 700, color: riskColor }}>{courseRisk.risk >= 0 ? `${Math.round(courseRisk.risk * 100)}%` : '—'}</span>
+                        <span style={{ ...mono, fontSize: 10, fontWeight: 700, color: riskColor }}>
+                          {preTt1Checkpoint
+                            ? 'Awaiting TT1'
+                            : courseRisk.risk >= 0
+                              ? `${Math.round(courseRisk.risk * 100)}%`
+                              : '—'}
+                        </span>
                       </div>
-                      <Bar val={courseRisk.risk >= 0 ? courseRisk.risk * 100 : 0} color={riskColor} h={4} />
-                      <div style={{ ...mono, fontSize: 8, color: T.dim, marginTop: 2 }}>{courseRisk.title.slice(0, 25)}</div>
+                      {!preTt1Checkpoint ? <Bar val={courseRisk.risk >= 0 ? courseRisk.risk * 100 : 0} color={riskColor} h={4} /> : null}
+                      <div style={{ ...mono, fontSize: 8, color: T.dim, marginTop: 2 }}>
+                        {preTt1Checkpoint
+                          ? `${courseRisk.title.slice(0, 25)} · checkpoint baseline`
+                          : courseRisk.title.slice(0, 25)}
+                      </div>
                     </div>
                   )
                 })}
@@ -595,7 +675,7 @@ export function MentorView({
                 ) : (
                   <span style={{ ...mono, fontSize: 10, color: T.dim }}>No interventions logged</span>
                 )}
-                {mentee.prevCgpa > 0 ? <Chip color={T.dim} size={9}>CGPA: {mentee.prevCgpa.toFixed(1)}</Chip> : null}
+                {showCheckpointCgpa && mentee.prevCgpa > 0 ? <Chip color={T.dim} size={9}>CGPA: {mentee.prevCgpa.toFixed(1)}</Chip> : null}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                   {onOpenRiskExplorer ? (
                     <button
@@ -658,7 +738,10 @@ export function MenteeDetailPage({
   onOpenRiskExplorer,
 }: MenteeDetailPageProps) {
   const [activeInsight, setActiveInsight] = useState<'risk' | 'cgpa'>('risk')
-  const avgCourseRisk = mentee.avs >= 0 ? Math.round(mentee.courseRisks.filter(risk => risk.risk >= 0).reduce((sum, risk) => sum + risk.risk, 0) / Math.max(1, mentee.courseRisks.filter(risk => risk.risk >= 0).length) * 100) : null
+  const currentRiskProb = getMenteeCurrentRiskProb(mentee)
+  const currentRiskBand = getMenteeCurrentRiskBand(mentee)
+  const currentRiskColor = getRiskColorForBand(currentRiskBand)
+  const currentCgpa = history?.currentCgpa ?? mentee.prevCgpa
   const sgpaSeries = useMemo(
     () => history
       ? [...history.terms]
@@ -675,17 +758,10 @@ export function MenteeDetailPage({
     const lowest = allSubjects.reduce((loser, subject) => subject.score < (loser?.score ?? Number.POSITIVE_INFINITY) ? subject : loser, allSubjects[0] ?? null)
     return { best, lowest }
   }, [history])
-  const riskDrivers = [...mentee.courseRisks]
-    .filter(risk => risk.risk >= 0)
-    .sort((left, right) => right.risk - left.risk)
-    .slice(0, 3)
+  const riskDrivers = sortMenteeCourseRisksByCurrentAuthority(mentee).slice(0, 3)
   const prioritizedCourseRisks = useMemo(
-    () => [...mentee.courseRisks].filter(risk => risk.risk >= 0).sort((left, right) => right.risk - left.risk),
-    [mentee.courseRisks],
-  )
-  const totalRiskWeight = useMemo(
-    () => prioritizedCourseRisks.reduce((sum, risk) => sum + risk.risk, 0),
-    [prioritizedCourseRisks],
+    () => sortMenteeCourseRisksByCurrentAuthority(mentee),
+    [mentee],
   )
 
   if (!history) {
@@ -724,24 +800,27 @@ export function MenteeDetailPage({
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 18 }}>
         <Card
-          glow={mentee.avs >= 0.6 ? T.danger : mentee.avs >= 0.35 ? T.warning : T.success}
+          glow={currentRiskColor}
           onClick={() => setActiveInsight('risk')}
           style={{ padding: '12px 16px', cursor: 'pointer', border: activeInsight === 'risk' ? `1px solid ${T.accent}` : undefined }}
         >
-          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: mentee.avs >= 0.6 ? T.danger : mentee.avs >= 0.35 ? T.warning : T.success }}>
-            {mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'Awaiting TT1'}
+          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: currentRiskColor }}>
+            {currentRiskProb >= 0 ? `${Math.round(currentRiskProb * 100)}%` : 'Awaiting TT1'}
           </div>
-          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Aggregate Watch Score (click for why)</div>
+          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Current Risk{mentee.primaryCourseCode ? ` · ${mentee.primaryCourseCode}` : ''}</div>
+          {mentee.avs >= 0 && currentRiskProb !== mentee.avs ? (
+            <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 3 }}>Avg {Math.round(mentee.avs * 100)}%</div>
+          ) : null}
         </Card>
         <Card
-          glow={mentee.prevCgpa >= 7 ? T.success : mentee.prevCgpa >= 6 ? T.warning : T.danger}
+          glow={currentCgpa >= 7 ? T.success : currentCgpa >= 6 ? T.warning : T.danger}
           onClick={() => setActiveInsight('cgpa')}
           style={{ padding: '12px 16px', cursor: 'pointer', border: activeInsight === 'cgpa' ? `1px solid ${T.accent}` : undefined }}
         >
-          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: mentee.prevCgpa >= 7 ? T.success : mentee.prevCgpa >= 6 ? T.warning : T.danger }}>
-            {mentee.prevCgpa > 0 ? mentee.prevCgpa.toFixed(1) : '—'}
+          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: currentCgpa >= 7 ? T.success : currentCgpa >= 6 ? T.warning : T.danger }}>
+            {currentCgpa > 0 ? currentCgpa.toFixed(1) : '—'}
           </div>
-          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Prev CGPA (click for trend)</div>
+          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Current CGPA (click for trend)</div>
         </Card>
         <Card glow={T.accent} style={{ padding: '12px 16px' }}>
           <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.accent }}>{mentee.courseRisks.length}</div>
@@ -755,19 +834,19 @@ export function MenteeDetailPage({
 
       {activeInsight === 'risk' ? (
         <Card style={{ marginBottom: 14 }}>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Why The Aggregate Watch Score Is {mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'unavailable'}</div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Why Current Risk Is {currentRiskProb >= 0 ? `${Math.round(currentRiskProb * 100)}%` : 'unavailable'}{mentee.primaryCourseCode ? ` · ${mentee.primaryCourseCode}` : ''}</div>
           {riskDrivers.length > 0 ? (
             <div style={{ display: 'grid', gap: 8 }}>
               {riskDrivers.map(driver => {
                 const color = driver.risk >= 0.7 ? T.danger : driver.risk >= 0.35 ? T.warning : T.success
-                const contribution = totalRiskWeight > 0 ? Math.round((driver.risk / totalRiskWeight) * 100) : 0
                 return (
                   <div key={driver.code} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '9px 10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                       <div>
                         <div style={{ ...mono, fontSize: 11, color: T.text }}>{driver.code} · {driver.title}</div>
                         <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>
-                          {driver.risk >= 0.7 ? 'Major contributor' : driver.risk >= 0.35 ? 'Medium contributor' : 'Minor contributor'} · ~{contribution}% of current total
+                          {driver.primaryCase ? 'Primary proof case' : driver.countsTowardCapacity ? 'Capacity-counted proof case' : 'Supporting course signal'}
+                          {driver.recommendedAction ? ` · ${humanLabelForActionCode(driver.recommendedAction) ?? driver.recommendedAction}` : ''}
                         </div>
                       </div>
                       <div style={{ ...sora, fontWeight: 700, fontSize: 16, color }}>{Math.round(driver.risk * 100)}%</div>
@@ -850,7 +929,7 @@ export function MenteeDetailPage({
           <Card>
             <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Mentor Summary</div>
             <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.6 }}>
-              {avgCourseRisk !== null ? `Average course risk is ${avgCourseRisk}%.` : 'No score-based risk yet.'} Previous-semester CGPA is {history.currentCgpa > 0 ? history.currentCgpa.toFixed(2) : 'not yet available'}.
+              {currentRiskProb >= 0 ? `Current proof risk is ${Math.round(currentRiskProb * 100)}%.` : 'No score-based risk yet.'} Current CGPA is {currentCgpa > 0 ? currentCgpa.toFixed(2) : 'not yet available'}.
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
               {mentee.courseRisks.filter(risk => risk.risk >= 0.5).map(risk => <Chip key={risk.code} color={risk.risk >= 0.7 ? T.danger : T.warning} size={9}>{risk.code}</Chip>)}
@@ -978,7 +1057,7 @@ export function QueueHistoryPage({
     .filter(task => {
       if (filter === 'all') return true
       if (filter === 'active') return !resolvedTaskIds[task.id] && !task.dismissal
-      if (filter === 'resolved') return !!resolvedTaskIds[task.id]
+      if (filter === 'resolved') return !!resolvedTaskIds[task.id] && !task.dismissal
       return !!task.dismissal
     })
     .sort((left, right) => (right.updatedAt ?? right.createdAt) - (left.updatedAt ?? left.createdAt))
@@ -986,8 +1065,7 @@ export function QueueHistoryPage({
   return (
     <PageShell size="standard">
       <PageBackButton onClick={onBack} />
-      <AcademicProofSummaryStrip profile={proofProfile ?? null} surfaceId="queue-history" surfaceLabel="Queue History" />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Queue History</div>
           <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 4 }}>{role} view of active, resolved, and reassigned items.</div>
@@ -1011,7 +1089,7 @@ export function QueueHistoryPage({
                 <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 4 }}>Open the related student context directly from anywhere on this card.</div>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <Chip color={resolvedTaskIds[task.id] ? T.success : task.dismissal ? T.muted : T.warning} size={9}>{resolvedTaskIds[task.id] ? 'Resolved' : task.dismissal ? 'Dismissed' : 'Active'}</Chip>
+                <Chip color={task.dismissal ? T.muted : resolvedTaskIds[task.id] ? T.success : T.warning} size={9}>{task.dismissal ? 'Dismissed' : resolvedTaskIds[task.id] ? 'Resolved' : 'Active'}</Chip>
                 {task.dismissal ? <Chip color={task.dismissal.kind === 'series' ? T.danger : T.muted} size={9}>{task.dismissal.kind === 'series' ? 'Series dismissed' : 'Dismissed'}</Chip> : null}
                 <Chip color={task.assignedTo === 'HoD' ? T.danger : task.assignedTo === 'Mentor' ? T.warning : T.accent} size={9}>{task.assignedTo}</Chip>
               </div>

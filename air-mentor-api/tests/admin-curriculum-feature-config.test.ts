@@ -377,7 +377,7 @@ describe('admin curriculum feature config', () => {
     expect(JSON.stringify(response.json())).toContain('prerequisites.0.edgeKind')
   })
 
-  it('rejects non-mock provisioning requests that still ask for synthetic students', async () => {
+  it('rejects the retired generic batch provisioning endpoint', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
 
@@ -406,6 +406,38 @@ describe('admin curriculum feature config', () => {
     })
 
     expect(response.statusCode).toBe(400)
-    expect(JSON.stringify(response.json())).toContain('Synthetic student creation is only available in mock mode.')
+    expect(JSON.stringify(response.json())).toContain('Batch provisioning is retired')
+  })
+
+  it('rejects proof simulation runs for noncanonical batches', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const batchesResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/admin/batches',
+      headers: { cookie: adminLogin.cookie },
+    })
+    const noncanonicalBatch = (batchesResponse.json().items as Array<{ batchId: string }>)
+      .find(item => item.batchId !== MSRUAS_PROOF_BATCH_ID)
+    expect(noncanonicalBatch).toBeTruthy()
+    if (!noncanonicalBatch) throw new Error('Expected a noncanonical batch for proof-run boundary coverage')
+
+    const response = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/batches/${noncanonicalBatch.batchId}/proof-runs`,
+      headers: {
+        cookie: adminLogin.cookie,
+        origin: TEST_ORIGIN,
+      },
+      payload: {
+        curriculumImportVersionId: 'not_used_for_noncanonical_boundary',
+        activate: true,
+      },
+    })
+
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({
+      error: 'PROOF_SANDBOX_BATCH_REQUIRED',
+    })
   })
 })

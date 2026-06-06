@@ -215,12 +215,20 @@ export async function createPersistentTestApp(databaseDir: string) {
   }
 }
 
-export async function loginAs(app: Awaited<ReturnType<typeof createTestApp>>['app'], identifier: string, password: string) {
+export async function loginAs(
+  app: Awaited<ReturnType<typeof createTestApp>>['app'],
+  identifier: string,
+  password: string,
+  options?: {
+    demoWorkspaceId?: string | null
+  },
+) {
   const response = await app.inject({
     method: 'POST',
     url: '/api/session/login',
     headers: {
       origin: TEST_ORIGIN,
+      ...(options?.demoWorkspaceId ? { 'x-airmentor-demo-workspace': options.demoWorkspaceId } : {}),
     },
     payload: { identifier, password },
   })

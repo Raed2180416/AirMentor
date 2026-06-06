@@ -19,7 +19,9 @@ import type { RouteContext } from '../app.js'
 import {
   batches,
   bridgeModules,
+  courseOutcomeOverrides,
   courseTopicPartitions,
+  curriculumCourses,
   curriculumEdges,
   curriculumGraphDrafts,
   curriculumGraphHistory,
@@ -208,12 +210,29 @@ async function loadGraphFromImportVersion(
     bridgeModuleMap[br.curriculumNodeId] = parseJson(br.moduleTitlesJson, [] as string[])
   }
 
-  // Attach outcomes (from course_outcome_overrides is too complex here; keep empty for now)
+  // Attach outcomes from course_outcome_overrides (batch-scoped or institution-scoped)
+  const courseIdToOutcomes = new Map<string, Array<{ id: string; desc: string; bloom: string; masteryTarget: number }>>()
+  const outcomeRows = await context.db.select().from(courseOutcomeOverrides)
+    .where(eq(courseOutcomeOverrides.status, 'active'))
+  for (const or of outcomeRows) {
+    const parsed = parseJson(or.outcomesJson, [] as Array<{ id?: string; desc?: string; bloom?: string; masteryTarget?: number }>)
+    const normalized = parsed.map((o: any, idx: number) => ({
+      id: o.id ?? `co_${idx}`,
+      desc: o.desc ?? o.description ?? 'Course outcome',
+      bloom: o.bloom ?? o.bloomLevel ?? 'understand',
+      masteryTarget: o.masteryTarget ?? o.mastery_target ?? 0.6,
+    }))
+    courseIdToOutcomes.set(or.courseId, normalized)
+  }
+
   for (const n of activeNodes) {
     const draftNode = nodeMap.get(n.curriculumNodeId)
     if (!draftNode) continue
     draftNode.topicPartitions = topicPartitions[n.curriculumNodeId] ?? { tt1: [], tt2: [], see: [], workbook: [] }
     draftNode.bridgeModules = bridgeModuleMap[n.curriculumNodeId] ?? []
+    if (n.courseId && courseIdToOutcomes.has(n.courseId)) {
+      draftNode.outcomes = courseIdToOutcomes.get(n.courseId)!
+    }
   }
 
   return {
@@ -260,8 +279,10 @@ function validateGraph(nodes: DraftNode[], edges: DraftEdge[]) {
     const source = nodeById.get(edge.sourceDraftNodeId)
     const target = nodeById.get(edge.targetDraftNodeId)
     if (!source || !target) continue
-    if (source.semesterNumber >= target.semesterNumber) {
+    if (source.semesterNumber > target.semesterNumber) {
       errors.push(`Prerequisite edge ${edge.draftEdgeId} violates semester order: ${source.courseCode} (sem ${source.semesterNumber}) cannot precede ${target.courseCode} (sem ${target.semesterNumber}).`)
+    } else if (source.semesterNumber === target.semesterNumber) {
+      warnings.push(`Prerequisite edge ${edge.draftEdgeId} is within the same semester (${source.courseCode} -> ${target.courseCode}, sem ${source.semesterNumber}). Consider marking as corequisite.`)
     }
   }
 
@@ -556,6 +577,82 @@ async function createNewImportVersionFromDraft(
 }
 
 // ---------------------------------------------------------------------------
+// Auto-seed helper — creates a minimal curriculum graph from curriculumCourses
+// when no import version exists (e.g. after generic seed.ts wiped graph tables)
+// ---------------------------------------------------------------------------
+
+async function ensureGraphFromCurriculumCourses(context: RouteContext, batchId: string) {
+  const courses = await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, batchId))
+  if (courses.length === 0) return null
+
+  const now = new Date().toISOString()
+  const importVersionId = createId('curriculum_import')
+
+  const firstSem = Math.min(...courses.map(c => c.semesterNumber))
+  const lastSem = Math.max(...courses.map(c => c.semesterNumber))
+  const totalCredits = courses.reduce((sum, c) => sum + c.credits, 0)
+
+  await context.db.insert(curriculumImportVersions).values({
+    curriculumImportVersionId: importVersionId,
+    batchId,
+    sourceLabel: 'Auto-generated from batch curriculum courses',
+    sourceChecksum: '',
+    sourceType: 'auto_seed',
+    compilerVersion: 'seed_v1',
+    outputChecksum: '',
+    firstSemester: firstSem,
+    lastSemester: lastSem,
+    courseCount: courses.length,
+    totalCredits,
+    explicitEdgeCount: 0,
+    addedEdgeCount: 0,
+    bridgeModuleCount: 0,
+    electiveOptionCount: 0,
+    unresolvedMappingCount: 0,
+    validationStatus: 'seeded',
+    completenessCertificateJson: stringifyJson({ seeded: true, source: 'auto_seed' }),
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  const nodeRows = courses.map(c => ({
+    curriculumNodeId: createId('curriculum_node'),
+    curriculumImportVersionId: importVersionId,
+    batchId,
+    semesterNumber: c.semesterNumber,
+    courseId: c.courseId,
+    courseCode: c.courseCode,
+    title: c.title,
+    credits: c.credits,
+    internalCompilerId: c.courseCode.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+    officialWebCode: null,
+    officialWebTitle: null,
+    matchStatus: 'auto_seeded',
+    mappingNote: 'Auto-generated from batch curriculum courses',
+    assessmentProfile: 'theory_heavy',
+    outcomeBloomLevel: null,
+    outcomeMasteryTarget: null,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  }))
+
+  await context.db.insert(curriculumNodes).values(nodeRows)
+
+  const partitionRows = nodeRows.flatMap(node => [
+    { courseTopicPartitionId: createId('course_topic_partition'), curriculumImportVersionId: importVersionId, curriculumNodeId: node.curriculumNodeId, partitionKind: 'tt1' as const, topicsJson: stringifyJson([]), createdAt: now, updatedAt: now },
+    { courseTopicPartitionId: createId('course_topic_partition'), curriculumImportVersionId: importVersionId, curriculumNodeId: node.curriculumNodeId, partitionKind: 'tt2' as const, topicsJson: stringifyJson([]), createdAt: now, updatedAt: now },
+    { courseTopicPartitionId: createId('course_topic_partition'), curriculumImportVersionId: importVersionId, curriculumNodeId: node.curriculumNodeId, partitionKind: 'see' as const, topicsJson: stringifyJson([]), createdAt: now, updatedAt: now },
+    { courseTopicPartitionId: createId('course_topic_partition'), curriculumImportVersionId: importVersionId, curriculumNodeId: node.curriculumNodeId, partitionKind: 'workbook' as const, topicsJson: stringifyJson([]), createdAt: now, updatedAt: now },
+  ])
+
+  await context.db.insert(courseTopicPartitions).values(partitionRows)
+
+  return { curriculumImportVersionId: importVersionId, nodeRows }
+}
+
+// ---------------------------------------------------------------------------
 // Route handlers
 // ---------------------------------------------------------------------------
 
@@ -570,9 +667,13 @@ export async function registerCurriculumGraphRoutes(app: FastifyInstance, contex
     const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, batchId))
     if (!batch) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Batch not found' })
 
-    const latestImport = await getLatestCurriculumImport(context, batchId)
+    let latestImport = await getLatestCurriculumImport(context, batchId)
     if (!latestImport) {
-      return reply.status(404).send({ error: 'NO_IMPORT', message: 'No curriculum import version found for this batch.' })
+      const ensured = await ensureGraphFromCurriculumCourses(context, batchId)
+      if (!ensured) {
+        return reply.status(404).send({ error: 'NO_IMPORT', message: 'No curriculum import version found for this batch.' })
+      }
+      latestImport = await getLatestCurriculumImport(context, batchId)
     }
 
     const activeDraft = await getActiveDraft(context, batchId)

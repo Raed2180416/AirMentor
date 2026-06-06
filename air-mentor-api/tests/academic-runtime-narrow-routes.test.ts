@@ -19,7 +19,17 @@ type RuntimeChangeSet = {
 
 type AcademicBootstrapRuntimeView = {
   runtime: {
-    tasks: Array<{ id: string; dueDateISO?: string }>
+    tasks: Array<{
+      id: string
+      dueDateISO?: string
+      dismissal?: {
+        kind: string
+        dismissedAt: number
+        dismissedByFacultyId?: string
+        dismissedDateISO?: string
+      }
+      transitionHistory?: Array<{ action: string; note?: string }>
+    }>
     taskPlacements: Record<string, Record<string, unknown> | undefined>
     calendarAudit: Array<{ id: string }>
   }
@@ -28,6 +38,17 @@ type AcademicBootstrapRuntimeView = {
 async function loginCourseLeader(app: FastifyInstance) {
   const login = await loginAs(app, 'devika.shetty', 'faculty1234')
   expect(login.response.statusCode).toBe(200)
+  if (login.body.activeRoleGrant.roleCode !== 'COURSE_LEADER') {
+    const roleGrantId = login.body.availableRoleGrants.find((grant: { roleCode: string; grantId: string }) => grant.roleCode === 'COURSE_LEADER')?.grantId
+    expect(roleGrantId).toBeTruthy()
+    const switchResponse = await app.inject({
+      method: 'POST',
+      url: '/api/session/role-context',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: { roleGrantId },
+    })
+    expect(switchResponse.statusCode).toBe(200)
+  }
   return login.cookie
 }
 
@@ -417,6 +438,65 @@ describe('academic runtime narrow routes', () => {
       startMinutes: 660,
       endMinutes: 690,
     })
+  })
+
+  it('persists dismissed task state through the narrow task route and bootstrap reload', async () => {
+    current = await createTestApp()
+    const cookie = await loginCourseLeader(current.app)
+    const scope = await pickRuntimeScope(current.app, cookie)
+    const changeSet = buildRuntimeChangeSet(scope)
+
+    const taskCreateResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/tasks/${changeSet.task.id}`,
+      headers: { cookie, origin: TEST_ORIGIN },
+      payload: { task: changeSet.task },
+    })
+    expect(taskCreateResponse.statusCode).toBe(200)
+    const createdTask = taskCreateResponse.json()
+
+    const dismissedTask = {
+      ...changeSet.task,
+      dismissal: {
+        kind: 'task',
+        dismissedAt: Date.parse('2026-03-16T10:00:00.000Z'),
+        dismissedByFacultyId: scope.bootstrap.professor.id,
+        dismissedDateISO: '2026-03-20',
+      },
+      transitionHistory: [
+        ...(changeSet.task.transitionHistory as Array<Record<string, unknown>>),
+        {
+          id: `dismiss-${changeSet.task.id}`,
+          at: Date.parse('2026-03-16T10:00:00.000Z'),
+          actorRole: 'Course Leader',
+          actorTeacherId: scope.bootstrap.professor.id,
+          action: 'Dismissed',
+          fromOwner: 'Course Leader',
+          toOwner: 'Course Leader',
+          note: 'Course Leader dismissed this queue item from active work.',
+        },
+      ],
+      updatedAt: Date.parse('2026-03-16T10:00:00.000Z'),
+    }
+
+    const taskDismissResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/tasks/${changeSet.task.id}`,
+      headers: { cookie, origin: TEST_ORIGIN },
+      payload: {
+        task: dismissedTask,
+        expectedVersion: createdTask.task.version,
+      },
+    })
+    expect(taskDismissResponse.statusCode).toBe(200)
+
+    const runtime = await readRuntimeProjection(current.app, cookie, changeSet)
+    expect(runtime.task?.dismissal).toMatchObject({
+      kind: 'task',
+      dismissedByFacultyId: scope.bootstrap.professor.id,
+      dismissedDateISO: '2026-03-20',
+    })
+    expect(runtime.task?.transitionHistory?.some(transition => transition.action === 'Dismissed')).toBe(true)
   })
 
   it('keeps bootstrap parity between the new per-entity routes and the legacy sync routes', async () => {

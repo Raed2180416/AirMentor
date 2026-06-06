@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   riskEvidenceSnapshots,
@@ -161,14 +161,26 @@ export async function resetPlaybackStageArtifacts(
   if (stageEvidenceIds.length > 0) {
     await db.delete(riskEvidenceSnapshots).where(and(
       eq(riskEvidenceSnapshots.simulationRunId, simulationRunId),
-      isNotNull(riskEvidenceSnapshots.simulationStageCheckpointId),
+      inArray(riskEvidenceSnapshots.simulationStageCheckpointId, checkpointIds),
     ))
   }
   if (checkpointIds.length > 0) {
-    await db.delete(simulationStageQueueProjections).where(inArray(simulationStageQueueProjections.simulationStageCheckpointId, checkpointIds))
-    await db.delete(simulationStageQueueCases).where(inArray(simulationStageQueueCases.simulationStageCheckpointId, checkpointIds))
-    await db.delete(simulationStageOfferingProjections).where(inArray(simulationStageOfferingProjections.simulationStageCheckpointId, checkpointIds))
-    await db.delete(simulationStageStudentProjections).where(inArray(simulationStageStudentProjections.simulationStageCheckpointId, checkpointIds))
+    await db.delete(simulationStageQueueProjections).where(inArray(
+      simulationStageQueueProjections.simulationStageCheckpointId,
+      checkpointIds,
+    ))
+    await db.delete(simulationStageQueueCases).where(inArray(
+      simulationStageQueueCases.simulationStageCheckpointId,
+      checkpointIds,
+    ))
+    await db.delete(simulationStageOfferingProjections).where(inArray(
+      simulationStageOfferingProjections.simulationStageCheckpointId,
+      checkpointIds,
+    ))
+    await db.delete(simulationStageStudentProjections).where(inArray(
+      simulationStageStudentProjections.simulationStageCheckpointId,
+      checkpointIds,
+    ))
     await db.delete(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, simulationRunId))
   }
 }

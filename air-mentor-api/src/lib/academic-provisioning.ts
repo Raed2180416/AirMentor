@@ -131,15 +131,34 @@ export function weeklyContactHoursForCourse(course: ProvisioningCourseShape) {
 
 export function buildFacultyTimetableTemplates(loadsByFacultyId: Map<string, FacultyLoadTemplateEntry[]>) {
   const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const
-  const slots = [
+  const baseSlots = [
     { id: 'slot_1', label: '08:30-09:30', startTime: '08:30', endTime: '09:30' },
     { id: 'slot_2', label: '09:30-10:30', startTime: '09:30', endTime: '10:30' },
     { id: 'slot_3', label: '10:45-11:45', startTime: '10:45', endTime: '11:45' },
     { id: 'slot_4', label: '11:45-12:45', startTime: '11:45', endTime: '12:45' },
     { id: 'slot_5', label: '13:30-14:30', startTime: '13:30', endTime: '14:30' },
     { id: 'slot_6', label: '14:30-15:30', startTime: '14:30', endTime: '15:30' },
-  ] as const
+  ]
   const result: Record<string, Record<string, unknown>> = {}
+  const minutesToTime = (minutes: number) => `${Math.floor(minutes / 60).toString().padStart(2, '0')}:${(minutes % 60).toString().padStart(2, '0')}`
+  const slotEndMinutes = (slot: { endTime: string }) => Number(slot.endTime.slice(0, 2)) * 60 + Number(slot.endTime.slice(3, 5))
+  const buildSlotsForRequiredCapacity = (requiredSlotsPerDay: number) => {
+    const slots = [...baseSlots]
+    let nextStartMinutes = slotEndMinutes(slots[slots.length - 1]!) + 15
+    while (slots.length < requiredSlotsPerDay) {
+      const nextEndMinutes = nextStartMinutes + 60
+      const startTime = minutesToTime(nextStartMinutes)
+      const endTime = minutesToTime(nextEndMinutes)
+      slots.push({
+        id: `slot_${slots.length + 1}`,
+        label: `${startTime}-${endTime}`,
+        startTime,
+        endTime,
+      })
+      nextStartMinutes = nextEndMinutes + (slots.length % 2 === 0 ? 15 : 0)
+    }
+    return slots
+  }
 
   for (const [facultyId, entries] of loadsByFacultyId.entries()) {
     const classBlocks: Array<Record<string, unknown>> = []
@@ -149,6 +168,10 @@ export function buildFacultyTimetableTemplates(loadsByFacultyId: Map<string, Fac
       || left.sectionCode.localeCompare(right.sectionCode)
       || left.offeringId.localeCompare(right.offeringId)
     ))
+    const totalRequiredBlocks = orderedEntries.reduce((total, entry) => (
+      total + Math.max(1, Math.min(3, entry.weeklyHours))
+    ), 0)
+    const slots = buildSlotsForRequiredCapacity(Math.max(baseSlots.length, Math.ceil(totalRequiredBlocks / weekdays.length)))
     const occupiedPositions = new Set<string>()
     const dayLoad = new Map(weekdays.map(day => [day, 0]))
     const dayOffset = Math.floor(stableUnit(`timetable-day-${facultyId}`) * weekdays.length) % weekdays.length
@@ -211,7 +234,7 @@ export function buildFacultyTimetableTemplates(loadsByFacultyId: Map<string, Fac
       facultyId,
       slots,
       dayStartMinutes: 8 * 60 + 30,
-      dayEndMinutes: 15 * 60 + 30,
+      dayEndMinutes: Math.max(15 * 60 + 30, slotEndMinutes(slots[slots.length - 1]!)),
       classBlocks,
       updatedAt: Date.now(),
     }

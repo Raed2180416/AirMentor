@@ -45,6 +45,7 @@ export function AcademicWorkspaceTopbar({
   allowedRoles,
   role,
   roleChangeBusy,
+  isReevaluatingRisk,
   canNavigateBack,
   formattedCurrentTime,
   showActionQueue,
@@ -161,4 +162,3 @@ export function AcademicWorkspaceTopbar({
     </div>
   )
 }
-

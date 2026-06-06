@@ -15,7 +15,6 @@ import {
   DEMO_STUDENT_IDS,
   assertDemoTrajectoryContract,
   buildDemoTrajectoryMap,
-  generateDemoMarksPayload,
   percentFromEntry,
   type DemoComponent,
   type DemoMarkEntry,
@@ -240,20 +239,11 @@ test.describe('AirMentor demo hardening verification', () => {
     const manualEntries = makeManualEntries(tt1Components)
     const expectedManualPctByStudentId = new Map(manualEntries.map(entry => [entry.studentId, percentFromEntry(entry)]))
 
-    const offeringAStudentIds = DEMO_STUDENT_IDS.filter(id => offeringForStudent(id) === OFFERING_A)
-    const seededEntriesA = generateDemoMarksPayload({
-      kind: 'tt1',
-      studentIds: offeringAStudentIds,
-      trajectoryMap,
-      components: tt1Components,
-    })
-    const mergedEntries = seededEntriesA.map(seeded => manualEntries.find(m => m.studentId === seeded.studentId) || seeded)
-
     const marksResponse = await request.put(apiPath(`/api/academic/offerings/${OFFERING_A}/assessment-entries/tt1`), {
       headers: jsonHeaders(courseLeaderSession.csrfToken),
       data: {
         evaluatedAt: '2026-03-16T02:00:00.000Z',
-        entries: mergedEntries,
+        entries: manualEntries,
       },
     })
     const marksBody = await marksResponse.text()
@@ -374,12 +364,16 @@ test.describe('AirMentor demo hardening verification', () => {
 
     await loginAs(page, 'course-leader')
     await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('[data-proof-surface="academic-proof-summary"][data-proof-scope="course-leader-dashboard"]').first()).toBeVisible({ timeout: 75_000 })
+    await expect(page.locator('[data-proof-surface="academic-proof-summary"]')).toHaveCount(0)
+    await page.locator('[data-proof-action="open-faculty-profile"]').click()
+    await expect(page.locator('[data-proof-surface="teacher-proof-panel"]').first()).toBeVisible({ timeout: 75_000 })
     await screenshot(page, '05-course-leader-post-tt1-dashboard.png', true)
 
     await loginAs(page, 'mentor')
     await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('[data-proof-surface="academic-proof-summary"][data-proof-scope="mentor-view"]').first()).toBeVisible({ timeout: 75_000 })
+    await expect(page.locator('[data-proof-surface="academic-proof-summary"]')).toHaveCount(0)
+    await page.locator('[data-proof-action="open-faculty-profile"]').click()
+    await expect(page.locator('[data-proof-surface="teacher-proof-panel"]').first()).toBeVisible({ timeout: 75_000 })
     await screenshot(page, '06-mentor-post-tt1-dashboard.png', true)
 
     await writeJson('03-role-surface-console-errors.json', { consoleErrors, pageErrors })

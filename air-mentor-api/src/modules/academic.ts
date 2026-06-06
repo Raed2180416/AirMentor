@@ -19,6 +19,7 @@ import {
   electiveRecommendations,
   facultyAppointments,
   facultyCalendarAdminWorkspaces,
+  facultyCalendarCanonicalTemplates,
   facultyCalendarWorkspaces,
   facultyOfferingOwnerships,
   facultyProfiles,
@@ -181,6 +182,18 @@ function filterAssessmentCellsForStage(
   const visibleTypes = visibleAssessmentComponentTypesForStage(stageKey)
   if (!visibleTypes) return cells
   return cells.filter(cell => assessmentTypeMatches(cell.componentType, visibleTypes))
+}
+
+function isoDatePart(value: string | null | undefined) {
+  if (!value) return null
+  return value.slice(0, 10)
+}
+
+type AcademicInterventionEntry = {
+  date: string
+  type: string
+  note: string
+  offeringId: string | null
 }
 
 const facultyCalendarAdminWorkspaceSchema = z.object({
@@ -1120,7 +1133,7 @@ async function resolveStudentShellRun(
   return run
 }
 
-async function resolveAcademicStageCheckpoint(
+export async function resolveAcademicStageCheckpoint(
   context: RouteContext,
   auth: ReturnType<typeof requireAuth>,
   simulationRunId: string,
@@ -1181,12 +1194,52 @@ async function assertStudentShellScope(
   }
 
   if (auth.activeRoleGrant.roleCode === 'MENTOR') {
+    const [run] = await context.db.select({
+      simulationRunId: simulationRuns.simulationRunId,
+      batchId: simulationRuns.batchId,
+      activeOperationalSemester: simulationRuns.activeOperationalSemester,
+      demoWorkspaceId: simulationRuns.demoWorkspaceId,
+    }).from(simulationRuns).where(eq(simulationRuns.simulationRunId, simulationRunId))
+    if (!run) throw notFound('Proof run not found')
+    if ((run.demoWorkspaceId ?? null) !== (auth.demoWorkspaceId ?? null)) {
+      throw new AppError(403, 'PROOF_RUN_SCOPE_MISMATCH', 'Proof run is not available in this workspace scope.')
+    }
+    const [checkpoint] = simulationStageCheckpointId
+      ? await context.db.select({
+        simulationStageCheckpointId: simulationStageCheckpoints.simulationStageCheckpointId,
+        semesterNumber: simulationStageCheckpoints.semesterNumber,
+        simulationRunId: simulationStageCheckpoints.simulationRunId,
+      }).from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationStageCheckpointId, simulationStageCheckpointId))
+      : [null]
+    if (simulationStageCheckpointId && !checkpoint) {
+      throw notFound('Simulation stage checkpoint not found')
+    }
+    if (checkpoint && checkpoint.simulationRunId !== simulationRunId) {
+      throw forbidden('Simulation stage checkpoint does not belong to the selected proof run')
+    }
+    const proofSemesterNumber = checkpoint?.semesterNumber ?? run.activeOperationalSemester ?? null
     const [assignment] = await context.db.select().from(mentorAssignments).where(and(
       eq(mentorAssignments.facultyId, facultyId),
       eq(mentorAssignments.studentId, studentId),
     ))
+    const enrollmentRows = await context.db.select({
+      demoWorkspaceId: studentEnrollments.demoWorkspaceId,
+      batchId: academicTerms.batchId,
+      semesterNumber: academicTerms.semesterNumber,
+    }).from(studentEnrollments).innerJoin(
+      academicTerms,
+      eq(studentEnrollments.termId, academicTerms.termId),
+    ).where(and(
+      eq(studentEnrollments.studentId, studentId),
+      eq(studentEnrollments.academicStatus, 'active'),
+    ))
+    const enrollmentVisibleInProofScope = proofSemesterNumber != null && enrollmentRows.some(row => (
+      (row.demoWorkspaceId ?? null) === (auth.demoWorkspaceId ?? null)
+      && row.batchId === run.batchId
+      && row.semesterNumber === proofSemesterNumber
+    ))
     assertAcademicAccess(evaluateMentorStudentScopeAccess(
-      !!assignment && !assignment.effectiveTo,
+      !!assignment && !assignment.effectiveTo && enrollmentVisibleInProofScope,
       'Student is outside the active mentor proof scope',
     ))
     return
@@ -1498,6 +1551,19 @@ function averageNullable(values: Array<number | null>) {
   return roundToTwo(filtered.reduce((sum, value) => sum + value, 0) / filtered.length)
 }
 
+function weightedAverageNullable(values: Array<{ value: number | null; weight: number }>) {
+  const filtered = values.filter(item =>
+    typeof item.value === 'number'
+    && Number.isFinite(item.value)
+    && Number.isFinite(item.weight)
+    && item.weight > 0,
+  ) as Array<{ value: number; weight: number }>
+  if (filtered.length === 0) return averageNullable(values.map(item => item.value))
+  const totalWeight = filtered.reduce((sum, item) => sum + item.weight, 0)
+  if (totalWeight <= 0) return averageNullable(filtered.map(item => item.value))
+  return roundToTwo(filtered.reduce((sum, item) => sum + (item.value * item.weight), 0) / totalWeight)
+}
+
 function assessmentTypeMatches(componentType: string, expectedTypes: string[]) {
   return expectedTypes.some(expectedType => {
     if (expectedType.endsWith('*')) return componentType.startsWith(expectedType.slice(0, -1))
@@ -1538,6 +1604,13 @@ function computeStudentOutcomeAttainment(input: {
   tt1Blueprint: z.infer<typeof termTestBlueprintSchema>
   tt2Blueprint: z.infer<typeof termTestBlueprintSchema>
   assessmentCells: Array<typeof studentAssessmentScores.$inferSelect>
+  scheme?: z.infer<typeof schemeStateSchema> | null
+  proofEvidence?: {
+    tt1Pct?: number | null
+    tt2Pct?: number | null
+    quizPct?: number | null
+    assignmentPct?: number | null
+  }
 }) {
   const tt1LeafScores = buildQuestionLeafScoreMap({ kind: 'tt1', cells: input.assessmentCells })
   const tt2LeafScores = buildQuestionLeafScoreMap({ kind: 'tt2', cells: input.assessmentCells })
@@ -1545,23 +1618,63 @@ function computeStudentOutcomeAttainment(input: {
   const tt2Leaves = flattenTermTestLeaves(input.tt2Blueprint.nodes)
 
   return input.outcomes.map(outcome => {
-    const computeComponentAttainment = (leaves: ReturnType<typeof flattenTermTestLeaves>, scores: Record<string, number>) => {
+    const proofPct = (value: number | null | undefined) => (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null)
+    const computeComponentAttainment = (leaves: ReturnType<typeof flattenTermTestLeaves>, scores: Record<string, number>, fallbackPct: number | null) => {
       const matchedLeaves = leaves.filter(leaf => leaf.cos.includes(outcome.id))
       if (matchedLeaves.length === 0) return null
       const maxScore = matchedLeaves.reduce((sum, leaf) => sum + leaf.maxMarks, 0)
       const scoredLeaves = matchedLeaves.filter(leaf => typeof scores[leaf.id] === 'number')
-      if (scoredLeaves.length === 0 || maxScore <= 0) return null
+      if (scoredLeaves.length === 0 || maxScore <= 0) return fallbackPct
       const rawScore = scoredLeaves.reduce((sum, leaf) => sum + (scores[leaf.id] ?? 0), 0)
       return roundToTwo((rawScore / maxScore) * 100)
     }
 
-    const tt1Attainment = computeComponentAttainment(tt1Leaves, tt1LeafScores)
-    const tt2Attainment = computeComponentAttainment(tt2Leaves, tt2LeafScores)
+    const tt1Attainment = computeComponentAttainment(tt1Leaves, tt1LeafScores, proofPct(input.proofEvidence?.tt1Pct))
+    const tt2Attainment = computeComponentAttainment(tt2Leaves, tt2LeafScores, proofPct(input.proofEvidence?.tt2Pct))
+    const courseworkAttainment = ([
+      ...(input.scheme?.quizComponents ?? []).map((component, index) => ({
+        component,
+        storageType: `quiz${index + 1}`,
+      })),
+      ...(input.scheme?.assignmentComponents ?? []).map((component, index) => ({
+        component,
+        storageType: `asgn${index + 1}`,
+      })),
+    ])
+      .filter(item => item.component.cos.includes(outcome.id))
+      .map(item => {
+        const cell = input.assessmentCells.find(score =>
+          score.componentType === item.storageType
+          && score.componentCode === item.component.id,
+        )
+        const fallbackPct = item.storageType.startsWith('quiz')
+          ? proofPct(input.proofEvidence?.quizPct)
+          : proofPct(input.proofEvidence?.assignmentPct)
+        const value = cell && cell.maxScore > 0
+          ? roundToTwo((cell.score / cell.maxScore) * 100)
+          : fallbackPct
+        return {
+          value,
+          weight: clampInteger(item.component.weightage, 0, 100, item.component.rawMax),
+        }
+      })
+    const overallAttainment = weightedAverageNullable([
+      {
+        value: tt1Attainment,
+        weight: clampInteger(input.scheme?.termTestWeights?.tt1, 0, 100, input.tt1Blueprint.totalMarks),
+      },
+      {
+        value: tt2Attainment,
+        weight: clampInteger(input.scheme?.termTestWeights?.tt2, 0, 100, input.tt2Blueprint.totalMarks),
+      },
+      ...courseworkAttainment,
+    ])
     return {
       coId: outcome.id,
       tt1Attainment,
       tt2Attainment,
-      overallAttainment: averageNullable([tt1Attainment, tt2Attainment]) ?? 0,
+      overallAttainment: overallAttainment ?? 0,
+      hasEvidence: overallAttainment !== null,
     }
   })
 }
@@ -1594,7 +1707,7 @@ function buildStudentReasons(input: {
   else if (input.currentCgpa > 0 && input.currentCgpa < 7) reasons.push({ label: `Below-average CGPA (${input.currentCgpa.toFixed(2)})`, impact: 0.12, feature: 'cgpa' })
 
   const weakestCo = [...input.coScores].sort((left, right) => left.overallAttainment - right.overallAttainment)[0]
-  if (weakestCo && weakestCo.overallAttainment > 0 && weakestCo.overallAttainment < 45) {
+  if (weakestCo && weakestCo.overallAttainment < 45) {
     reasons.push({ label: `Weak ${weakestCo.coId} attainment (${roundToTwo(weakestCo.overallAttainment)}%)`, impact: 0.18, feature: 'co' })
   }
 
@@ -2187,7 +2300,7 @@ async function assertViewerCanManageTask(context: RouteContext, auth: ReturnType
         eq(mentorAssignments.facultyId, facultyId),
         eq(mentorAssignments.studentId, normalizedStudentId),
       ))
-    assertAcademicAccess(evaluateMentorStudentScopeAccess(!!assignment))
+    assertAcademicAccess(evaluateMentorStudentScopeAccess(!!assignment && !assignment.effectiveTo))
     return
   }
   await assertViewerCanReadOffering(context, auth, task.offeringId)
@@ -2222,7 +2335,7 @@ async function assertViewerCanSuperviseStudent(input: {
         eq(mentorAssignments.facultyId, facultyId),
         eq(mentorAssignments.studentId, normalizedStudentId),
       ))
-    assertAcademicAccess(evaluateMentorStudentScopeAccess(!!assignment))
+    assertAcademicAccess(evaluateMentorStudentScopeAccess(!!assignment && !assignment.effectiveTo))
     return { student, studentId: normalizedStudentId }
   }
 
@@ -2451,6 +2564,12 @@ function mapFacultyCalendarWorkspaceRow(row: typeof facultyCalendarWorkspaces.$i
   return parsed.data
 }
 
+function mapFacultyCalendarCanonicalTemplateRow(row: typeof facultyCalendarCanonicalTemplates.$inferSelect) {
+  const parsed = facultyCalendarTemplateSchema.safeParse(parseJson(row.templateJson, {}))
+  if (!parsed.success) return null
+  return parsed.data
+}
+
 function mapFacultyCalendarAdminWorkspaceRow(row: typeof facultyCalendarAdminWorkspaces.$inferSelect) {
   const parsed = facultyCalendarAdminWorkspaceSchema.safeParse(parseJson(row.workspaceJson, {}))
   if (!parsed.success) return null
@@ -2630,12 +2749,21 @@ function inferMenteeFallback(input: {
   yearLabel: string
   prevCgpa: number
   avs?: number
+  primaryRiskProb?: number | null
+  primaryRiskBand?: 'Low' | 'Medium' | 'High' | null
+  primaryCourseCode?: string | null
+  primaryQueueState?: string | null
   courseRisks?: Array<{
     code: string
     title: string
     risk: number
     band: 'Low' | 'Medium' | 'High'
     stage: number
+    queueState?: string | null
+    recommendedAction?: string | null
+    primaryCase?: boolean
+    countsTowardCapacity?: boolean
+    priorityRank?: number | null
   }>
   interventions?: Array<{ date: string; type: string; note: string }>
 }) {
@@ -2649,6 +2777,10 @@ function inferMenteeFallback(input: {
     dept: input.deptCode,
     courseRisks: input.courseRisks ?? [],
     avs: input.avs ?? -1,
+    primaryRiskProb: input.primaryRiskProb ?? null,
+    primaryRiskBand: input.primaryRiskBand ?? null,
+    primaryCourseCode: input.primaryCourseCode ?? null,
+    primaryQueueState: input.primaryQueueState ?? null,
     prevCgpa: input.prevCgpa,
     interventions: input.interventions ?? [],
   }
@@ -2847,9 +2979,13 @@ type PlaybackStudentCheckpointOverlay = {
   queueState: string | null
   reassessmentState: string | null
   recommendedAction: string | null
+  primaryCase: boolean
+  countsTowardCapacity: boolean
+  priorityRank: number | null
   riskChangeFromPreviousCheckpointScaled: number | null
   counterfactualLiftScaled: number | null
   attentionAreas: string[]
+  observableDrivers: Array<{ label: string; impact: number; feature: string }>
   attendancePct: number | null
   tt1Pct: number | null
   tt2Pct: number | null
@@ -2862,19 +2998,39 @@ function normalizePlaybackRiskBand(value: string | null | undefined): 'Low' | 'M
   return value === 'High' || value === 'Medium' || value === 'Low' ? value : 'Low'
 }
 
-function toPlaybackReasonRows(attentionAreas: string[], recommendedAction: string | null) {
+function normalizePlaybackDriverRows(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.flatMap(driver => {
+    if (!driver || typeof driver !== 'object') return []
+    const row = driver as Record<string, unknown>
+    const label = typeof row.label === 'string' ? row.label.trim() : ''
+    const feature = typeof row.feature === 'string' ? row.feature.trim() : ''
+    const impact = Number(row.impact)
+    if (!label || !feature || !Number.isFinite(impact)) return []
+    return [{ label, feature, impact: roundToTwo(Math.abs(impact)) }]
+  }).sort((left, right) => right.impact - left.impact)
+}
+
+function toPlaybackReasonRows(
+  attentionAreas: string[],
+  recommendedAction: string | null,
+  observableDrivers: Array<{ label: string; impact: number; feature: string }> = [],
+) {
+  if (observableDrivers.length > 0) {
+    return observableDrivers.slice(0, 4)
+  }
   if (attentionAreas.length > 0) {
     return attentionAreas.slice(0, 4).map((label, index) => ({
       label,
       impact: roundToTwo(Math.max(0.24 - (index * 0.05), 0.06)),
-      feature: 'proof-checkpoint',
+      feature: 'checkpoint-summary',
     }))
   }
   if (!recommendedAction) return []
   return [{
     label: `Recommended action: ${humanLabelForActionCode(recommendedAction) ?? recommendedAction}`,
     impact: 0.08,
-    feature: 'proof-checkpoint',
+    feature: 'checkpoint-summary',
   }]
 }
 
@@ -3001,6 +3157,7 @@ async function buildAcademicBootstrap(
     academicTaskTransitionRows,
     academicTaskPlacementRows,
     facultyCalendarWorkspaceRows,
+    facultyCalendarCanonicalTemplateRows,
     facultyCalendarAdminWorkspaceRows,
     academicCalendarAuditRows,
     academicMeetingRows,
@@ -3038,6 +3195,7 @@ async function buildAcademicBootstrap(
     context.db.select().from(academicTaskTransitions).orderBy(asc(academicTaskTransitions.occurredAt)),
     context.db.select().from(academicTaskPlacements),
     context.db.select().from(facultyCalendarWorkspaces),
+    context.db.select().from(facultyCalendarCanonicalTemplates),
     context.db.select().from(facultyCalendarAdminWorkspaces),
     context.db.select().from(academicCalendarAuditEvents).orderBy(asc(academicCalendarAuditEvents.createdAt)),
     context.db.select().from(academicMeetings).orderBy(asc(academicMeetings.dateIso), asc(academicMeetings.startMinutes)),
@@ -3083,6 +3241,27 @@ async function buildAcademicBootstrap(
   const proofBatchIds = Array.from(new Set([proofScopeRun?.batchId ?? null].filter((value): value is string => !!value)))
   const proofSemesterNumber = stageCheckpointRow?.semesterNumber ?? proofScopeRun?.activeOperationalSemester ?? null
   const proofScopeActive = proofBatchIds.length > 0
+  const proofCurrentDateOnly = isoDatePart(proofCurrentDateISO)
+  const termVisibleInProofScope = (termId: string | null) => {
+    if (!termId) return false
+    if (!proofScopeActive || proofSemesterNumber == null) return true
+    const term = termById[termId]
+    const batchId = term?.batchId ?? null
+    if (!term || !batchId || !proofBatchIds.includes(batchId)) return false
+    return term.semesterNumber <= proofSemesterNumber
+  }
+  const eventVisibleInProofScope = (input: {
+    studentId: string
+    offeringId?: string | null
+    occurredAt: string
+  }) => {
+    if (!proofScopeActive) return true
+    if (!scopedStudentIds.has(input.studentId)) return false
+    if (input.offeringId && !scopedOfferingIds.has(input.offeringId)) return false
+    const occurredDate = isoDatePart(input.occurredAt)
+    if (proofCurrentDateOnly && occurredDate && occurredDate > proofCurrentDateOnly) return false
+    return true
+  }
   const scopedTermIds = new Set(
     termRows
       .filter(row => !proofScopeActive || (!!row.batchId && proofBatchIds.includes(row.batchId)))
@@ -3136,23 +3315,27 @@ async function buildAcademicBootstrap(
     const payload = parseJson(row.projectionJson, {} as Record<string, unknown>)
     const currentEvidence = (payload.currentEvidence ?? {}) as Record<string, unknown>
     const currentStatus = (payload.currentStatus ?? {}) as Record<string, unknown>
-    const riskProbScaled = readObservedNullableNumber(currentStatus.riskProbScaled) ?? row.riskProbScaled
+    const governance = (payload.governance ?? {}) as Record<string, unknown>
     const riskChangeFromPreviousCheckpointScaled = readObservedNullableNumber(currentStatus.riskChangeFromPreviousCheckpointScaled)
       ?? readObservedNullableNumber(payload.riskChangeFromPreviousCheckpointScaled)
     const counterfactualLiftScaled = readObservedNullableNumber(currentStatus.counterfactualLiftScaled)
       ?? readObservedNullableNumber(payload.counterfactualLiftScaled)
     playbackStudentOverlayByOfferingStudent.set(`${row.offeringId}::${row.studentId}`, {
       simulationStageCheckpointId: row.simulationStageCheckpointId,
-      riskProbScaled,
-      riskBand: normalizePlaybackRiskBand(typeof currentStatus.riskBand === 'string' ? currentStatus.riskBand : row.riskBand),
-      queueState: typeof currentStatus.queueState === 'string' ? currentStatus.queueState : row.queueState,
-      reassessmentState: typeof currentStatus.reassessmentState === 'string' ? currentStatus.reassessmentState : row.reassessmentState,
-      recommendedAction: typeof currentStatus.recommendedAction === 'string' ? currentStatus.recommendedAction : row.recommendedAction,
+      riskProbScaled: row.riskProbScaled,
+      riskBand: normalizePlaybackRiskBand(row.riskBand),
+      queueState: row.queueState ?? (typeof currentStatus.queueState === 'string' ? currentStatus.queueState : null),
+      reassessmentState: row.reassessmentState ?? (typeof currentStatus.reassessmentState === 'string' ? currentStatus.reassessmentState : null),
+      recommendedAction: row.recommendedAction ?? (typeof currentStatus.recommendedAction === 'string' ? currentStatus.recommendedAction : null),
+      primaryCase: governance.primaryCase === true,
+      countsTowardCapacity: governance.countsTowardCapacity === true,
+      priorityRank: Number.isFinite(Number(governance.priorityRank)) ? Number(governance.priorityRank) : null,
       riskChangeFromPreviousCheckpointScaled,
       counterfactualLiftScaled,
       attentionAreas: Array.isArray(currentStatus.attentionAreas)
         ? currentStatus.attentionAreas.filter((value): value is string => typeof value === 'string').slice(0, 4)
         : [],
+      observableDrivers: normalizePlaybackDriverRows(currentStatus.observableDrivers),
       attendancePct: readObservedNullableNumber(currentEvidence.attendancePct),
       tt1Pct: readObservedNullableNumber(currentEvidence.tt1Pct),
       tt2Pct: readObservedNullableNumber(currentEvidence.tt2Pct),
@@ -3249,31 +3432,53 @@ async function buildAcademicBootstrap(
     latestAssessmentCellsByStudentOffering.set(key, [...(latestAssessmentCellsByStudentOffering.get(key) ?? []), row])
   }
 
-  const interventionsByStudentId = new Map<string, Array<{ date: string; type: string; note: string }>>()
+  const interventionsByStudentId = new Map<string, AcademicInterventionEntry[]>()
+  const interventionsByStudentOffering = new Map<string, AcademicInterventionEntry[]>()
   for (const row of interventionRows) {
-    const current = interventionsByStudentId.get(row.studentId) ?? []
-    current.push({
+    if (!eventVisibleInProofScope({
+      studentId: row.studentId,
+      offeringId: row.offeringId,
+      occurredAt: row.occurredAt,
+    })) continue
+    const entry = {
       date: row.occurredAt,
       type: row.interventionType,
       note: row.note,
-    })
+      offeringId: row.offeringId ?? null,
+    }
+    const current = interventionsByStudentId.get(row.studentId) ?? []
+    current.push(entry)
     interventionsByStudentId.set(row.studentId, current)
+    if (row.offeringId) {
+      const offeringKey = `${row.studentId}::${row.offeringId}`
+      interventionsByStudentOffering.set(offeringKey, [
+        ...(interventionsByStudentOffering.get(offeringKey) ?? []),
+        entry,
+      ])
+    }
   }
   for (const [studentId, entries] of interventionsByStudentId.entries()) {
     entries.sort((left, right) => right.date.localeCompare(left.date))
     interventionsByStudentId.set(studentId, entries)
   }
+  for (const [key, entries] of interventionsByStudentOffering.entries()) {
+    entries.sort((left, right) => right.date.localeCompare(left.date))
+    interventionsByStudentOffering.set(key, entries)
+  }
 
   const latestElectiveRecommendationByStudentId = new Map<string, typeof electiveRecommendations.$inferSelect>()
-  for (const row of electiveRecommendationRows) {
-    const current = latestElectiveRecommendationByStudentId.get(row.studentId)
-    if (!current || row.updatedAt > current.updatedAt) {
-      latestElectiveRecommendationByStudentId.set(row.studentId, row)
+  if (!proofScopeActive || (proofSemesterNumber ?? 0) >= 6) {
+    for (const row of electiveRecommendationRows) {
+      const current = latestElectiveRecommendationByStudentId.get(row.studentId)
+      if (!current || row.updatedAt > current.updatedAt) {
+        latestElectiveRecommendationByStudentId.set(row.studentId, row)
+      }
     }
   }
 
   const latestTranscriptTermByStudentAndTerm = new Map<string, typeof transcriptTermResults.$inferSelect>()
   for (const row of transcriptTermRows) {
+    if (!termVisibleInProofScope(row.termId)) continue
     const key = `${row.studentId}::${row.termId}`
     const current = latestTranscriptTermByStudentAndTerm.get(key)
     if (!current || row.updatedAt > current.updatedAt) {
@@ -3288,20 +3493,22 @@ async function buildAcademicBootstrap(
   for (const row of transcriptSubjectRows) {
     transcriptSubjectsByTermResultId.set(row.transcriptTermResultId, [...(transcriptSubjectsByTermResultId.get(row.transcriptTermResultId) ?? []), row])
   }
-  const transcriptTermResultById = new Map(transcriptTermRows.map(row => [row.transcriptTermResultId, row] as const))
-  const latestTranscriptSubjectByStudentCourseCode = new Map<string, (typeof transcriptSubjectRows)[number]>()
+  const visibleTranscriptTermResultById = new Map(
+    Array.from(latestTranscriptTermByStudentAndTerm.values()).map(row => [row.transcriptTermResultId, row] as const),
+  )
+  const latestVisibleTranscriptSubjectByStudentCourseCode = new Map<string, (typeof transcriptSubjectRows)[number]>()
   for (const row of transcriptSubjectRows) {
-    const termResult = transcriptTermResultById.get(row.transcriptTermResultId)
+    const termResult = visibleTranscriptTermResultById.get(row.transcriptTermResultId)
     if (!termResult) continue
     const key = `${termResult.studentId}::${normalizeCourseCode(row.courseCode)}`
-    const current = latestTranscriptSubjectByStudentCourseCode.get(key)
+    const current = latestVisibleTranscriptSubjectByStudentCourseCode.get(key)
     if (!current || row.updatedAt > current.updatedAt) {
-      latestTranscriptSubjectByStudentCourseCode.set(key, row)
+      latestVisibleTranscriptSubjectByStudentCourseCode.set(key, row)
     }
   }
   const transcriptSubjectHistoryByStudentCourseCode = new Map<string, CourseHistoryRecord>()
-  for (const row of latestTranscriptSubjectByStudentCourseCode.values()) {
-    const termResult = transcriptTermResultById.get(row.transcriptTermResultId)
+  for (const row of latestVisibleTranscriptSubjectByStudentCourseCode.values()) {
+    const termResult = visibleTranscriptTermResultById.get(row.transcriptTermResultId)
     if (!termResult) continue
     const term = termById[termResult.termId]
     transcriptSubjectHistoryByStudentCourseCode.set(`${termResult.studentId}::${normalizeCourseCode(row.courseCode)}`, {
@@ -3449,6 +3656,11 @@ async function buildAcademicBootstrap(
     const parsed = mapFacultyCalendarWorkspaceRow(row)
     if (parsed) facultyCalendarTemplateByFacultyId.set(row.facultyId, parsed)
   }
+  for (const row of facultyCalendarCanonicalTemplateRows) {
+    if (facultyCalendarTemplateByFacultyId.has(row.facultyId)) continue
+    const parsed = mapFacultyCalendarCanonicalTemplateRow(row)
+    if (parsed) facultyCalendarTemplateByFacultyId.set(row.facultyId, parsed)
+  }
 
   const facultyCalendarAdminWorkspaceByFacultyId = new Map<string, z.infer<typeof facultyCalendarAdminWorkspaceSchema>>()
   for (const row of facultyCalendarAdminWorkspaceRows) {
@@ -3529,8 +3741,14 @@ async function buildAcademicBootstrap(
       course,
     })
   })
-  const meetingEntriesByStudentId = new Map<string, Array<{ date: string; type: string; note: string }>>()
+  const meetingEntriesByStudentId = new Map<string, AcademicInterventionEntry[]>()
+  const meetingEntriesByStudentOffering = new Map<string, AcademicInterventionEntry[]>()
   for (const meeting of authoritativeMeetings) {
+    if (!eventVisibleInProofScope({
+      studentId: meeting.studentId,
+      offeringId: meeting.offeringId ?? null,
+      occurredAt: meeting.dateISO,
+    })) continue
     const label = meeting.status === 'cancelled'
       ? 'Meeting Cancelled'
       : meeting.status === 'completed'
@@ -3539,14 +3757,23 @@ async function buildAcademicBootstrap(
     const note = meeting.courseCode
       ? `${meeting.title} · ${meeting.courseCode}${meeting.notes ? ` · ${meeting.notes}` : ''}`
       : `${meeting.title}${meeting.notes ? ` · ${meeting.notes}` : ''}`
+    const entry = {
+      date: meeting.dateISO,
+      type: label,
+      note,
+      offeringId: meeting.offeringId ?? null,
+    }
     meetingEntriesByStudentId.set(meeting.studentId, [
       ...(meetingEntriesByStudentId.get(meeting.studentId) ?? []),
-      {
-        date: meeting.dateISO,
-        type: label,
-        note,
-      },
+      entry,
     ])
+    if (meeting.offeringId) {
+      const offeringKey = `${meeting.studentId}::${meeting.offeringId}`
+      meetingEntriesByStudentOffering.set(offeringKey, [
+        ...(meetingEntriesByStudentOffering.get(offeringKey) ?? []),
+        entry,
+      ])
+    }
   }
 
   const studentsByOffering = Object.fromEntries(academicOfferings.map(offering => {
@@ -3613,12 +3840,21 @@ async function buildAcademicBootstrap(
       const cePct = cePctValues.length > 0
         ? roundToTwo(cePctValues.reduce((sum, value) => sum + value, 0) / cePctValues.length)
         : null
+      const playbackOverlay = playbackStudentOverlayByOfferingStudent.get(`${offering.offId}::${student.studentId}`)
       const outcomeBreakdown = computeStudentOutcomeAttainment({
         outcomes: resolvedCourseOutcomesByOfferingId.get(offering.offId) ?? [],
         tt1Blueprint: questionPapers.tt1,
         tt2Blueprint: questionPapers.tt2,
         assessmentCells,
+        scheme: resolvedSchemesByOfferingId.get(offering.offId) ?? buildDefaultSchemeFromPolicy(policy),
+        proofEvidence: {
+          tt1Pct: playbackOverlay?.tt1Pct ?? null,
+          tt2Pct: playbackOverlay?.tt2Pct ?? null,
+          quizPct: playbackOverlay?.quizPct ?? null,
+          assignmentPct: playbackOverlay?.assignmentPct ?? null,
+        },
       })
+      const evidencedOutcomeBreakdown = outcomeBreakdown.filter(item => item.hasEvidence)
       const transcriptRows = transcriptTermsByStudentId.get(student.studentId) ?? []
       const hasTranscriptHistory = transcriptRows.length > 0
       const cgpaMissing = !hasTranscriptHistory && prevCgpa <= 0
@@ -3635,7 +3871,7 @@ async function buildAcademicBootstrap(
       const batchGraph = batchIdForOffering ? curriculumGraphByBatchId.get(batchIdForOffering) ?? null : null
       const resolvedCurriculumFeatureBundle = batchIdForOffering ? (resolvedCurriculumFeaturesByBatchId.get(batchIdForOffering) ?? null) : null
       const weakCourseOutcomeCodes = outcomeBreakdown
-        .filter(item => item.overallAttainment > 0 && item.overallAttainment < 45)
+        .filter(item => item.hasEvidence && item.overallAttainment < 45)
         .map(item => item.coId)
       const prerequisiteSource = {
         courseCode: normalizeCourseCode(offering.code),
@@ -3713,19 +3949,19 @@ async function buildAcademicBootstrap(
             tt2Max,
             currentCgpa: authoritativeCurrentCgpa,
             quizRawTotal,
-            coScores: outcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
+            coScores: evidencedOutcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
           })
         : []
       const whatIf = risk.riskProb >= 0.35
         ? buildStudentWhatIf({
             riskProb: risk.riskProb,
             attendancePct,
-            coScores: outcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
+            coScores: evidencedOutcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
           })
         : []
       const mergedInterventions = [
-        ...(interventionsByStudentId.get(student.studentId) ?? []),
-        ...(meetingEntriesByStudentId.get(student.studentId) ?? []),
+        ...(interventionsByStudentOffering.get(`${student.studentId}::${offering.offId}`) ?? []),
+        ...(meetingEntriesByStudentOffering.get(`${student.studentId}::${offering.offId}`) ?? []),
       ].sort((left, right) => right.date.localeCompare(left.date))
       const baseProjection = inferStudentFallback({
         offering,
@@ -3743,7 +3979,7 @@ async function buildAcademicBootstrap(
         interventions: mergedInterventions,
         risk,
         reasons,
-        coScores: outcomeBreakdown.map(item => ({ coId: item.coId, attainment: item.overallAttainment })),
+        coScores: evidencedOutcomeBreakdown.map(item => ({ coId: item.coId, attainment: item.overallAttainment })),
         whatIf,
         flags: {
           backlog: authoritativeBacklogCount > 0,
@@ -3751,7 +3987,6 @@ async function buildAcademicBootstrap(
           declining: transcriptAnalytics.trend === 'Declining',
         },
       })
-      const playbackOverlay = playbackStudentOverlayByOfferingStudent.get(`${offering.offId}::${student.studentId}`)
       if (!playbackOverlay) return baseProjection
       const observedSummary = playbackObservedSummaryByStudentId.get(student.studentId)
       return {
@@ -3762,7 +3997,11 @@ async function buildAcademicBootstrap(
         riskCompleteness: null,
         featureCompleteness: null,
         featureProvenance: null,
-        reasons: toPlaybackReasonRows(playbackOverlay.attentionAreas, playbackOverlay.recommendedAction),
+        reasons: toPlaybackReasonRows(
+          playbackOverlay.attentionAreas,
+          playbackOverlay.recommendedAction,
+          playbackOverlay.observableDrivers,
+        ),
         whatIf: [],
         flags: {
           ...baseProjection.flags,
@@ -3809,6 +4048,13 @@ async function buildAcademicBootstrap(
           tt1Blueprint: questionPapers.tt1,
           tt2Blueprint: questionPapers.tt2,
           assessmentCells,
+          scheme: resolvedSchemesByOfferingId.get(offering.offId) ?? buildDefaultSchemeFromPolicy(resolvedPolicyByOfferingId.get(offering.offId) ?? DEFAULT_POLICY),
+          proofEvidence: {
+            tt1Pct: readObservedNullableNumber(student.proofObservedTt1Pct),
+            tt2Pct: readObservedNullableNumber(student.proofObservedTt2Pct),
+            quizPct: readObservedNullableNumber(student.proofObservedQuizPct),
+            assignmentPct: readObservedNullableNumber(student.proofObservedAssignmentPct),
+          },
         })[0]
       })
       return coAttainmentRowSchema.parse({
@@ -3819,7 +4065,7 @@ async function buildAcademicBootstrap(
         tt1Attainment: averageNullable(studentBreakdowns.map(item => item.tt1Attainment)),
         tt2Attainment: averageNullable(studentBreakdowns.map(item => item.tt2Attainment)),
         overallAttainment: averageNullable(studentBreakdowns.map(item => item.overallAttainment)),
-        studentsCounted: studentBreakdowns.filter(item => item.overallAttainment > 0).length,
+        studentsCounted: studentBreakdowns.filter(item => item.hasEvidence).length,
       })
     })
     return [offering.offId, rows]
@@ -3920,12 +4166,18 @@ async function buildAcademicBootstrap(
           .map(item => {
             const matchingProjection = studentsByOffering[item.offId]
               ?.find(candidate => normalizeAcademicStudentId(candidate.id) === student.studentId || candidate.usn === student.usn)
+            const playbackOverlay = playbackStudentOverlayByOfferingStudent.get(`${item.offId}::${student.studentId}`)
             return {
               code: item.code,
               title: item.title,
               risk: matchingProjection?.riskProb ?? -1,
               band: matchingProjection?.riskBand ?? 'Low' as const,
               stage: item.stage,
+              queueState: playbackOverlay?.queueState ?? null,
+              recommendedAction: playbackOverlay?.recommendedAction ?? null,
+              primaryCase: playbackOverlay?.primaryCase ?? false,
+              countsTowardCapacity: playbackOverlay?.countsTowardCapacity ?? false,
+              priorityRank: playbackOverlay?.priorityRank ?? null,
             }
           })
       : []
@@ -3933,6 +4185,16 @@ async function buildAcademicBootstrap(
     const avs = activeCourseRisks.length > 0
       ? roundToTwo(activeCourseRisks.reduce((sum, item) => sum + item.risk, 0) / activeCourseRisks.length)
       : -1
+    const primaryCourseRisk = activeCourseRisks
+      .slice()
+      .sort((left, right) => {
+        if ((left.primaryCase ?? false) !== (right.primaryCase ?? false)) return Number(right.primaryCase === true) - Number(left.primaryCase === true)
+        if ((left.countsTowardCapacity ?? false) !== (right.countsTowardCapacity ?? false)) return Number(right.countsTowardCapacity === true) - Number(left.countsTowardCapacity === true)
+        const leftRank = left.priorityRank ?? Number.MAX_SAFE_INTEGER
+        const rightRank = right.priorityRank ?? Number.MAX_SAFE_INTEGER
+        if (leftRank !== rightRank) return leftRank - rightRank
+        return right.risk - left.risk || left.code.localeCompare(right.code)
+      })[0] ?? null
     return [inferMenteeFallback({
       student,
       enrollment,
@@ -3940,6 +4202,10 @@ async function buildAcademicBootstrap(
       yearLabel: offering?.year ?? `Semester ${term?.semesterNumber ?? 1}`,
       prevCgpa,
       avs,
+      primaryRiskProb: primaryCourseRisk?.risk ?? null,
+      primaryRiskBand: primaryCourseRisk?.band ?? null,
+      primaryCourseCode: primaryCourseRisk?.code ?? null,
+      primaryQueueState: primaryCourseRisk?.queueState ?? null,
       courseRisks,
       interventions,
     })]
@@ -4095,8 +4361,15 @@ async function buildAcademicBootstrap(
   let visibleOfferingIds = new Set(academicOfferings.map(offering => offering.offId))
   let visibleFacultyIds = new Set(faculty.map(account => account.facultyId))
   let visibleStudentIds = new Set(scopedStudentRows.map(student => student.studentId))
+  const scopedAcademicViewer = viewerRole === 'Course Leader' || viewerRole === 'Mentor' || viewerRole === 'HoD'
+  let denyAllScopedRecords = false
 
-  if (viewerAccount && viewerRole === 'Course Leader') {
+  if (scopedAcademicViewer && !viewerAccount) {
+    denyAllScopedRecords = true
+    visibleOfferingIds = new Set()
+    visibleFacultyIds = viewer.facultyId ? new Set([viewer.facultyId]) : new Set()
+    visibleStudentIds = new Set()
+  } else if (viewerAccount && viewerRole === 'Course Leader') {
     visibleOfferingIds = new Set(viewerAccount.offeringIds)
     visibleFacultyIds = new Set([viewerAccount.facultyId])
     visibleStudentIds = new Set(
@@ -4246,6 +4519,7 @@ async function buildAcademicBootstrap(
   const sourceTasks = pickAuthoritativeFirstList(authoritativeTasks, runtimeTasks)
 
   const visibleTasks = sourceTasks.filter(task => {
+    if (denyAllScopedRecords) return false
     if (viewerRole && task.assignedTo !== viewerRole) return false
     if (visibleStudentIds.size > 0 && !visibleStudentIds.has(task.studentId)) return false
     if (visibleOfferingIds.size > 0 && !visibleOfferingIds.has(task.offeringId)) return false

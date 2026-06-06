@@ -82,7 +82,19 @@ export function policyRiskFloorFromObservableInput(
   input: ObservableInferenceInput,
   thresholds: ObservableRiskBandThresholds,
 ): { riskFloor: number; reasons: string[] } {
-  const { passRules, riskRules, attendanceRules } = input.policy
+  const { riskRules } = input.policy
+  const attendanceRules = input.policy.attendanceRules ?? {
+    minimumRequiredPercent: riskRules.mediumRiskAttendancePercentBelow,
+    condonationFloorPercent: Math.min(riskRules.mediumRiskAttendancePercentBelow, riskRules.highRiskAttendancePercentBelow),
+  }
+  const passRules = input.policy.passRules ?? {
+    minimumCeMark: 24,
+    minimumSeeMark: 16,
+    minimumOverallMark: 40,
+    ceMaximum: 60,
+    seeMaximum: 40,
+    overallMaximum: 100,
+  }
   let riskFloor = 0
   const reasons: string[] = []
   const applyFloor = (floor: number, reason: string) => {
@@ -290,6 +302,106 @@ export function inferObservableDrivers(input: ObservableInferenceInput): Observa
   return drivers.sort((left, right) => right.impact - left.impact)
 }
 
+function mergeObservableDrivers(
+  primary: ObservableDriver[],
+  supplemental: ObservableDriver[],
+): ObservableDriver[] {
+  const seen = new Set<string>()
+  return [...primary, ...supplemental]
+    .filter(driver => {
+      const key = `${driver.feature}:${driver.label}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .sort((left, right) => right.impact - left.impact)
+}
+
+function inferPolicyFloorDrivers(input: ObservableInferenceInput): ObservableDriver[] {
+  const { riskRules } = input.policy
+  const attendanceRules = input.policy.attendanceRules ?? {
+    minimumRequiredPercent: riskRules.mediumRiskAttendancePercentBelow,
+    condonationFloorPercent: Math.min(riskRules.mediumRiskAttendancePercentBelow, riskRules.highRiskAttendancePercentBelow),
+  }
+  const passRules = input.policy.passRules
+  const drivers: ObservableDriver[] = []
+
+  const mediumAttendanceFloor = Math.max(attendanceRules.minimumRequiredPercent, riskRules.mediumRiskAttendancePercentBelow)
+  if (input.attendancePct < riskRules.highRiskAttendancePercentBelow) {
+    drivers.push({
+      label: `Attendance is below the high-risk institutional threshold (${input.attendancePct}%)`,
+      impact: ATTENDANCE_HIGH_RISK_IMPACT,
+      feature: 'attendance',
+    })
+  } else if (input.attendancePct < mediumAttendanceFloor) {
+    drivers.push({
+      label: `Attendance is below the institutional minimum (${input.attendancePct}% < ${mediumAttendanceFloor}%)`,
+      impact: ATTENDANCE_MEDIUM_RISK_IMPACT,
+      feature: 'attendance',
+    })
+  }
+
+  if (input.cgpaMissing !== true && input.currentCgpa > 0 && input.currentCgpa < riskRules.highRiskCgpaBelow) {
+    drivers.push({
+      label: `Current CGPA is below the high-risk institutional threshold (${input.currentCgpa.toFixed(2)})`,
+      impact: CGPA_HIGH_RISK_IMPACT,
+      feature: 'cgpa',
+    })
+  } else if (input.cgpaMissing !== true && input.currentCgpa > 0 && input.currentCgpa < riskRules.mediumRiskCgpaBelow) {
+    drivers.push({
+      label: `Current CGPA is below the watch institutional threshold (${input.currentCgpa.toFixed(2)})`,
+      impact: CGPA_MEDIUM_RISK_IMPACT,
+      feature: 'cgpa',
+    })
+  }
+
+  if (input.backlogMissing !== true && input.backlogCount >= riskRules.highRiskBacklogCount) {
+    drivers.push({
+      label: `Active backlog count is at the high-risk institutional threshold (${input.backlogCount})`,
+      impact: BACKLOG_HIGH_RISK_IMPACT,
+      feature: 'backlog',
+    })
+  } else if (input.backlogMissing !== true && input.backlogCount >= riskRules.mediumRiskBacklogCount) {
+    drivers.push({
+      label: `Active backlog count is above the watch institutional threshold (${input.backlogCount})`,
+      impact: BACKLOG_MEDIUM_RISK_IMPACT,
+      feature: 'backlog',
+    })
+  }
+
+  if (typeof input.cePct === 'number' && Number.isFinite(input.cePct)) {
+    const ceMark = (input.cePct / 100) * passRules.ceMaximum
+    if (ceMark < passRules.minimumCeMark) {
+      drivers.push({
+        label: `Continuous evaluation is below the minimum pass mark (${roundToTwo(ceMark)}/${passRules.ceMaximum})`,
+        impact: TERM_SIGNAL_WATCH_IMPACT,
+        feature: 'ce',
+      })
+    }
+  }
+
+  if (typeof input.seePct === 'number' && Number.isFinite(input.seePct)) {
+    const seeMark = (input.seePct / 100) * passRules.seeMaximum
+    if (seeMark < passRules.minimumSeeMark) {
+      drivers.push({
+        label: `SEE mark is below the minimum pass mark (${roundToTwo(seeMark)}/${passRules.seeMaximum})`,
+        impact: TERM_SIGNAL_VERY_LOW_IMPACT,
+        feature: 'see',
+      })
+    }
+  }
+
+  if (typeof input.overallPct === 'number' && Number.isFinite(input.overallPct) && input.overallPct < passRules.minimumOverallMark) {
+    drivers.push({
+      label: `Overall course mark is below the minimum pass mark (${roundToTwo(input.overallPct)}/${passRules.overallMaximum})`,
+      impact: TERM_SIGNAL_VERY_LOW_IMPACT,
+      feature: 'overall',
+    })
+  }
+
+  return drivers
+}
+
 /**
  * Tinto Absorbing State Detector
  *
@@ -313,7 +425,36 @@ export function evaluateCatastrophicAbsorbingState(
   )
 }
 
-export function inferObservableRisk(input: ObservableInferenceInput): ObservableInferenceOutput {
+export function inferObservableRisk(rawInput: ObservableInferenceInput): ObservableInferenceOutput {
+  // Input Hardening: sanitize probabilistic generation outputs to prevent
+  // NaN/Infinity propagation through the risk computation pipeline.
+  const safeNum = (v: number, fallback: number) => Number.isFinite(v) ? v : fallback
+  const safePct = (v: number | null | undefined) =>
+    v == null || !Number.isFinite(v) ? null : Math.min(100, Math.max(0, v))
+  const safeCount = (v: number | null | undefined) =>
+    Math.max(0, Math.round(Number.isFinite(v) ? Number(v) : 0))
+  const safeScore = (v: number | null | undefined) =>
+    v == null || !Number.isFinite(v) ? null : Math.max(-1, Math.min(1, v))
+  const input: ObservableInferenceInput = {
+    ...rawInput,
+    attendancePct: Math.min(100, Math.max(0, safeNum(rawInput.attendancePct, 0))),
+    currentCgpa: Math.min(10, Math.max(0, safeNum(rawInput.currentCgpa, 0))),
+    cgpaMissing: rawInput.cgpaMissing === true || !Number.isFinite(rawInput.currentCgpa),
+    backlogCount: safeCount(rawInput.backlogCount),
+    backlogMissing: rawInput.backlogMissing === true || !Number.isFinite(rawInput.backlogCount),
+    tt1Pct: safePct(rawInput.tt1Pct),
+    tt2Pct: safePct(rawInput.tt2Pct),
+    seePct: safePct(rawInput.seePct),
+    cePct: safePct(rawInput.cePct),
+    overallPct: safePct(rawInput.overallPct),
+    quizPct: safePct(rawInput.quizPct),
+    assignmentPct: safePct(rawInput.assignmentPct),
+    weakCoCount: safeCount(rawInput.weakCoCount),
+    attendanceHistoryRiskCount: safeCount(rawInput.attendanceHistoryRiskCount),
+    questionWeaknessCount: safeCount(rawInput.questionWeaknessCount),
+    interventionResponseScore: safeScore(rawInput.interventionResponseScore),
+  }
+
   // DAF safety fallback: refuse to issue high-confidence predictions when
   // evidence is critically sparse. A student with missing CGPA and no assessment
   // scores yet has insufficient telemetry for the model to differentiate between
@@ -354,9 +495,12 @@ export function inferObservableRisk(input: ObservableInferenceInput): Observable
   bounded = Math.max(bounded, policyFloor.riskFloor)
 
   const riskBand: 'High' | 'Medium' | 'Low' = bounded >= RISK_BAND_HIGH_THRESHOLD ? 'High' : bounded >= RISK_BAND_MEDIUM_THRESHOLD ? 'Medium' : 'Low'
+  const observableDrivers = riskBand === 'Low'
+    ? drivers
+    : mergeObservableDrivers(drivers, inferPolicyFloorDrivers(input))
   
   // Extract primary root cause (top driver) and specific attention areas
-  const primaryDriver = drivers.length > 0 ? drivers[0] : null
+  const primaryDriver = observableDrivers.length > 0 ? observableDrivers[0] : null
   let recommendedAction = 'Continue routine monitoring on the current evidence window.'
   
   if (riskBand === 'High' || riskBand === 'Medium') {
@@ -403,7 +547,7 @@ export function inferObservableRisk(input: ObservableInferenceInput): Observable
     }
   }
 
-  const attentionAreas = Array.from(new Set(drivers.map(d => {
+  const attentionAreas = Array.from(new Set(observableDrivers.map(d => {
     if (d.feature === 'attendance' || d.feature === 'attendance-history') return 'Absenteeism'
     if (d.feature === 'backlog' || d.feature === 'cgpa' || d.feature === 'prerequisite') return 'Academic Standing'
     if (d.feature === 'section-pressure') return 'Cohort Pressure'
@@ -418,7 +562,7 @@ export function inferObservableRisk(input: ObservableInferenceInput): Observable
     riskProb: bounded,
     riskBand,
     recommendedAction,
-    observableDrivers: drivers,
+    observableDrivers,
     attentionAreas: attentionAreas.length > 0 ? attentionAreas : undefined,
   }
 }

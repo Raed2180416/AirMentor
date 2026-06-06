@@ -8,6 +8,18 @@ import {
 import type { ResolvedPolicy } from '../air-mentor-api/src/modules/admin-structure.js'
 
 const mockPolicy = {
+  passRules: {
+    minimumCeMark: 24,
+    minimumSeeMark: 16,
+    minimumOverallMark: 40,
+    ceMaximum: 60,
+    seeMaximum: 40,
+    overallMaximum: 100,
+  },
+  attendanceRules: {
+    minimumRequiredPercent: 75,
+    condonationFloorPercent: 65,
+  },
   riskRules: {
     highRiskAttendancePercentBelow: 60,
     mediumRiskAttendancePercentBelow: 75,
@@ -72,9 +84,10 @@ describe('Tinto Absorbing State Logic', () => {
     expect(result.riskBand).toBe('High')
   })
 
-  it('evaluates additively when student is NOT in an absorbing state', () => {
-    // Student has bad attendance (0.20), but decent CGPA and no backlogs.
-    // Additive: 0.08 + 0.20 = 0.28 (< 0.45 threshold, Low Risk)
+  it('applies the institutional floor when student is NOT in an absorbing state', () => {
+    // Student has critically low attendance, but decent CGPA and no backlogs.
+    // This is not an absorbing-state override; the institutional attendance
+    // floor now correctly lifts the result to High.
     const result = inferObservableRisk({
       attendancePct: 50,
       currentCgpa: 8.0,
@@ -82,7 +95,8 @@ describe('Tinto Absorbing State Logic', () => {
       policy: mockPolicy,
     })
     
-    expect(result.riskProb).toBe(0.28)
-    expect(result.riskBand).toBe('Low')
+    expect(result.observableDrivers.some(d => d.feature === 'cgpa' || d.feature === 'backlog')).toBe(false)
+    expect(result.riskProb).toBeGreaterThanOrEqual(RISK_BAND_HIGH_THRESHOLD)
+    expect(result.riskBand).toBe('High')
   })
 })

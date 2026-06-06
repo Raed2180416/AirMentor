@@ -127,7 +127,7 @@ function buildSeedTasks(): SharedTask[] {
             action: 'Created from mentor vulnerability watchlist',
             actorRole: 'Auto',
             toOwner: 'Mentor',
-            note: 'Seeded mentor queue item for mock walkthrough.',
+            note: 'Seeded mentor queue item for local fixture validation.',
           }),
         ],
       }))
@@ -231,7 +231,7 @@ function buildSeedTasks(): SharedTask[] {
           actorRole: 'Course Leader',
           fromOwner: 'Course Leader',
           toOwner: 'HoD',
-          note: 'Seeded pending unlock example for mock review flow.',
+          note: 'Seeded pending unlock example for local fixture review flow.',
         }),
       ],
     }

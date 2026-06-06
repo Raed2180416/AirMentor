@@ -182,9 +182,7 @@ describe('AcademicWorkspaceRouteSurface', () => {
     }))
 
     expect(markup).toContain('Queue History')
-    expect(markup).toContain('data-proof-surface="academic-proof-summary"')
-    expect(markup).toContain('data-proof-scope="queue-history"')
-    expect(markup).toMatch(/data-proof-summary-metric="(selected-checkpoint|preview-semester|live-semester)"/)
+    expect(markup).toContain('Mentor view of active, resolved, and reassigned items.')
     expect(markup).toContain('Open Student')
     expect(markup).toContain('Risk Explorer')
     expect(markup).toContain('Student Shell')

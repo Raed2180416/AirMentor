@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-// AirMentor — Complete Mock Data & Types
+// AirMentor - Offline Fixture Data & Types
 // ══════════════════════════════════════════════════════════════
 
 import type {
@@ -32,6 +32,7 @@ export interface Professor { name: string; id: string; dept: string; role: strin
 export interface Course {
   id: string; code: string; title: string; year: string; dept: string; sem: number
   sections: string[]; enrolled: number[]; att: number[]
+  credits: number
   tt1Done: boolean; tt2Done: boolean
   tt1Locked?: boolean; tt2Locked?: boolean; quizLocked?: boolean; asgnLocked?: boolean; finalsLocked?: boolean
 }
@@ -39,6 +40,7 @@ export interface Course {
 export interface Offering {
   id: string; offId: string; code: string; title: string; year: string; dept: string; sem: number
   section: string; count: number; attendance: number
+  credits?: number
   stage: Stage; stageInfo: StageInfo
   tt1Done: boolean; tt2Done: boolean
   tt1Locked?: boolean; tt2Locked?: boolean; quizLocked?: boolean; asgnLocked?: boolean; finalsLocked?: boolean
@@ -76,6 +78,18 @@ export interface Student {
   assignmentScores?: Record<string, number>
   prevCgpa: number
   currentCgpa?: number
+  seeScore?: number | null
+  finalScore100?: number | null
+  predictedCgpa?: number | null
+  proofObservedAttendancePct?: number | null
+  proofObservedTt1Pct?: number | null
+  proofObservedTt2Pct?: number | null
+  proofObservedQuizPct?: number | null
+  proofObservedAssignmentPct?: number | null
+  proofObservedSeePct?: number | null
+  proofRiskProbScaled?: number | null
+  proofRiskChangeFromPreviousCheckpointScaled?: number | null
+  proofCounterfactualLiftScaled?: number | null
   riskProb: number | null; riskBand: RiskBand | null
   reasons: SHAPReason[]
   coScores: COScore[]
@@ -95,8 +109,25 @@ export interface Task {
 export interface Mentee {
   id: string; usn: string; name: string; phone: string
   year: string; section: string; dept: string
-  courseRisks: { code: string; title: string; risk: number; band: RiskBand; stage: Stage }[]
-  avs: number; prevCgpa: number; interventions: Intervention[]
+  courseRisks: {
+    code: string
+    title: string
+    risk: number
+    band: RiskBand
+    stage: Stage
+    queueState?: string | null
+    recommendedAction?: string | null
+    primaryCase?: boolean
+    countsTowardCapacity?: boolean
+    priorityRank?: number | null
+  }[]
+  avs: number
+  primaryRiskProb?: number | null
+  primaryRiskBand?: RiskBand | null
+  primaryCourseCode?: string | null
+  primaryQueueState?: string | null
+  prevCgpa: number
+  interventions: Intervention[]
 }
 
 export interface TeacherInfo {
@@ -284,11 +315,11 @@ export const YEAR_STAGES: Record<string, StageInfo> = {
 
 // ───── Courses ─────
 export const COURSES: Course[] = [
-  { id: 'c1', code: 'CS401', title: 'Design & Analysis of Algorithms', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [76, 80], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
-  { id: 'c2', code: 'CS403', title: 'Operating Systems', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [78, 81], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
-  { id: 'c3', code: 'MA301', title: 'Engineering Mathematics III', year: 'Batch 2024', dept: 'MCE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [74, 85], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
-  { id: 'c4', code: 'CS405', title: 'Software Engineering', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [82, 88], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
-  { id: 'c5', code: 'CS407L', title: 'OS Lab', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [85, 90], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
+  { id: 'c1', code: 'CS401', title: 'Design & Analysis of Algorithms', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [76, 80], credits: 4, tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
+  { id: 'c2', code: 'CS403', title: 'Operating Systems', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [78, 81], credits: 4, tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
+  { id: 'c3', code: 'MA301', title: 'Engineering Mathematics III', year: 'Batch 2024', dept: 'MCE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [74, 85], credits: 4, tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
+  { id: 'c4', code: 'CS405', title: 'Software Engineering', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [82, 88], credits: 4, tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
+  { id: 'c5', code: 'CS407L', title: 'OS Lab', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [85, 90], credits: 1, tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
 ]
 
 // ───── Offerings (flattened) ─────
@@ -306,6 +337,7 @@ export const OFFERINGS: Offering[] = COURSES.flatMap(c =>
     id: c.id, offId: `${c.id}-${sec}`, code: c.code, title: c.title,
     year: c.year, dept: c.dept, sem: c.sem,
     section: sec, count: c.enrolled[i] ?? 60, attendance: c.att[i] ?? 80,
+    credits: c.credits,
     stage: YEAR_STAGES[c.year].stage, stageInfo: YEAR_STAGES[c.year],
     tt1Done: c.tt1Done, tt2Done: c.tt2Done,
     tt1Locked: c.tt1Locked ?? false, tt2Locked: c.tt2Locked ?? false,
@@ -400,7 +432,7 @@ export const NAMES = [
 const PHONES = NAMES.map((_, i) => `+91 ${9700000000 + i * 137}`)
 
 // ───── SHAP Reason Templates ─────
-function genReasons(s: { attendancePct: number; tt1Score: number | null; tt1Max: number; prevCgpa: number; quiz1: number | null; coScores: COScore[] }): SHAPReason[] {
+function genReasons(s: { attendancePct: number; tt1Score: number | null; tt1Max: number; prevCgpa: number; quiz1: number | null; coScores: COScore[]; riskProb?: number | null }): SHAPReason[] {
   const reasons: SHAPReason[] = []
   const attPct = s.attendancePct
   if (attPct < 65) reasons.push({ label: `Attendance critically low (${attPct}%)`, impact: 0.34, feature: 'attendance' })
@@ -419,6 +451,14 @@ function genReasons(s: { attendancePct: number; tt1Score: number | null; tt1Max:
   if (weakCO) reasons.push({ label: `Weak ${weakCO.coId} attainment (${weakCO.attainment}%)`, impact: 0.19, feature: 'co' })
 
   if (s.quiz1 !== null && s.quiz1 < 4) reasons.push({ label: `Low quiz performance (${s.quiz1}/10)`, impact: 0.09, feature: 'quiz' })
+
+  if (reasons.length === 0 && typeof s.riskProb === 'number' && s.riskProb >= 0.35) {
+    reasons.push({
+      label: 'Cumulative risk pressure from borderline evidence',
+      impact: Math.max(0.1, Math.min(0.2, s.riskProb - 0.25)),
+      feature: 'risk-model',
+    })
+  }
 
   return reasons.sort((a, b) => b.impact - a.impact).slice(0, 4)
 }
@@ -466,7 +506,7 @@ export function makeStudents(offering: Offering): Student[] {
     const asgn1 = tt1Done ? 5 + rand(5) : null
     const asgn2 = null
 
-    // CO attainment (mock based on TT1 scores)
+    // CO attainment derived from fixture TT evidence
     const coScores: COScore[] = cos.map(co => ({
       coId: co.id,
       attainment: stage >= 2 && tt1Score !== null
@@ -518,11 +558,11 @@ export function makeStudents(offering: Offering): Student[] {
 
     // Generate SHAP reasons & what-if for at-risk students
     if (riskProb !== null && riskProb >= 0.35) {
-      student.reasons = genReasons({ attendancePct, tt1Score, tt1Max: totalMax, prevCgpa, quiz1, coScores })
+      student.reasons = genReasons({ attendancePct, tt1Score, tt1Max: totalMax, prevCgpa, quiz1, coScores, riskProb })
       student.whatIf = genWhatIf(riskProb, attendancePct, coScores)
     }
 
-    // Mock interventions for high-risk students
+    // Fixture interventions for high-risk students
     if (menteeSeed?.interventions?.length) {
       student.interventions = menteeSeed.interventions
     } else if (riskProb !== null && riskProb >= 0.7 && i < 5) {
@@ -562,7 +602,7 @@ export function getAllAtRiskStudents(): (Student & { courseCode: string; courseN
 export function generateTasks(): Task[] {
   const atRisk = getAllAtRiskStudents().filter(s => s.riskBand === 'High').slice(0, 8)
   return atRisk.map((s, i) => ({
-    id: `task-${i}`,
+    id: `task-${s.id}-${s.offId}`,
     studentId: s.id,
     studentName: s.name,
     studentUsn: s.usn,
@@ -870,12 +910,12 @@ export const CALENDAR_EVENTS = [
 ]
 
 function toGradePoint(score: number): 0 | 4 | 5 | 6 | 7 | 8 | 9 | 10 {
-  if (score > 90) return 10
-  if (score > 74) return 9
-  if (score > 60) return 8
-  if (score >= 55) return 7
-  if (score >= 50) return 6
-  if (score > 44) return 5
+  if (score >= 90) return 10
+  if (score >= 80) return 9
+  if (score >= 70) return 8
+  if (score >= 60) return 7
+  if (score >= 55) return 6
+  if (score >= 50) return 5
   if (score >= 40) return 4
   return 0
 }
@@ -1203,7 +1243,7 @@ function buildFallbackHistory(params: { usn: string; studentName: string; dept: 
     program: dept,
     dept,
     trend: 'Stable',
-    advisoryNotes: ['Generated fallback transcript for mock walkthrough.', 'Use this record to validate history-page empty-state handling.'],
+    advisoryNotes: ['Local fixture transcript generated because no backend transcript was available.', 'Use only for offline development or empty-state validation.'],
     repeatSubjects: [],
     terms,
   })

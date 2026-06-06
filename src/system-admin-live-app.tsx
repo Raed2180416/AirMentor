@@ -20,6 +20,7 @@ import {
   GraduationCap,
   Layers3,
   LayoutDashboard,
+  Network,
   Plus,
   RefreshCw,
   UserCog,
@@ -53,6 +54,7 @@ import type {
   ApiPolicyPayload,
   ApiProofDashboard,
   ApiProofRunCheckpointDetail,
+  ApiProofRunCheckpointStudentSummary,
   ApiResolvedBatchPolicy,
   ApiResolvedBatchStagePolicy,
   ApiRoleCode,
@@ -125,10 +127,12 @@ import {
   CANONICAL_PROOF_ACADEMIC_FACULTY_ID,
   CANONICAL_PROOF_BRANCH_ID,
   CANONICAL_PROOF_DEPARTMENT_ID,
+  isCanonicalProofBatchId,
   resolveAdminDirectoryScopeFilter,
   resolveAuthoritativeOperationalSemester,
   resolveCanonicalProofBatch,
   resolveProofDashboardBatchId,
+  scopeTargetsCanonicalProofHierarchy,
 } from './proof-pilot'
 import {
   buildBulkMentorAssignmentApplyPayload,
@@ -165,7 +169,7 @@ import {
 } from './system-admin-ui'
 import type { LiveAdminSectionId } from './system-admin-live-data'
 import { applyThemePreset, isLightTheme } from './theme'
-import { clearProofPlaybackSelection, readProofPlaybackSelection, writeProofPlaybackSelection } from './proof-playback'
+import { clearProofPlaybackSelection, readSharedProofPlaybackSelection, writeProofPlaybackSelection } from './proof-playback'
 import { emitClientOperationalEvent, normalizeClientTelemetryError } from './telemetry'
 import { SystemAdminFacultyCalendarWorkspace } from './system-admin-faculty-calendar-workspace'
 import {
@@ -435,7 +439,13 @@ export type BatchProvisioningFormState = {
 
 type StudentDetailTab = 'profile' | 'academic' | 'mentor' | 'progression' | 'history'
 type FacultyDetailTab = 'profile' | 'appointments' | 'permissions' | 'teaching' | 'timetable' | 'history'
-type UniversityTab = 'overview' | 'bands' | 'ce-see' | 'cgpa' | 'stage' | 'courses' | 'provision'
+type UniversityTab = 'overview' | 'bands' | 'ce-see' | 'cgpa' | 'stage' | 'courses' | 'curriculum'
+const UNIVERSITY_TABS = new Set<UniversityTab>(['overview', 'bands', 'ce-see', 'cgpa', 'stage', 'courses', 'curriculum'])
+
+function isUniversityTab(value: unknown): value is UniversityTab {
+  return typeof value === 'string' && UNIVERSITY_TABS.has(value as UniversityTab)
+}
+
 type EditingEntity =
   | 'academic-faculty'
   | 'department'
@@ -510,6 +520,27 @@ export function formatRecordProofBanner(record: ProvenancedRecord | null | undef
   return record.countSource === 'unavailable'
     ? describeProofAvailability(record)
     : describeProofProvenance(record)
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function shouldShowProofCheckpointCgpa(input: {
+  proofScopeActive: boolean
+  semesterNumber?: number | null
+  stageKey?: string | null
+}) {
+  if (!input.proofScopeActive) return true
+  return (input.semesterNumber ?? 0) > 1 && input.stageKey !== 'pre-tt1'
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function shouldOverlayProofCheckpointStudentSummary(input: {
+  routeSection: LiveAdminRoute['section']
+  studentBatchId?: string | null
+  selectedProofCheckpoint?: Pick<ApiSimulationStageCheckpointSummary, 'simulationStageCheckpointId'> | null
+  registryScope?: Pick<LiveAdminSearchScope, 'academicFacultyId' | 'departmentId' | 'branchId' | 'batchId'> | null
+}) {
+  if (input.routeSection !== 'students' || !input.selectedProofCheckpoint?.simulationStageCheckpointId) return false
+  return scopeTargetsCanonicalProofHierarchy(input.registryScope) || isCanonicalProofBatchId(input.studentBatchId)
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -1754,8 +1785,8 @@ function SectionLaunchCard({
         padding: 22,
         minHeight: 196,
         background: active
-          ? `linear-gradient(160deg, ${withAlpha(tone, '20')} 0%, ${withAlpha(tone, '0f')} 18%, ${T.surface} 100%)`
-          : `linear-gradient(160deg, ${withAlpha(tone, '10')} 0%, ${T.surface} 20%, ${T.surface2} 100%)`,
+          ? `linear-gradient(160deg, ${withAlpha(tone, '0a')} 0%, ${withAlpha(tone, '06')} 18%, ${T.surface} 100%)`
+          : `linear-gradient(160deg, ${withAlpha(tone, '08')} 0%, ${T.surface} 20%, ${T.surface2} 100%)`,
         display: 'grid',
         alignContent: 'space-between',
       }}
@@ -1796,7 +1827,7 @@ function OverviewSupportCard({
         minHeight: 148,
         display: 'grid',
         alignContent: 'space-between',
-        background: `linear-gradient(180deg, ${withAlpha(tone, '0d')}, ${T.surface})`,
+        background: `linear-gradient(180deg, ${withAlpha(tone, '08')}, ${T.surface})`,
       }}
     >
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{title}</div>
@@ -1970,7 +2001,7 @@ function AdminMiniStat({
   tone?: string
 }) {
   return (
-    <div style={{ borderRadius: 16, border: `1px solid ${withAlpha(tone, '28')}`, background: `linear-gradient(180deg, ${withAlpha(tone, '12')}, ${T.surface})`, padding: '12px 14px', minWidth: 0, maxWidth: 240, boxShadow: `0 10px 24px ${withAlpha(tone, '12')}` }}>
+    <div style={{ borderRadius: 16, border: `1px solid ${withAlpha(tone, '1c')}`, background: `linear-gradient(180deg, ${withAlpha(tone, '0a')}, ${T.surface})`, padding: '12px 14px', minWidth: 0, maxWidth: 240, boxShadow: `0 8px 18px ${withAlpha(tone, '0a')}` }}>
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.micro, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
       <div style={{ ...sora, fontSize: 'clamp(16px, 1.8vw, 20px)', fontWeight: 800, color: T.text, marginTop: 6, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
     </div>
@@ -2066,10 +2097,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [bulkMentorAssignmentPreview, setBulkMentorAssignmentPreview] = useState<ApiMentorAssignmentBulkApplyResponse | null>(null)
   const [selectedStageOfferingId, setSelectedStageOfferingId] = useState('')
   const [selectedStageEligibility, setSelectedStageEligibility] = useState<ApiOfferingStageEligibility | null>(null)
-  const [selectedProofCheckpointId, setSelectedProofCheckpointId] = useState<string | null>(() => readProofPlaybackSelection()?.simulationStageCheckpointId ?? null)
-  const [selectedProofCheckpointSource, setSelectedProofCheckpointSource] = useState<'auto' | 'restored' | 'manual'>(() => readProofPlaybackSelection() ? 'restored' : 'auto')
+  const [selectedProofCheckpointId, setSelectedProofCheckpointId] = useState<string | null>(() => readSharedProofPlaybackSelection('system-admin')?.simulationStageCheckpointId ?? null)
+  const [selectedProofCheckpointSource, setSelectedProofCheckpointSource] = useState<'auto' | 'restored' | 'manual'>(() => readSharedProofPlaybackSelection('system-admin') ? 'restored' : 'auto')
   const [proofPlaybackRestoreNotice, setProofPlaybackRestoreNotice] = useState<{ tone: 'neutral' | 'error'; message: string } | null>(null)
   const [selectedProofCheckpointDetail, setSelectedProofCheckpointDetail] = useState<ApiProofRunCheckpointDetail | null>(null)
+  const [selectedProofCheckpointStudents, setSelectedProofCheckpointStudents] = useState<ApiProofRunCheckpointStudentSummary[] | null>(null)
   const [selectedRequestDetail, setSelectedRequestDetail] = useState<ApiAdminRequestDetail | null>(null)
   const [requestDetailLoading, setRequestDetailLoading] = useState(false)
   const [requestBusy, setRequestBusy] = useState('')
@@ -2340,8 +2372,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       return
     }
     try {
-      const parsed = JSON.parse(raw) as { tab?: typeof universityTab; sectionCode?: string | null }
-      setUniversityTab(parsed.tab ?? 'overview')
+      const parsed = JSON.parse(raw) as { tab?: unknown; sectionCode?: string | null }
+      setUniversityTab(isUniversityTab(parsed.tab) ? parsed.tab : 'overview')
       setSelectedSectionCode(parsed.sectionCode ?? null)
       setFacultiesRestoreNotice({
         tone: 'neutral',
@@ -2412,8 +2444,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const proofDashboardBatchId = useMemo(() => resolveProofDashboardBatchId({
     route,
     routeScopedBatchId,
+    directoryScope: scopedAdminDirectoryFilter,
     data,
-  }), [data, route, routeScopedBatchId])
+  }), [data, route, routeScopedBatchId, scopedAdminDirectoryFilter])
 
   useEffect(() => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
@@ -2574,7 +2607,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   const queueProofRefreshBatches = useCallback(async (batchIds: string[], reason: string, overrideImportVersionId?: string | null) => {
     const refreshedBatchIds: string[] = []
-    for (const batchId of Array.from(new Set(batchIds.filter(Boolean)))) {
+    for (const batchId of Array.from(new Set(batchIds.filter(isCanonicalProofBatchId)))) {
       const scopedConfig = batchId === routeScopedBatchId
         ? curriculumFeatureConfig
         : await apiClient.getCurriculumFeatureConfig(batchId)
@@ -2594,12 +2627,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         activate: true,
       })
       refreshedBatchIds.push(batchId)
-      if (batchId === routeScopedBatchId) {
+      if (batchId === routeScopedBatchId || batchId === proofDashboardBatchId) {
         await refreshProofDashboard(batchId)
       }
     }
     return refreshedBatchIds
-  }, [apiClient, curriculumFeatureConfig, proofDashboard, refreshProofDashboard, routeScopedBatchId])
+  }, [apiClient, curriculumFeatureConfig, proofDashboard, proofDashboardBatchId, refreshProofDashboard, routeScopedBatchId])
 
   const queueSelectedProofRefresh = useCallback(async (reason: string, curriculumImportVersionId?: string | null) => {
     if (!routeScopedBatchId) return []
@@ -2688,8 +2721,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedBranch = resolveBranch(data, route.branchId)
   const selectedBatch = resolveBatch(data, routeScopedBatchId ?? undefined)
   const canonicalProofBatch = useMemo(() => resolveCanonicalProofBatch(data), [data])
-  const proofControlBatchId = routeScopedBatchId
-    ?? canonicalProofBatch?.batchId
+  const proofControlBatchId = canonicalProofBatch?.batchId
     ?? CANONICAL_PROOF_BATCH_ID
   const canonicalProofRegistryScope = useMemo<UniversityScopeState | null>(() => {
     if (!canonicalProofBatch) return null
@@ -2775,9 +2807,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     if (!selectedProofCheckpointId) return activeRunCheckpoints[0] ?? null
     return activeRunCheckpoints.find(item => item.simulationStageCheckpointId === selectedProofCheckpointId) ?? activeRunCheckpoints[0] ?? null
   }, [activeRunCheckpoints, selectedProofCheckpointId])
-  const defaultProofPlaybackCheckpointId = useMemo(() => (
-    activeRunCheckpoints[0]?.simulationStageCheckpointId ?? null
-  ), [activeRunCheckpoints])
+  const defaultProofPlaybackCheckpointId = useMemo(() => {
+    if (!activeRunCheckpoints.length) return null
+    if (activeRunDetail?.activeStageKey) {
+      const match = activeRunCheckpoints.find(item => item.stageKey === activeRunDetail.activeStageKey)
+      if (match) return match.simulationStageCheckpointId
+    }
+    return activeRunCheckpoints[0]?.simulationStageCheckpointId ?? null
+  }, [activeRunCheckpoints, activeRunDetail?.activeStageKey])
   const firstBlockedCheckpointIndex = useMemo(() => (
     activeRunCheckpoints.findIndex(item => item.playbackAccessible === false || item.stageAdvanceBlocked === true || (item.blockingQueueItemCount ?? item.openQueueCount ?? 0) > 0)
   ), [activeRunCheckpoints])
@@ -2830,11 +2867,35 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     [facultyRegistryFilter],
   )
   const studentRegistryHasScope = hasHierarchyScopeSelection(studentRegistryScope)
+  const selectedProofCheckpointStudentMap = useMemo(() => (
+    new Map((selectedProofCheckpointStudents ?? []).map(item => [item.studentId, item]))
+  ), [selectedProofCheckpointStudents])
+  const studentRegistryProofScopeActive = route.section === 'students' && scopeTargetsCanonicalProofHierarchy(scopedAdminDirectoryFilter)
   const selectedStudentRecord = resolveStudent(operatorData, route.studentId)
   const selectedStudent = selectedStudentRecord && isStudentVisible(operatorData, selectedStudentRecord)
     ? selectedStudentRecord
     : null
   const selectedStudentActiveAcademicContext = selectedStudent?.activeAcademicContext ?? null
+  const selectedStudentProofScopeActive = !!selectedStudent && shouldOverlayProofCheckpointStudentSummary({
+    routeSection: route.section,
+    studentBatchId: selectedStudentActiveAcademicContext?.batchId,
+    selectedProofCheckpoint,
+    registryScope: scopedAdminDirectoryFilter,
+  })
+  const selectedStudentCheckpointSummary = selectedStudentProofScopeActive && selectedStudent
+    ? selectedProofCheckpointStudentMap.get(selectedStudent.studentId) ?? null
+    : null
+  const selectedStudentDisplaySemester = selectedStudentCheckpointSummary?.currentSemester ?? selectedStudentActiveAcademicContext?.semesterNumber ?? null
+  const selectedStudentDisplayCgpa = selectedStudentCheckpointSummary?.observedEvidence.cgpa ?? selectedStudent?.currentCgpa ?? 0
+  const selectedStudentCheckpointCgpaVisible = shouldShowProofCheckpointCgpa({
+    proofScopeActive: selectedStudentProofScopeActive,
+    semesterNumber: selectedStudentDisplaySemester,
+    stageKey: selectedProofCheckpoint?.stageKey,
+  })
+  const selectedStudentDisplayBacklogCount = selectedStudentCheckpointSummary?.observedEvidence.backlogCount ?? null
+  const selectedStudentHasCheckpointBacklogs = selectedStudentDisplayBacklogCount != null
+    ? selectedStudentDisplayBacklogCount > 0
+    : /(backlog|fail|repeat|detain)/i.test(selectedStudentActiveAcademicContext?.academicStatus ?? '')
   const selectedStudentPolicyBatchId = selectedStudentActiveAcademicContext?.batchId ?? null
   const selectedStudentPolicySectionCode = selectedStudentActiveAcademicContext?.sectionCode ?? null
   const selectedFacultyRecord = resolveFacultyMember(operatorData, route.facultyMemberId)
@@ -2846,6 +2907,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedFacultyCredentialStatus = resolveFacultyCredentialStatus(selectedFacultyMember)
   const selectedStudentProofBanner = formatRecordProofBanner(selectedStudent as unknown as ProvenancedRecord | null)
   const selectedFacultyProofBanner = formatRecordProofBanner(selectedFacultyMember as unknown as ProvenancedRecord | null)
+  const selectedStudentCheckpointBanner = selectedStudentCheckpointSummary && selectedProofCheckpoint
+    ? `Checkpoint view pinned to Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}. CGPA, queue state, and risk chips below reflect the selected proof snapshot while identity and edit flows stay canonical.`
+    : ''
   const selectedStudentRouteIsExplicit = route.section === 'students' && !!route.studentId
   const selectedStudentScopeMismatch = !!selectedStudent && studentRegistryHasScope && !matchesStudentScope(selectedStudent, operatorData, studentRegistryScope)
 
@@ -2884,7 +2948,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       setProofPlaybackRestoreNotice(null)
       return
     }
-    const persistedSelection = readProofPlaybackSelection()
+    const persistedSelection = readSharedProofPlaybackSelection('system-admin')
     const currentSelectionValid = !!selectedProofCheckpointId && activeRunCheckpoints.some(item => item.simulationStageCheckpointId === selectedProofCheckpointId)
     const persistedCheckpointId = persistedSelection?.simulationRunId === activeSimulationRunId
       ? persistedSelection.simulationStageCheckpointId
@@ -2966,12 +3030,46 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }, [activeSimulationRunId, apiClient, selectedProofCheckpoint])
 
   useEffect(() => {
-    if (selectedProofCheckpointSource !== 'manual') return
+    if (!activeSimulationRunId || !selectedProofCheckpoint?.simulationStageCheckpointId) {
+      setSelectedProofCheckpointStudents(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const response = await apiClient.listProofRunCheckpointStudents(
+          activeSimulationRunId,
+          selectedProofCheckpoint.simulationStageCheckpointId,
+        )
+        if (!cancelled) setSelectedProofCheckpointStudents(response.items)
+      } catch (error) {
+        emitClientOperationalEvent('proof.checkpoint.students_load_failed', {
+          workspace: 'system-admin',
+          simulationRunId: activeSimulationRunId,
+          simulationStageCheckpointId: selectedProofCheckpoint.simulationStageCheckpointId,
+          error: normalizeClientTelemetryError(error),
+        }, { level: 'warn' })
+        if (cancelled) return
+        if (error instanceof AirMentorApiError && error.status === 404) {
+          setSelectedProofCheckpointStudents(null)
+          return
+        }
+        setActionError(toErrorMessage(error))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeSimulationRunId, apiClient, selectedProofCheckpoint])
+
+  useEffect(() => {
     if (!proofDashboard?.activeRunDetail?.simulationRunId || !selectedProofCheckpoint?.simulationStageCheckpointId) return
     writeProofPlaybackSelection({
       simulationRunId: proofDashboard.activeRunDetail.simulationRunId,
       simulationStageCheckpointId: selectedProofCheckpoint.simulationStageCheckpointId,
       updatedAt: new Date().toISOString(),
+      workspace: 'system-admin',
+      source: `system-admin-proof-dashboard:${selectedProofCheckpointSource}`,
     })
   }, [proofDashboard?.activeRunDetail?.simulationRunId, selectedProofCheckpoint?.simulationStageCheckpointId, selectedProofCheckpointSource])
 
@@ -4165,11 +4263,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       if (existing) await apiClient.updatePolicyOverride(existing.policyOverrideId, { ...payload, version: existing.version })
       else await apiClient.createPolicyOverride(payload)
       await loadAdminData()
-      if (selectedBatch) {
-        const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
+      if (preferredGovernanceBatchId) {
+        const nextResolved = await apiClient.getResolvedBatchPolicy(preferredGovernanceBatchId, { sectionCode: selectedSectionCode })
         setResolvedBatchPolicy(nextResolved)
       }
-      const refreshed = selectedBatch ? await queueSelectedProofRefresh('policy refresh') : []
+      const refreshed = activeGovernanceProofRefreshBatchIds.length > 0
+        ? await queueProofRefreshBatches(activeGovernanceProofRefreshBatchIds, 'policy refresh')
+        : []
       setFlashMessage(refreshed.length > 0
         ? `${activeGovernanceScope.label} policy saved and proof batch refreshed.`
         : `${activeGovernanceScope.label} policy saved.`)
@@ -4212,12 +4312,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       })
       await loadAdminData()
       let nextResolved: ApiResolvedBatchPolicy | null = null
-      if (selectedBatch) {
-        nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
+      if (preferredGovernanceBatchId) {
+        nextResolved = await apiClient.getResolvedBatchPolicy(preferredGovernanceBatchId, { sectionCode: selectedSectionCode })
         setResolvedBatchPolicy(nextResolved)
         setPolicyForm(hydratePolicyForm(nextResolved.effectivePolicy))
       }
-      const refreshed = selectedBatch ? await queueSelectedProofRefresh('policy reset') : []
+      const refreshed = activeGovernanceProofRefreshBatchIds.length > 0
+        ? await queueProofRefreshBatches(activeGovernanceProofRefreshBatchIds, 'policy reset')
+        : []
       const rollbackMessage = describeGovernanceRollbackMessage({
         activeGovernanceScope,
         activeScopeChain,
@@ -4243,11 +4345,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       if (activeScopeStageOverride) await apiClient.updateStagePolicyOverride(activeScopeStageOverride.stagePolicyOverrideId, { ...payload, version: activeScopeStageOverride.version })
       else await apiClient.createStagePolicyOverride(payload)
       await loadAdminData()
-      if (selectedBatch) {
-        const nextResolved = await apiClient.getResolvedStagePolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
+      if (preferredGovernanceBatchId) {
+        const nextResolved = await apiClient.getResolvedStagePolicy(preferredGovernanceBatchId, { sectionCode: selectedSectionCode })
         setResolvedStagePolicy(nextResolved)
       }
-      setFlashMessage(`${activeGovernanceScope.label} stage policy saved.`)
+      const refreshed = activeGovernanceProofRefreshBatchIds.length > 0
+        ? await queueProofRefreshBatches(activeGovernanceProofRefreshBatchIds, 'stage policy refresh')
+        : []
+      setFlashMessage(refreshed.length > 0
+        ? `${activeGovernanceScope.label} stage policy saved and proof batch refreshed.`
+        : `${activeGovernanceScope.label} stage policy saved.`)
     })
   }
 
@@ -4276,18 +4383,24 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       })
       await loadAdminData()
       let nextResolved: ApiResolvedBatchStagePolicy | null = null
-      if (selectedBatch) {
-        nextResolved = await apiClient.getResolvedStagePolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
+      if (preferredGovernanceBatchId) {
+        nextResolved = await apiClient.getResolvedStagePolicy(preferredGovernanceBatchId, { sectionCode: selectedSectionCode })
         setResolvedStagePolicy(nextResolved)
         setStagePolicyForm(hydrateStagePolicyForm(nextResolved.effectivePolicy))
       }
-      setFlashMessage(`${activeGovernanceScope.label} stage policy override reset. ${describeGovernanceRollbackMessage({
+      const refreshed = activeGovernanceProofRefreshBatchIds.length > 0
+        ? await queueProofRefreshBatches(activeGovernanceProofRefreshBatchIds, 'stage policy reset')
+        : []
+      const rollbackMessage = describeGovernanceRollbackMessage({
         activeGovernanceScope,
         activeScopeChain,
         hasLocalOverride: false,
         resolved: nextResolved ?? resolvedStagePolicy,
         subject: 'stage policy',
-      })}`)
+      })
+      setFlashMessage(refreshed.length > 0
+        ? `${activeGovernanceScope.label} stage policy override reset and proof batch refreshed. ${rollbackMessage}`
+        : `${activeGovernanceScope.label} stage policy override reset. ${rollbackMessage}`)
     })
   }
 
@@ -5312,6 +5425,19 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const activeGovernanceScope = activeScopeChain.at(-1) ?? null
   const activeGovernanceScopeId = activeGovernanceScope?.scopeId ?? null
   const activeGovernanceScopeType = activeGovernanceScope?.scopeType ?? null
+  const activeGovernanceScopeBatchIds = useMemo(() => {
+    if (!activeGovernanceScope) return []
+    return data.batches
+      .filter(batch => matchesBatchScope(batch, data, activeGovernanceScope.scopeType, activeGovernanceScope.scopeId))
+      .map(batch => batch.batchId)
+  }, [activeGovernanceScope, data])
+  const preferredGovernanceBatchId = selectedBatch?.batchId
+    ?? activeGovernanceScopeBatchIds.find(isCanonicalProofBatchId)
+    ?? activeGovernanceScopeBatchIds[0]
+    ?? null
+  const activeGovernanceProofRefreshBatchIds = selectedBatch?.batchId
+    ? [selectedBatch.batchId]
+    : activeGovernanceScopeBatchIds.filter(isCanonicalProofBatchId)
   const scopePolicyOverrides = useMemo(() => (
     activeScopeChain.flatMap(scope => {
       const match = data.policyOverrides.find(item => item.scopeType === scope.scopeType && item.scopeId === scope.scopeId && isVisibleAdminRecord(item.status))
@@ -5704,10 +5830,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       description: 'Semester-wise curriculum rows, credits, and course leader assignments.',
     }] : []),
     ...(selectedBatch ? [{
-      id: 'provision' as const,
-      label: 'Provision',
-      icon: <Plus size={13} />,
-      description: 'Seed sections, students, ownerships, mentor links, timetables, and assessment scaffolding for live verification.',
+      id: 'curriculum' as const,
+      label: 'Curriculum',
+      icon: <Network size={13} />,
+      description: 'Visual curriculum graph builder with prerequisite edges, course nodes, ML suggestions, and publish workflow.',
     }] : []),
   ] satisfies Array<{ id: UniversityTab; label: string; icon: ReactNode; description: string }>
   const activeUniversityTab = universityTabOptions.find(item => item.id === universityTab) ?? universityTabOptions[0]
@@ -5794,14 +5920,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     .sort((left, right) => left.displayName.localeCompare(right.displayName))
   // variables removed because edit-lock modals manage context reset internally
   const selectedStudentPromotionRules = selectedStudentPolicy?.effectivePolicy.progressionRules ?? DEFAULT_PROGRESSION_RULES
-  const selectedStudentNextTerms = selectedStudent?.activeAcademicContext
+  const selectedStudentNextTerms = selectedStudentActiveAcademicContext
     ? operatorData.terms
-        .filter(item => item.branchId === selectedStudent.activeAcademicContext!.branchId && item.semesterNumber === (selectedStudent.activeAcademicContext!.semesterNumber ?? 0) + 1 && isTermVisible(operatorData, item))
+        .filter(item => item.branchId === selectedStudentActiveAcademicContext.branchId && item.semesterNumber === (selectedStudentDisplaySemester ?? 0) + 1 && isTermVisible(operatorData, item))
         .sort((left, right) => left.startDate.localeCompare(right.startDate))
     : []
   const selectedStudentPromotionRecommended = selectedStudent
-    ? selectedStudent.currentCgpa >= selectedStudentPromotionRules.minimumCgpaForPromotion
-      && (!selectedStudentPromotionRules.requireNoActiveBacklogs || !/(backlog|fail|repeat|detain)/i.test(selectedStudent.activeAcademicContext?.academicStatus ?? ''))
+    ? selectedStudentDisplayCgpa >= selectedStudentPromotionRules.minimumCgpaForPromotion
+      && (!selectedStudentPromotionRules.requireNoActiveBacklogs || !selectedStudentHasCheckpointBacklogs)
     : false
   const effectiveStudentRegistryFilter = studentRegistryFilter
   const effectiveFacultyRegistryFilter = facultyRegistryFilter
@@ -5962,6 +6088,37 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       const rightKey = `${right.activeAcademicContext?.departmentName ?? ''}-${right.activeAcademicContext?.branchName ?? ''}-${right.name}-${right.usn}`
       return leftKey.localeCompare(rightKey)
     })
+  const studentRegistryViewItems = studentRegistryItems.map(student => {
+    const proofOverlayActive = shouldOverlayProofCheckpointStudentSummary({
+      routeSection: route.section,
+      studentBatchId: student.activeAcademicContext?.batchId,
+      selectedProofCheckpoint,
+      registryScope: scopedAdminDirectoryFilter,
+    })
+    const checkpointSummary = proofOverlayActive
+      ? selectedProofCheckpointStudentMap.get(student.studentId) ?? null
+      : null
+    const displaySemester = checkpointSummary?.currentSemester
+      ?? (proofOverlayActive ? selectedProofCheckpoint?.semesterNumber ?? null : student.activeAcademicContext?.semesterNumber ?? null)
+    const showCheckpointCgpa = shouldShowProofCheckpointCgpa({
+      proofScopeActive: proofOverlayActive,
+      semesterNumber: displaySemester,
+      stageKey: selectedProofCheckpoint?.stageKey,
+    })
+    return {
+      student,
+      proofOverlayActive,
+      checkpointSummary,
+      displayCgpa: checkpointSummary
+        ? checkpointSummary.observedEvidence.cgpa
+        : proofOverlayActive
+          ? null
+          : student.currentCgpa,
+      displaySemester,
+      showCheckpointCgpa,
+    }
+  })
+  const studentRegistryProofOverlayActive = studentRegistryViewItems.some(item => item.proofOverlayActive)
   const facultyRegistryItems = (hasHierarchyScopeSelection(facultyRegistryScope) ? scopedAdminDirectoryData : operatorData).facultyMembers
     .filter(item => isFacultyMemberVisible(operatorData, item))
     .filter(item => matchesFacultyScope(item, operatorData, {
@@ -5992,12 +6149,18 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       return `${leftDepartment}-${left.displayName}-${left.employeeCode}`.localeCompare(`${rightDepartment}-${right.displayName}-${right.employeeCode}`)
     })
   const studentRegistryCaption = studentRegistryHasScope
-    ? `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Live scope-backed feed filtered to ${studentRegistryScopeLabel ?? 'the selected academic scope'}.`
+    ? studentRegistryProofOverlayActive && selectedProofCheckpoint
+      ? `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Proof-scoped feed filtered to ${studentRegistryScopeLabel ?? 'the selected academic scope'} and pinned to Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}.`
+      : `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Live scope-backed feed filtered to ${studentRegistryScopeLabel ?? 'the selected academic scope'}.`
+    : studentRegistryProofOverlayActive && selectedProofCheckpoint
+      ? `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Global registry remains open, but proof-batch students now follow Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel} instead of stale canonical-semester cards.`
     : selectedStudentRouteIsExplicit
       ? 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. The global registry remains open while the explicit student drilldown is focused on the right.'
       : 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Global student registry is open; apply filters to narrow the scope.'
   const studentRegistryEmptyMessage = studentRegistryHasScope
-    ? 'No students match the current academic scope.'
+    ? studentRegistryProofOverlayActive && selectedProofCheckpoint
+      ? `No students match the current proof scope for Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}.`
+      : 'No students match the current academic scope.'
     : selectedStudentRouteIsExplicit
       ? 'No students match the current global filters. The explicit student drilldown is already open on the right.'
       : 'No students match the current global filters.'
@@ -6034,6 +6197,20 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   ])
 
   useEffect(() => {
+    if (routeScopedBatchId || !preferredGovernanceBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
+    let cancelled = false
+    void (async () => {
+      try {
+        const next = await apiClient.getResolvedBatchPolicy(preferredGovernanceBatchId, { sectionCode: selectedSectionCode })
+        if (!cancelled) setResolvedBatchPolicy(next)
+      } catch (error) {
+        if (!cancelled) setActionError(toErrorMessage(error))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, preferredGovernanceBatchId, routeScopedBatchId, selectedSectionCode, session])
+
+  useEffect(() => {
     if (!activeGovernanceScopeId || !activeGovernanceScopeType) {
       setStagePolicyForm(defaultStagePolicyForm())
       return
@@ -6046,6 +6223,20 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     activeScopeStageOverride?.version,
     effectiveScopeStagePolicy,
   ])
+
+  useEffect(() => {
+    if (routeScopedBatchId || !preferredGovernanceBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
+    let cancelled = false
+    void (async () => {
+      try {
+        const next = await apiClient.getResolvedStagePolicy(preferredGovernanceBatchId, { sectionCode: selectedSectionCode })
+        if (!cancelled) setResolvedStagePolicy(next)
+      } catch (error) {
+        if (!cancelled) setActionError(toErrorMessage(error))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, preferredGovernanceBatchId, routeScopedBatchId, selectedSectionCode, session])
 
   useEffect(() => {
     setBatchProvisioningForm(prev => ({
@@ -6898,6 +7089,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <Btn type="button" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}><Plus size={14} /> New Student</Btn>
                   <Chip color={T.accent}>{studentRegistryItems.length} active</Chip>
                   <Chip color={T.warning}>{studentRegistryItems.filter(item => !item.activeMentorAssignment).length} mentor gaps</Chip>
+                  {studentRegistryProofOverlayActive && selectedProofCheckpoint ? <Chip color={T.success}>{`Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}`}</Chip> : null}
                   {studentRegistryScopeLabel ? <Chip color={ADMIN_SECTION_TONES.students}>{studentRegistryScopeLabel}</Chip> : <Chip color={T.dim}>All students</Chip>}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: registryFilterColumns, gap: 10 }}>
@@ -6970,7 +7162,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 </div>
               </div>
               <div className="scroll-pane" style={{ display: 'grid', gap: 8, minHeight: 0, overflowY: registryIsSingleColumn ? 'visible' : 'auto', paddingRight: 4 }}>
-                {studentRegistryItems.map(student => (
+                {studentRegistryViewItems.map(({ student, proofOverlayActive, checkpointSummary, displayCgpa, displaySemester, showCheckpointCgpa }) => (
                   <EntityButton key={student.studentId} selected={route.studentId === student.studentId} onClick={() => navigate({ section: 'students', studentId: student.studentId })}>
                     <div style={{ display: 'grid', gap: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
@@ -6988,10 +7180,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {student.activeAcademicContext?.departmentName ? <Chip color={T.warning} size={9}>{student.activeAcademicContext.departmentName}</Chip> : null}
                         {student.activeAcademicContext?.sectionCode ? <Chip color={T.accent} size={9}>Sec {student.activeAcademicContext.sectionCode}</Chip> : null}
-                        <Chip color={T.success} size={9}>CGPA {student.currentCgpa.toFixed(2)}</Chip>
+                        {checkpointSummary?.currentRiskBand ? <Chip color={checkpointSummary.currentRiskBand.toLowerCase() === 'high' ? T.danger : checkpointSummary.currentRiskBand.toLowerCase() === 'medium' ? T.warning : T.success} size={9}>{`${checkpointSummary.currentRiskBand} risk`}</Chip> : null}
+                        {checkpointSummary?.currentQueueState ? <Chip color={T.orange} size={9}>{checkpointSummary.currentQueueState}</Chip> : null}
+                        {showCheckpointCgpa && typeof displayCgpa === 'number' ? <Chip color={T.success} size={9}>CGPA {displayCgpa.toFixed(2)}</Chip> : null}
                       </div>
                       <div style={{ ...mono, fontSize: 10, color: T.success, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
-                        Semester {student.activeAcademicContext?.semesterNumber ?? '—'} · {student.email ?? 'Email not set'} · {student.phone ?? 'Phone not set'}
+                        Semester {displaySemester ?? '—'}{checkpointSummary?.primaryCourseCode ? ` · ${checkpointSummary.primaryCourseCode}` : ''}{proofOverlayActive && selectedProofCheckpoint ? ` · ${selectedProofCheckpoint.stageLabel}` : ''} · {student.email ?? 'Email not set'} · {student.phone ?? 'Phone not set'}
                       </div>
                     </div>
                   </EntityButton>
@@ -7029,11 +7223,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={selectedStudentRouteIsExplicit ? T.accent : T.dim}>{selectedStudentRouteIsExplicit ? 'Direct drilldown' : 'Filtered registry'}</Chip>
                       <Chip color={selectedStudentScopeMismatch ? T.warning : T.success}>{selectedStudentScopeMismatch ? 'Outside current scope' : 'Scope aligned'}</Chip>
+                      {selectedStudentCheckpointSummary && selectedProofCheckpoint ? <Chip color={T.orange}>{`Proof snapshot · Sem ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}`}</Chip> : null}
                       <Chip color={selectedStudentPolicyLoading ? T.dim : selectedStudentPolicy ? T.success : T.dim}>{selectedStudentPolicyLoading ? 'Loading policy…' : selectedStudentPolicy ? 'Policy loaded' : 'Policy unavailable'}</Chip>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 10 }}>
-                      <AdminMiniStat label="CGPA" value={selectedStudent.currentCgpa.toFixed(2)} tone={T.success} />
-                      <AdminMiniStat label="Semester" value={String(selectedStudent.activeAcademicContext?.semesterNumber ?? '—')} tone={T.accent} />
+                      <AdminMiniStat label="CGPA" value={selectedStudentCheckpointCgpaVisible ? selectedStudentDisplayCgpa.toFixed(2) : 'Deferred'} tone={T.success} />
+                      <AdminMiniStat label="Semester" value={String(selectedStudentDisplaySemester ?? '—')} tone={T.accent} />
                       <AdminMiniStat label="Enrollments" value={String(selectedStudent.enrollments.length)} tone={T.warning} />
                       <AdminMiniStat label="Mentor Links" value={String(selectedStudent.mentorAssignments.length)} tone={ADMIN_SECTION_TONES['faculty-members']} />
                       <AdminMiniStat label="Audit Events" value={String(studentAuditEvents.length)} tone={T.orange} />
@@ -7064,10 +7259,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     {!selectedStudentPolicy && !selectedStudentPolicyLoading ? <InfoBanner message="No resolved scope policy snapshot is loaded for this student yet. Progression guidance falls back to the default guardrails until a policy is available." /> : null}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={T.accent}>{selectedStudent.usn}</Chip>
-                      <Chip color={T.success}>CGPA {selectedStudent.currentCgpa.toFixed(2)}</Chip>
+                      {selectedStudentCheckpointCgpaVisible ? <Chip color={T.success}>CGPA {selectedStudentDisplayCgpa.toFixed(2)}</Chip> : null}
                       <Chip color={T.warning}>{selectedStudent.activeAcademicContext?.departmentName ?? 'No department'}</Chip>
+                      {selectedStudentCheckpointSummary?.currentRiskBand ? <Chip color={selectedStudentCheckpointSummary.currentRiskBand.toLowerCase() === 'high' ? T.danger : selectedStudentCheckpointSummary.currentRiskBand.toLowerCase() === 'medium' ? T.warning : T.success}>{`${selectedStudentCheckpointSummary.currentRiskBand} risk`}</Chip> : null}
                       <Chip color={selectedStudent.status === 'active' ? T.success : T.danger}>{selectedStudent.status}</Chip>
                     </div>
+                    {selectedStudentCheckpointBanner ? <InfoBanner tone="neutral" message={selectedStudentCheckpointBanner} /> : null}
                     {selectedStudentProofBanner ? <InfoBanner tone="neutral" message={selectedStudentProofBanner} /> : null}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
                       <Card style={{ padding: 14, background: T.surface2 }}>
@@ -7081,8 +7278,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       </Card>
                       <Card style={{ padding: 14, background: T.surface2 }}>
                         <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Academic Lineage</div>
-                        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.activeAcademicContext ? `${selectedStudent.activeAcademicContext.branchName ?? 'Branch'} · Sem ${selectedStudent.activeAcademicContext.semesterNumber ?? '—'}` : 'No active academic context'}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{selectedStudent.activeAcademicContext?.sectionCode ? `Section ${selectedStudent.activeAcademicContext.sectionCode}` : 'No section assigned'}</div>
+                        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.activeAcademicContext ? `${selectedStudent.activeAcademicContext.branchName ?? 'Branch'} · Sem ${selectedStudentDisplaySemester ?? '—'}` : 'No active academic context'}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{selectedStudentCheckpointSummary?.primaryCourseCode ? `${selectedStudentCheckpointSummary.primaryCourseCode} · ${selectedStudentCheckpointSummary.primaryCourseTitle}` : selectedStudent.activeAcademicContext?.sectionCode ? `Section ${selectedStudent.activeAcademicContext.sectionCode}` : 'No section assigned'}</div>
                       </Card>
                       <Card style={{ padding: 14, background: T.surface2 }}>
                         <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Mentor Link</div>
@@ -7101,7 +7298,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Admission Date</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{formatDate(selectedStudent.admissionDate)}</div></Card>
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedStudent.email ?? 'Not set'}</div></Card>
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Phone</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedStudent.phone ?? 'Not set'}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current Context</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedStudent.activeAcademicContext ? `${selectedStudent.activeAcademicContext.branchName ?? 'Branch'} · Sem ${selectedStudent.activeAcademicContext.semesterNumber ?? '—'} · Sec ${selectedStudent.activeAcademicContext.sectionCode}` : 'No active academic context'}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current Context</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedStudent.activeAcademicContext ? `${selectedStudent.activeAcademicContext.branchName ?? 'Branch'} · Sem ${selectedStudentDisplaySemester ?? '—'} · Sec ${selectedStudent.activeAcademicContext.sectionCode}` : 'No active academic context'}</div></Card>
                     </div>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <Btn type="button" size="sm" onClick={() => setEditingEntity('student-profile')}>Edit Student</Btn>
@@ -7219,14 +7416,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 ) : (
                   <>
                     {!selectedStudentPolicy && !selectedStudentPolicyLoading ? <InfoBanner message="No resolved scope policy snapshot is loaded for this student. The progression panel is using the default guardrails only." /> : null}
+                    {selectedStudentCheckpointBanner ? <InfoBanner tone="neutral" message={selectedStudentCheckpointBanner} /> : null}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={selectedStudentPromotionRecommended ? T.success : T.warning}>{selectedStudentPromotionRecommended ? 'Recommended' : 'Hold for review'}</Chip>
-                      <Chip color={T.accent}>Current CGPA {selectedStudent.currentCgpa.toFixed(2)}</Chip>
+                      {selectedStudentCheckpointCgpaVisible ? <Chip color={T.accent}>Current CGPA {selectedStudentDisplayCgpa.toFixed(2)}</Chip> : <Chip color={T.dim}>CGPA deferred at this checkpoint</Chip>}
                       <Chip color={T.warning}>Min CGPA {selectedStudentPromotionRules.minimumCgpaForPromotion.toFixed(1)}</Chip>
+                      {selectedStudentCheckpointSummary?.currentQueueState ? <Chip color={T.orange}>{selectedStudentCheckpointSummary.currentQueueState}</Chip> : null}
                       {selectedStudentPolicyLoading ? <Chip color={T.dim}>Loading policy…</Chip> : null}
                     </div>
                     <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.9 }}>
-                      Current semester: {selectedStudent.activeAcademicContext.semesterNumber ?? '—'} · Academic status: {selectedStudent.activeAcademicContext.academicStatus}<br />
+                      Current semester: {selectedStudentDisplaySemester ?? '—'} · Academic status: {selectedStudent.activeAcademicContext.academicStatus}{selectedStudentDisplayBacklogCount != null ? ` · Backlogs ${selectedStudentDisplayBacklogCount}` : ''}<br />
                       Promotion rule: {selectedStudentPromotionRules.requireNoActiveBacklogs ? 'Require no active backlogs' : 'Backlog check disabled'} · Pass threshold {selectedStudentPromotionRules.passMarkPercent}%
                     </div>
                     {selectedStudentNextTerms.length === 0 ? <InfoBanner message="No next-semester term is configured yet for this branch. Add the next term in the university workspace first." /> : (

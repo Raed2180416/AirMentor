@@ -253,6 +253,21 @@ describe('data-fetcher · groupInterventionsByStudentAndOffering', () => {
     expect(bucket[0]!.ordinalInStageForStudent).toBe(2)  // ordinal still advances for skipped rows
   })
 
+  it('keeps deterministic auto-resolution rows out of model realization evidence', () => {
+    const grouped = groupInterventionsByStudentAndOffering({
+      interventionRows: [
+        row('intervention_auto_resolution_run_1_case_1', 'stud_1', 'offr_1', 'targeted-tutoring', '2026-04-01T10:00:00Z'),
+        row('manual_intervention_1', 'stud_1', 'offr_1', 'targeted-tutoring', '2026-04-02T10:00:00Z'),
+      ],
+      semesterNumber: 3,
+      stageKeyApplied: 'post-tt1',
+      severityContextByStudentId: new Map([['stud_1', severity]]),
+    })
+    const bucket = grouped.get('stud_1::offr_1')!
+    expect(bucket.map(item => item.caseId)).toEqual(['manual_intervention_1'])
+    expect(bucket.map(item => item.ordinalInStageForStudent)).toEqual([1])
+  })
+
   it('omits students without severity context', () => {
     const grouped = groupInterventionsByStudentAndOffering({
       interventionRows: [

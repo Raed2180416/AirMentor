@@ -7,6 +7,7 @@ import {
   riskEvidenceSnapshots,
   simulationRuns,
   simulationStageCheckpoints,
+  simulationStageStudentProjections,
   studentObservedSemesterStates,
 } from '../src/db/schema.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
@@ -43,6 +44,46 @@ function sortObservedRows<T extends { studentId: string; semesterNumber: number;
     .sort((left, right) => left.studentId.localeCompare(right.studentId)
       || left.semesterNumber - right.semesterNumber
       || String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? '')))
+}
+
+function stageProjectionGovernance(row: { projectionJson: string }) {
+  const payload = JSON.parse(row.projectionJson || '{}') as Record<string, unknown>
+  const governance = (payload.governance ?? {}) as Record<string, unknown>
+  return {
+    primaryCase: governance.primaryCase === true,
+    countsTowardCapacity: governance.countsTowardCapacity === true,
+    priorityRank: Number.isFinite(Number(governance.priorityRank))
+      ? Number(governance.priorityRank)
+      : Number.MAX_SAFE_INTEGER,
+  }
+}
+
+function sortStageProjectionRows<T extends { projectionJson: string; riskProbScaled: number; courseCode: string }>(rows: T[]) {
+  return rows.slice().sort((left, right) => {
+    const leftGovernance = stageProjectionGovernance(left)
+    const rightGovernance = stageProjectionGovernance(right)
+    if (leftGovernance.primaryCase !== rightGovernance.primaryCase) return Number(rightGovernance.primaryCase) - Number(leftGovernance.primaryCase)
+    if (leftGovernance.countsTowardCapacity !== rightGovernance.countsTowardCapacity) return Number(rightGovernance.countsTowardCapacity) - Number(leftGovernance.countsTowardCapacity)
+    if (leftGovernance.priorityRank !== rightGovernance.priorityRank) return leftGovernance.priorityRank - rightGovernance.priorityRank
+    return (right.riskProbScaled - left.riskProbScaled) || left.courseCode.localeCompare(right.courseCode)
+  })
+}
+
+function stageProjectionEvidence(row: { projectionJson: string }) {
+  const payload = JSON.parse(row.projectionJson || '{}') as Record<string, unknown>
+  return {
+    currentEvidence: (payload.currentEvidence ?? {}) as Record<string, unknown>,
+    currentStatus: (payload.currentStatus ?? {}) as Record<string, unknown>,
+  }
+}
+
+function stageProjectionDrivers(row: { projectionJson: string }) {
+  const { currentStatus } = stageProjectionEvidence(row)
+  return Array.isArray(currentStatus.observableDrivers) ? currentStatus.observableDrivers : []
+}
+
+function normalizedBootstrapStudentId(studentId: string) {
+  return studentId.split('::').at(-1) ?? studentId
 }
 
 describe('student risk explorer', () => {
@@ -131,6 +172,24 @@ describe('student risk explorer', () => {
         displayProbabilityAllowed: false
         supportWarning: string
       }
+      xaiRiskReduction?: {
+        explanationMode: 'same-checkpoint-no-action-replay'
+        driverSource: string | null
+        scorerFamily: string | null
+        summary: {
+          label: string
+          baselineRiskProbScaled: number | null
+          simulatedRiskProbScaled: number | null
+          riskReducedByProbScaled: number | null
+        } | null
+        deltaTimeline: Array<{
+          stageKey: string
+          baselineRiskProbScaled: number
+          simulatedRiskProbScaled: number
+          riskReducedByProbScaled: number
+        }>
+        componentImpacts: Array<{ componentKey: string; direction: string; lift: number | null }>
+      } | null
       trainedRiskHeads: { currentRiskBand: string | null; overallCourseRiskProbScaled: number | null }
       trainedRiskHeadDisplays?: Record<string, {
         displayProbabilityAllowed: boolean
@@ -147,10 +206,18 @@ describe('student risk explorer', () => {
       }
       counterfactual: { panelLabel: string; counterfactualLiftScaled?: number | null } | null
       policyComparison?: { counterfactualLiftScaled: number | null; policyPhenotype?: string | null } | null
+      topDrivers: Array<{ label: string; feature: string; impact: number }>
       weakCourseOutcomes: unknown[]
     }
     const card = cardResponse.json() as {
       simulationStageCheckpointId: string | null
+      summaryRail: {
+        currentRiskBand: string | null
+        currentRiskProbScaled: number | null
+        currentRiskDisplayProbabilityAllowed?: boolean | null
+        currentRiskSupportWarning?: string | null
+        primaryCourseCode: string | null
+      }
       overview: {
         currentEvidence: { attendancePct: number; weakCoCount: number; coEvidenceMode?: string | null }
         currentStatus: {
@@ -160,6 +227,12 @@ describe('student risk explorer', () => {
           counterfactualLiftScaled?: number | null
           policyComparison?: { counterfactualLiftScaled: number | null; policyPhenotype?: string | null } | null
         }
+      }
+      assessmentEvidence: {
+        components: Array<{
+          courseCode: string
+          drivers: Array<{ label: string; impact: number; feature: string }>
+        }>
       }
     }
 
@@ -204,6 +277,19 @@ describe('student risk explorer', () => {
     expect(riskExplorer.modelProvenance.coEvidenceMode).toBe(card.overview.currentEvidence.coEvidenceMode)
     expect(riskExplorer.currentStatus.riskBand).toBe(card.overview.currentStatus.riskBand)
     expect(riskExplorer.currentStatus.riskProbScaled).toBe(card.overview.currentStatus.riskProbScaled)
+    expect(card.summaryRail.currentRiskBand).toBe(card.overview.currentStatus.riskBand)
+    expect(card.summaryRail.currentRiskProbScaled).toBe(card.overview.currentStatus.riskProbScaled)
+    expect(card.summaryRail.currentRiskDisplayProbabilityAllowed).toBe(card.summaryRail.currentRiskProbScaled != null)
+    expect(card.summaryRail.currentRiskSupportWarning).toBeNull()
+    const projectionRows = await current.db.select().from(simulationStageStudentProjections).where(and(
+      eq(simulationStageStudentProjections.simulationStageCheckpointId, selectedCheckpoint.simulationStageCheckpointId),
+      eq(simulationStageStudentProjections.studentId, accessibleStudentId!),
+    ))
+    const expectedProjection = projectionRows.find(row => row.courseCode === card.summaryRail.primaryCourseCode)
+      ?? sortStageProjectionRows(projectionRows)[0]
+    expect(expectedProjection).toBeTruthy()
+    expect(riskExplorer.currentStatus.riskBand).toBe(expectedProjection.riskBand)
+    expect(riskExplorer.currentStatus.riskProbScaled).toBe(expectedProjection.riskProbScaled)
     expect(riskExplorer.currentStatus.riskChangeFromPreviousCheckpointScaled).toBe(card.overview.currentStatus.riskChangeFromPreviousCheckpointScaled)
     expect(riskExplorer.currentStatus.counterfactualLiftScaled).toBe(card.overview.currentStatus.counterfactualLiftScaled)
     expect(riskExplorer.policyComparison?.counterfactualLiftScaled ?? null).toBe(card.overview.currentStatus.policyComparison?.counterfactualLiftScaled ?? null)
@@ -212,26 +298,259 @@ describe('student risk explorer', () => {
     expect(riskExplorer.derivedScenarioHeads.scale).toBe('advisory-index-0-100')
     expect(riskExplorer.derivedScenarioHeads.displayProbabilityAllowed).toBe(false)
     expect(riskExplorer.derivedScenarioHeads.supportWarning).toContain('advisory indices')
+    expect(riskExplorer.xaiRiskReduction?.explanationMode).toBe('same-checkpoint-no-action-replay')
+    expect(riskExplorer.xaiRiskReduction?.deltaTimeline.length ?? 0).toBeGreaterThan(0)
+    expect(riskExplorer.xaiRiskReduction?.componentImpacts.some(item => item.componentKey === 'overall' && item.direction === 'risk-reduction')).toBe(true)
+    if (riskExplorer.currentStatus.riskBand === 'Medium' || riskExplorer.currentStatus.riskBand === 'High') {
+      expect(riskExplorer.topDrivers.length).toBeGreaterThan(0)
+      expect(riskExplorer.topDrivers.every(driver => driver.label && driver.feature && Number.isFinite(driver.impact))).toBe(true)
+    }
+    const riskReductionSummary = riskExplorer.xaiRiskReduction?.summary ?? null
+    expect(riskReductionSummary?.label).toContain(`Semester ${selectedCheckpoint.semesterNumber}`)
+    if (
+      riskReductionSummary?.baselineRiskProbScaled != null
+      && riskReductionSummary.simulatedRiskProbScaled != null
+      && riskReductionSummary.riskReducedByProbScaled != null
+    ) {
+      expect(riskReductionSummary.riskReducedByProbScaled).toBeCloseTo(
+        riskReductionSummary.baselineRiskProbScaled - riskReductionSummary.simulatedRiskProbScaled,
+        2,
+      )
+    }
     expect(riskExplorer.weakCourseOutcomes.length).toBeGreaterThanOrEqual(0)
     expect(JSON.stringify(riskExplorer)).not.toContain('forgetRate')
     expect(JSON.stringify(riskExplorer)).not.toContain('worldContext')
     expect(JSON.stringify(riskExplorer)).not.toContain('randomSeed')
   })
 
-  it('enforces scoped access and lets sysadmin inspect an archived run explicitly', async () => {
+  it('keeps HoD watch rows, bootstrap cards, risk explorer, and shell cards aligned across proof checkpoint stages', async () => {
     current = await createTestApp()
-    const mentorLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
-    const mentorRole = mentorLogin.body.activeRoleGrant.roleCode === 'MENTOR'
-      ? mentorLogin.body
-      : (await switchToRole(mentorLogin.cookie, mentorLogin.body.availableRoleGrants, 'MENTOR')).json()
+    const hodLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    if (hodLogin.body.activeRoleGrant.roleCode !== 'HOD') {
+      await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')
+    }
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
 
     const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
     expect(activeRun).toBeTruthy()
-    const mentorRows = await current.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, mentorRole.faculty.facultyId))
-    const assignedStudentId = mentorRows.find(row => row.effectiveTo === null)?.studentId
+    const recomputeResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeResponse.statusCode).toBe(200)
+    const [checkpoints, projectionRows] = await Promise.all([
+      current.db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId)).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder)),
+      current.db.select().from(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationRunId, activeRun.simulationRunId)),
+    ])
+    expect(checkpoints.length).toBeGreaterThanOrEqual(30)
+    expect(projectionRows.length).toBeGreaterThan(0)
+
+    const rowsByCheckpointId = new Map<string, typeof projectionRows>()
+    for (const row of projectionRows) {
+      const list = rowsByCheckpointId.get(row.simulationStageCheckpointId) ?? []
+      list.push(row)
+      rowsByCheckpointId.set(row.simulationStageCheckpointId, list)
+    }
+
+    const endpointSamples = new Map<string, {
+      checkpoint: typeof checkpoints[number]
+      expected: typeof projectionRows[number]
+    }>()
+
+    for (const checkpoint of checkpoints) {
+      const checkpointRows = rowsByCheckpointId.get(checkpoint.simulationStageCheckpointId) ?? []
+      expect(checkpointRows.length).toBeGreaterThan(0)
+      const expectedByStudentId = new Map<string, typeof projectionRows[number]>()
+      for (const studentId of Array.from(new Set(checkpointRows.map(row => row.studentId)))) {
+        const primary = sortStageProjectionRows(checkpointRows.filter(row => row.studentId === studentId))[0]
+        expect(primary).toBeTruthy()
+        expectedByStudentId.set(studentId, primary)
+      }
+
+      const hodResponse = await current.app.inject({
+        method: 'GET',
+        url: `/api/academic/hod/proof-students?simulationStageCheckpointId=${encodeURIComponent(checkpoint.simulationStageCheckpointId)}`,
+        headers: { cookie: hodLogin.cookie },
+      })
+      expect(hodResponse.statusCode).toBe(200)
+      const hodItems = hodResponse.json().items as Array<{
+        studentId: string
+        currentRiskBand: string
+        currentRiskProbScaled: number
+        currentQueueState?: string | null
+        primaryCourseCode: string
+        observedEvidence: {
+          attendancePct: number
+          tt1Pct: number | null
+          tt2Pct: number | null
+          quizPct: number | null
+          assignmentPct: number | null
+          seePct: number | null
+        }
+        courseSnapshots: Array<{
+          courseCode: string
+          riskBand: string
+          riskProbScaled: number
+          queueState?: string | null
+          drivers?: unknown[]
+        }>
+      }>
+      expect(hodItems.length).toBe(expectedByStudentId.size)
+
+      for (const item of hodItems) {
+        const expected = expectedByStudentId.get(item.studentId)
+        expect(expected).toBeTruthy()
+        if (!expected) throw new Error(`Missing checkpoint projection for ${item.studentId}`)
+        const { currentEvidence } = stageProjectionEvidence(expected)
+        expect(item.currentRiskBand).toBe(expected.riskBand)
+        expect(item.currentRiskProbScaled).toBe(expected.riskProbScaled)
+        expect(item.primaryCourseCode).toBe(expected.courseCode)
+        expect(item.observedEvidence.attendancePct).toBe(Number(currentEvidence.attendancePct ?? 0))
+        expect(item.observedEvidence.tt1Pct).toBe(currentEvidence.tt1Pct == null ? null : Number(currentEvidence.tt1Pct))
+        expect(item.observedEvidence.tt2Pct).toBe(currentEvidence.tt2Pct == null ? null : Number(currentEvidence.tt2Pct))
+        expect(item.observedEvidence.quizPct).toBe(currentEvidence.quizPct == null ? null : Number(currentEvidence.quizPct))
+        expect(item.observedEvidence.assignmentPct).toBe(currentEvidence.assignmentPct == null ? null : Number(currentEvidence.assignmentPct))
+        expect(item.observedEvidence.seePct).toBe(currentEvidence.seePct == null ? null : Number(currentEvidence.seePct))
+
+        const primarySnapshot = item.courseSnapshots.find(snapshot => snapshot.courseCode === expected.courseCode)
+        expect(primarySnapshot).toMatchObject({
+          courseCode: expected.courseCode,
+          riskBand: expected.riskBand,
+          riskProbScaled: expected.riskProbScaled,
+        })
+        if (expected.riskBand === 'Medium' || expected.riskBand === 'High') {
+          expect(primarySnapshot?.drivers?.length ?? 0).toBeGreaterThan(0)
+        }
+      }
+
+      if (!endpointSamples.has(checkpoint.stageKey)) {
+        const sampleItem = hodItems.find(item => item.currentRiskBand === 'High')
+          ?? hodItems.find(item => item.currentRiskBand === 'Medium')
+          ?? hodItems[0]
+        const expected = sampleItem ? expectedByStudentId.get(sampleItem.studentId) : null
+        if (expected) {
+          endpointSamples.set(checkpoint.stageKey, { checkpoint, expected })
+        }
+      }
+    }
+
+    expect(Array.from(endpointSamples.keys()).sort()).toEqual(['post-assignments', 'post-see', 'post-tt1', 'post-tt2', 'pre-tt1'])
+
+    for (const { checkpoint, expected } of endpointSamples.values()) {
+      const [bootstrapResponse, riskExplorerResponse, cardResponse] = await Promise.all([
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/bootstrap?simulationStageCheckpointId=${encodeURIComponent(checkpoint.simulationStageCheckpointId)}`,
+          headers: { cookie: hodLogin.cookie },
+        }),
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/students/${expected.studentId}/risk-explorer?simulationStageCheckpointId=${encodeURIComponent(checkpoint.simulationStageCheckpointId)}`,
+          headers: { cookie: hodLogin.cookie },
+        }),
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/student-shell/students/${expected.studentId}/card?simulationStageCheckpointId=${encodeURIComponent(checkpoint.simulationStageCheckpointId)}`,
+          headers: { cookie: hodLogin.cookie },
+        }),
+      ])
+      expect(bootstrapResponse.statusCode).toBe(200)
+      expect(riskExplorerResponse.statusCode).toBe(200)
+      expect(cardResponse.statusCode).toBe(200)
+
+      const bootstrap = bootstrapResponse.json() as {
+        proofPlayback: { simulationStageCheckpointId: string; stageKey: string }
+        studentsByOffering: Record<string, Array<{
+          id: string
+          riskBand: string | null
+          riskProb: number | null
+          proofRiskProbScaled?: number | null
+          proofQueueState?: string | null
+          proofObservedSeePct?: number | null
+        }>>
+        coAttainmentByOffering: Record<string, Array<{
+          tt1Attainment: number | null
+          tt2Attainment: number | null
+          overallAttainment: number | null
+          studentsCounted: number
+        }>>
+      }
+      const riskExplorer = riskExplorerResponse.json() as {
+        currentStatus: { riskBand: string | null; riskProbScaled: number | null }
+        topDrivers: Array<{ label: string; feature: string; impact: number }>
+      }
+      const card = cardResponse.json() as {
+        summaryRail: { currentRiskBand: string | null; currentRiskProbScaled: number | null; primaryCourseCode: string | null }
+        overview: { currentStatus: { riskBand: string | null; riskProbScaled: number | null } }
+        assessmentEvidence: {
+          components: Array<{
+            courseCode: string
+            drivers: Array<{ label: string; impact: number; feature: string }>
+          }>
+        }
+      }
+      const bootstrapStudent = (bootstrap.studentsByOffering[expected.offeringId ?? ''] ?? [])
+        .find(student => normalizedBootstrapStudentId(student.id) === expected.studentId)
+      expect(bootstrap.proofPlayback).toMatchObject({
+        simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
+        stageKey: checkpoint.stageKey,
+      })
+      expect(bootstrapStudent).toBeTruthy()
+      if (!bootstrapStudent) throw new Error(`Missing bootstrap student ${expected.studentId} in ${expected.offeringId}`)
+      expect(bootstrapStudent.riskBand).toBe(expected.riskBand)
+      expect(Math.round((bootstrapStudent.riskProb ?? -1) * 100)).toBe(expected.riskProbScaled)
+      expect(bootstrapStudent.proofRiskProbScaled).toBe(expected.riskProbScaled)
+      expect(riskExplorer.currentStatus.riskBand).toBe(expected.riskBand)
+      expect(riskExplorer.currentStatus.riskProbScaled).toBe(expected.riskProbScaled)
+      expect(card.summaryRail.currentRiskBand).toBe(expected.riskBand)
+      expect(card.summaryRail.currentRiskProbScaled).toBe(expected.riskProbScaled)
+      expect(card.overview.currentStatus.riskBand).toBe(expected.riskBand)
+      expect(card.overview.currentStatus.riskProbScaled).toBe(expected.riskProbScaled)
+      expect(card.summaryRail.primaryCourseCode).toBe(expected.courseCode)
+      const expectedDrivers = stageProjectionDrivers(expected)
+      const cardPrimaryComponent = card.assessmentEvidence.components.find(component => component.courseCode === expected.courseCode)
+      expect(cardPrimaryComponent).toBeTruthy()
+      expect(cardPrimaryComponent?.drivers).toEqual(expectedDrivers)
+      if (expected.riskBand === 'Medium' || expected.riskBand === 'High') {
+        expect(riskExplorer.topDrivers.length).toBeGreaterThan(0)
+        expect(riskExplorer.topDrivers.every(driver => driver.label && driver.feature && Number.isFinite(driver.impact))).toBe(true)
+      }
+
+      const { currentEvidence } = stageProjectionEvidence(expected)
+      if (checkpoint.stageKey === 'post-see') {
+        expect(bootstrapStudent.proofObservedSeePct).toBe(currentEvidence.seePct == null ? null : Number(currentEvidence.seePct))
+      }
+      if (checkpoint.stageKey === 'post-tt1') {
+        const coRows = Object.values(bootstrap.coAttainmentByOffering).flat()
+        expect(coRows.some(row => row.studentsCounted > 0 && row.tt1Attainment !== null && row.overallAttainment !== null)).toBe(true)
+      }
+    }
+  })
+
+  it('enforces scoped access and lets sysadmin inspect an archived run explicitly', async () => {
+    current = await createTestApp()
+    const mentorLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    if (mentorLogin.body.activeRoleGrant.roleCode !== 'MENTOR') {
+      await switchToRole(mentorLogin.cookie, mentorLogin.body.availableRoleGrants, 'MENTOR')
+    }
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const mentorBootstrapResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/bootstrap',
+      headers: { cookie: mentorLogin.cookie },
+    })
+    expect(mentorBootstrapResponse.statusCode).toBe(200)
+    const mentorBootstrap = mentorBootstrapResponse.json() as { mentees: Array<{ id: string }> }
+    const assignedStudentId = mentorBootstrap.mentees[0]?.id.replace(/^mentee-/, '')
     expect(assignedStudentId).toBeTruthy()
+    const mentorRows = await current.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, mentorLogin.body.faculty.facultyId))
+    const mentorStudentIds = new Set(mentorRows.filter(row => row.effectiveTo === null).map(row => row.studentId))
     const allObserved = await current.db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, activeRun.simulationRunId))
-    const unassignedStudentId = allObserved.find(row => row.studentId !== assignedStudentId)?.studentId
+    const unassignedStudentId = allObserved.find(row => !mentorStudentIds.has(row.studentId))?.studentId
     expect(unassignedStudentId).toBeTruthy()
 
     const [mentorAllowed, mentorBlocked] = await Promise.all([
@@ -433,7 +752,7 @@ describe('student risk explorer', () => {
     }
     const hodSummaryResponse = await current.app.inject({
       method: 'GET',
-      url: `/api/academic/hod/proof-summary?simulationStageCheckpointId=${encodeURIComponent(selectedCheckpoint.simulationStageCheckpointId)}`,
+      url: `/api/academic/hod/proof-bundle?simulationStageCheckpointId=${encodeURIComponent(selectedCheckpoint.simulationStageCheckpointId)}`,
       headers: { cookie: facultyLogin.cookie },
     })
 
@@ -450,6 +769,12 @@ describe('student risk explorer', () => {
       countSource: string
       resolvedFrom: { kind: string; scopeId: string | null }
       student: { studentId: string }
+      currentStatus: {
+        riskBand: string | null
+        riskProbScaled: number | null
+        queueState?: string | null
+        recommendedAction?: string | null
+      }
     }
     const studentShell = studentShellResponse.json() as {
       simulationRunId: string
@@ -459,15 +784,38 @@ describe('student risk explorer', () => {
       countSource: string
       resolvedFrom: { kind: string; scopeId: string | null }
       student: { studentId: string }
+      summaryRail: {
+        currentRiskBand: string | null
+        currentRiskProbScaled: number | null
+        currentQueueState?: string | null
+      }
+      overview: {
+        currentStatus: {
+          riskBand: string | null
+          riskProbScaled: number | null
+          queueState?: string | null
+          recommendedAction?: string | null
+        }
+      }
     }
-    const hodSummary = hodSummaryResponse.json() as {
-      activeRunContext: { simulationRunId: string }
-      scopeDescriptor: { simulationStageCheckpointId: string | null }
-      activeOperationalSemester: number | null
-      scopeMode: string
-      countSource: string
-      resolvedFrom: { kind: string; scopeId: string | null }
+    const hodBundle = hodSummaryResponse.json() as {
+      summary: {
+        activeRunContext: { simulationRunId: string }
+        scopeDescriptor: { simulationStageCheckpointId: string | null }
+        activeOperationalSemester: number | null
+        scopeMode: string
+        countSource: string
+        resolvedFrom: { kind: string; scopeId: string | null }
+      }
+      students: Array<{
+        studentId: string
+        currentRiskBand: string
+        currentRiskProbScaled: number
+        currentQueueState?: string | null
+        recommendedAction?: string | null
+      }>
     }
+    const hodSummary = hodBundle.summary
     const sysadminCheckpointStudent = sysadminCheckpointStudentResponse.json() as {
       checkpoint: { simulationStageCheckpointId: string; semesterNumber: number }
       student: { studentId: string }
@@ -543,6 +891,17 @@ describe('student risk explorer', () => {
       activeOperationalSemester: riskTuple.activeOperationalSemester,
       studentId: riskTuple.studentId,
     })
+
+    const hodStudent = hodBundle.students.find(student => student.studentId === primaryStudentId)
+    expect(hodStudent).toBeTruthy()
+    expect(riskExplorer.currentStatus.riskBand).toBe(hodStudent!.currentRiskBand)
+    expect(riskExplorer.currentStatus.riskProbScaled).toBe(hodStudent!.currentRiskProbScaled)
+    expect(studentShell.overview.currentStatus.riskBand).toBe(hodStudent!.currentRiskBand)
+    expect(studentShell.overview.currentStatus.riskProbScaled).toBe(hodStudent!.currentRiskProbScaled)
+    expect(studentShell.summaryRail.currentRiskBand).toBe(hodStudent!.currentRiskBand)
+    expect(studentShell.summaryRail.currentRiskProbScaled).toBe(hodStudent!.currentRiskProbScaled)
+    expect(riskExplorer.currentStatus.queueState ?? null).toBe(hodStudent!.currentQueueState ?? null)
+    expect(studentShell.overview.currentStatus.queueState ?? null).toBe(hodStudent!.currentQueueState ?? null)
   })
 
   it('uses the activated proof semester for the default risk explorer while keeping checkpoint playback separate', async () => {
@@ -567,6 +926,8 @@ describe('student risk explorer', () => {
     ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
     const playbackCheckpoint = checkpointRows.find(row => row.semesterNumber > 4) ?? checkpointRows.at(-1)
     expect(playbackCheckpoint).toBeTruthy()
+    const activeStageCheckpoint = checkpointRows.find(row => row.semesterNumber === 4 && row.stageKey === 'pre-tt1')
+    expect(activeStageCheckpoint).toBeTruthy()
 
     const activateSemesterResponse = await current.app.inject({
       method: 'POST',
@@ -605,8 +966,12 @@ describe('student risk explorer', () => {
 
     expect(defaultExplorerResponse.statusCode).toBe(200)
     expect(checkpointExplorerResponse.statusCode).toBe(200)
-    expect(defaultExplorerResponse.json().countSource).toBe('proof-run')
-    expect(defaultExplorerResponse.json().activeOperationalSemester).toBe(4)
+    const defaultPayload = defaultExplorerResponse.json()
+    expect(defaultPayload.countSource).toBe('proof-checkpoint')
+    expect(defaultPayload.activeOperationalSemester).toBe(4)
+    expect(defaultPayload.simulationStageCheckpointId).toBe(activeStageCheckpoint!.simulationStageCheckpointId)
+    expect(defaultPayload.checkpointContext?.semesterNumber).toBe(4)
+    expect(defaultPayload.checkpointContext?.stageKey).toBe('pre-tt1')
     expect(checkpointExplorerResponse.json().countSource).toBe('proof-checkpoint')
     expect(checkpointExplorerResponse.json().activeOperationalSemester).toBe(playbackCheckpoint!.semesterNumber)
     expect(checkpointExplorerResponse.json().simulationStageCheckpointId).toBe(playbackCheckpoint!.simulationStageCheckpointId)
@@ -674,10 +1039,11 @@ describe('student risk explorer', () => {
       expect(defaultExplorerResponse.statusCode).toBe(200)
       expect(checkpointExplorerResponse.statusCode).toBe(200)
       const defaultPayload = defaultExplorerResponse.json()
-      expect(defaultPayload.countSource).toBe('proof-run')
+      expect(defaultPayload.countSource).toBe('proof-checkpoint')
       expect(defaultPayload.activeOperationalSemester).toBe(semesterNumber)
-      expect(defaultPayload.simulationStageCheckpointId ?? null).toBeNull()
-      expect(defaultPayload.checkpointContext ?? null).toBeNull()
+      expect(defaultPayload.simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
+      expect(defaultPayload.checkpointContext?.semesterNumber).toBe(semesterNumber)
+      expect(defaultPayload.checkpointContext?.stageKey).toBe(checkpoint!.stageKey)
       expect(checkpointExplorerResponse.json().countSource).toBe('proof-checkpoint')
       expect(checkpointExplorerResponse.json().activeOperationalSemester).toBe(checkpoint!.semesterNumber)
       expect(checkpointExplorerResponse.json().simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
@@ -740,6 +1106,8 @@ describe('student risk explorer', () => {
       const checkpoint = checkpointRows.filter(row => row.semesterNumber === semesterNumber).at(-1)
       expect(checkpoint).toBeTruthy()
       expect(checkpoint?.stageKey).toBe('post-see')
+      const activeStageCheckpoint = checkpointRows.find(row => row.semesterNumber === semesterNumber && row.stageKey === 'pre-tt1')
+      expect(activeStageCheckpoint).toBeTruthy()
 
       const activateSemesterResponse = await current.app.inject({
         method: 'POST',
@@ -771,16 +1139,11 @@ describe('student risk explorer', () => {
       expect(checkpointExplorerResponse.statusCode).toBe(200)
       expect(dashboardResponse.statusCode).toBe(200)
       const defaultPayload = defaultExplorerResponse.json()
-      expect(['proof-run', 'proof-checkpoint']).toContain(defaultPayload.countSource)
+      expect(defaultPayload.countSource).toBe('proof-checkpoint')
       expect(defaultPayload.activeOperationalSemester).toBe(semesterNumber)
-      if (defaultPayload.countSource === 'proof-checkpoint') {
-        expect(defaultPayload.simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
-        expect(defaultPayload.checkpointContext?.semesterNumber).toBe(semesterNumber)
-        expect(defaultPayload.checkpointContext?.stageKey).toBe('post-see')
-      } else {
-        expect(defaultPayload.simulationStageCheckpointId ?? null).toBeNull()
-        expect(defaultPayload.checkpointContext ?? null).toBeNull()
-      }
+      expect(defaultPayload.simulationStageCheckpointId).toBe(activeStageCheckpoint!.simulationStageCheckpointId)
+      expect(defaultPayload.checkpointContext?.semesterNumber).toBe(semesterNumber)
+      expect(defaultPayload.checkpointContext?.stageKey).toBe('pre-tt1')
       const checkpointPayload = checkpointExplorerResponse.json()
       const dashboardCheckpoint = dashboardResponse.json().activeRunDetail?.checkpoints?.find(
         (item: { simulationStageCheckpointId: string }) => item.simulationStageCheckpointId === checkpoint!.simulationStageCheckpointId,

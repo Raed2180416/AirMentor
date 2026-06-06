@@ -176,9 +176,10 @@ test('H9 performance baseline: evaluator proof surfaces stay within local demo b
   await measureBudgeted(metrics, 'courseLeaderProofShellVisibleMs', 'Course Leader proof shell visible', async () => {
     await loginAs(page, 'course-leader')
     await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
-    const surface = page.locator('[data-proof-surface="academic-proof-summary"][data-proof-scope="course-leader-dashboard"]').first()
+    await page.locator('[data-proof-action="open-faculty-profile"]').click()
+    const surface = page.locator('[data-proof-surface="teacher-proof-panel"]').first()
     await expect(surface).toBeVisible({ timeout: 30_000 })
-    await expect(surface).toContainText(/Course Leader Dashboard/i)
+    await expect(surface).toContainText(/Proof Control Plane/i)
   })
 
   await measureBudgeted(metrics, 'singleStageAdvanceMs', 'Single Next Stage proof advance', async () => {

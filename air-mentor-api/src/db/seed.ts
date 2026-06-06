@@ -593,6 +593,111 @@ export async function seedIntoDatabase(
 
   if (curriculumRows.length > 0) {
     await db.insert(curriculumCourses).values(curriculumRows)
+
+    // Seed default course outcomes so graph builder shows outcome nodes
+    const seenCourseOutcomes = new Set<string>()
+    const outcomeRows: Array<typeof courseOutcomeOverrides.$inferInsert> = []
+    for (const row of curriculumRows) {
+      const key = `${row.courseId}::${row.batchId}`
+      if (seenCourseOutcomes.has(key)) continue
+      seenCourseOutcomes.add(key)
+      outcomeRows.push({
+        courseOutcomeOverrideId: `outcome_override_${sanitizeIdPart(row.batchId)}_${sanitizeIdPart(row.courseCode)}`,
+        courseId: row.courseId,
+        scopeType: 'batch',
+        scopeId: row.batchId,
+        outcomesJson: JSON.stringify([
+          { id: 'co_1', desc: `Understand core concepts of ${row.title}`, bloom: 'understand', masteryTarget: 0.6 },
+          { id: 'co_2', desc: `Apply ${row.title} principles to solve problems`, bloom: 'apply', masteryTarget: 0.7 },
+          { id: 'co_3', desc: `Analyze and evaluate ${row.title} scenarios`, bloom: 'analyze', masteryTarget: 0.75 },
+        ]),
+        status: 'active',
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+    if (outcomeRows.length > 0) await db.insert(courseOutcomeOverrides).values(outcomeRows)
+
+    // Also seed minimal graph tables so curriculum graph builder works after fresh seed
+    const batchToCourses = new Map<string, typeof curriculumRows>()
+    for (const row of curriculumRows) {
+      if (!batchToCourses.has(row.batchId)) batchToCourses.set(row.batchId, [])
+      batchToCourses.get(row.batchId)!.push(row)
+    }
+
+    for (const [batchId, courses] of batchToCourses) {
+      const importVersionId = `curriculum_import_${sanitizeIdPart(batchId)}_seed_v1`
+      const existing = await db.select().from(curriculumImportVersions).where(eq(curriculumImportVersions.curriculumImportVersionId, importVersionId))
+      if (existing.length > 0) continue
+
+      const firstSem = Math.min(...courses.map(c => c.semesterNumber))
+      const lastSem = Math.max(...courses.map(c => c.semesterNumber))
+      const totalCredits = courses.reduce((sum, c) => sum + c.credits, 0)
+
+      await db.insert(curriculumImportVersions).values({
+        curriculumImportVersionId: importVersionId,
+        batchId,
+        sourceLabel: `Auto-seeded from offerings for ${batchId}`,
+        sourceChecksum: '',
+        sourceType: 'auto_seed',
+        compilerVersion: 'seed_v1',
+        outputChecksum: '',
+        firstSemester: firstSem,
+        lastSemester: lastSem,
+        courseCount: courses.length,
+        totalCredits,
+        explicitEdgeCount: 0,
+        addedEdgeCount: 0,
+        bridgeModuleCount: 0,
+        electiveOptionCount: 0,
+        unresolvedMappingCount: 0,
+        validationStatus: 'seeded',
+        completenessCertificateJson: JSON.stringify({ seeded: true }),
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      })
+
+      const nodeRows = courses.map(c => ({
+        curriculumNodeId: `node_${sanitizeIdPart(batchId)}_${sanitizeIdPart(c.courseCode)}`,
+        curriculumImportVersionId: importVersionId,
+        batchId,
+        semesterNumber: c.semesterNumber,
+        courseId: c.courseId,
+        courseCode: c.courseCode,
+        title: c.title,
+        credits: c.credits,
+        internalCompilerId: c.courseCode.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+        officialWebCode: null,
+        officialWebTitle: null,
+        matchStatus: 'auto_seeded',
+        mappingNote: 'Auto-seeded from batch offerings',
+        assessmentProfile: 'theory_heavy',
+        outcomeBloomLevel: null,
+        outcomeMasteryTarget: null,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      }))
+
+      await db.insert(curriculumNodes).values(nodeRows)
+
+      const partitionRows = courses.flatMap(c => {
+        const nodeId = `node_${sanitizeIdPart(batchId)}_${sanitizeIdPart(c.courseCode)}`
+        return ['tt1', 'tt2', 'see', 'workbook'].map(kind => ({
+          courseTopicPartitionId: `topic_${kind}_${sanitizeIdPart(batchId)}_${sanitizeIdPart(c.courseCode)}`,
+          curriculumImportVersionId: importVersionId,
+          curriculumNodeId: nodeId,
+          partitionKind: kind,
+          topicsJson: JSON.stringify([]),
+          createdAt: now,
+          updatedAt: now,
+        }))
+      })
+
+      await db.insert(courseTopicPartitions).values(partitionRows)
+    }
   }
 
   if (seededPolicyOverrides.length > 0) {

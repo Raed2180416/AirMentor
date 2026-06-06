@@ -6,7 +6,7 @@ import type { AcademicRouteDependencies } from './academic.js'
 import { AppError, notFound } from '../lib/http-errors.js'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { simulationRuns, simulationStageCheckpoints } from '../db/schema.js'
-import { isTeacherVisibleActiveProofRunCandidate } from '../lib/proof-active-run.js'
+import { isTeacherVisibleActiveProofRunCandidate, pickMostRecentActiveRun } from '../lib/proof-active-run.js'
 
 export async function registerAcademicBootstrapRoutes(
   app: FastifyInstance,
@@ -49,6 +49,7 @@ export async function registerAcademicBootstrapRoutes(
       activeFlag: simulationRuns.activeFlag,
       lifecycleState: simulationRuns.lifecycleState,
       activeOperationalSemester: simulationRuns.activeOperationalSemester,
+      activeStageKey: simulationRuns.activeStageKey,
       createdAt: simulationRuns.createdAt,
       updatedAt: simulationRuns.updatedAt,
     })
@@ -66,6 +67,7 @@ export async function registerAcademicBootstrapRoutes(
       throw new AppError(403, 'NO_ACTIVE_PROOF_RUN', 'No simulation is currently active. Ask your administrator to start a proof run.')
     }
     const query = parseOrThrow(academicBootstrapQuerySchema, request.query)
+    let effectiveCheckpointId = query.simulationStageCheckpointId ?? null
     if (query.simulationStageCheckpointId) {
       const [checkpoint] = await context.db
         .select()
@@ -73,17 +75,43 @@ export async function registerAcademicBootstrapRoutes(
         .where(eq(simulationStageCheckpoints.simulationStageCheckpointId, query.simulationStageCheckpointId))
       if (!checkpoint) throw notFound('Simulation stage checkpoint not found')
       await resolveAcademicStageCheckpoint(context, auth, checkpoint.simulationRunId, query.simulationStageCheckpointId)
+    } else {
+      const selectedActiveRun = pickMostRecentActiveRun(activeRuns)
+      const operationalSemester = selectedActiveRun?.activeOperationalSemester ?? null
+      if (selectedActiveRun && operationalSemester != null) {
+        const checkpointRows = await context.db
+          .select()
+          .from(simulationStageCheckpoints)
+          .where(and(
+            eq(simulationStageCheckpoints.simulationRunId, selectedActiveRun.simulationRunId),
+            eq(simulationStageCheckpoints.semesterNumber, operationalSemester),
+          ))
+        const activeStageKey = typeof selectedActiveRun.activeStageKey === 'string' && selectedActiveRun.activeStageKey.trim().length > 0
+          ? selectedActiveRun.activeStageKey
+          : 'pre-tt1'
+        const operationalCheckpoint = checkpointRows
+          .slice()
+          .sort((left, right) => left.stageOrder - right.stageOrder)
+          .find(item => item.stageKey === activeStageKey)
+          ?? checkpointRows.find(item => item.stageKey === 'pre-tt1')
+          ?? checkpointRows.slice().sort((left, right) => left.stageOrder - right.stageOrder)[0]
+          ?? null
+        if (operationalCheckpoint) {
+          await resolveAcademicStageCheckpoint(context, auth, operationalCheckpoint.simulationRunId, operationalCheckpoint.simulationStageCheckpointId)
+          effectiveCheckpointId = operationalCheckpoint.simulationStageCheckpointId
+        }
+      }
     }
     const snapshot = await buildAcademicBootstrap(context, {
       facultyId: auth.facultyId ?? null,
       roleCode: auth.activeRoleGrant.roleCode ?? null,
-      simulationStageCheckpointId: query.simulationStageCheckpointId,
+      simulationStageCheckpointId: effectiveCheckpointId,
       demoWorkspaceId: auth.demoWorkspaceId ?? null,
     })
     emitOperationalEvent('academic.bootstrap.loaded', {
       facultyId: auth.facultyId ?? null,
       roleCode: auth.activeRoleGrant.roleCode,
-      simulationStageCheckpointId: query.simulationStageCheckpointId ?? null,
+      simulationStageCheckpointId: effectiveCheckpointId ?? null,
       offeringCount: snapshot.offerings.length,
       facultyCount: snapshot.faculty.length,
       menteeCount: snapshot.mentees.length,

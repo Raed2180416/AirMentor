@@ -16,6 +16,7 @@ const GENERATED_PREFIXES = [
   '.kiro/skills/',
   '.ctxo/index/',
   '.worktrees/',
+  'air-mentor-api/.eval-db-',
   'air-mentor-api/output/',
   'air-mentor-api/tmp/',
   'air-mentor-api/tmp_db/',
@@ -29,14 +30,19 @@ const GENERATED_PREFIXES = [
 ]
 
 const GENERATED_EXACT = new Set([
-  '.ctxo/config.yaml',
   '.env',
   '.mcp.json',
   '.vscode/mcp.json',
   '.windsurf/mcp.json',
   'air-mentor-api/.env',
+  'all_microdata_dump.json',
   'context.json',
   'context_main.json',
+  'deep_cohort_analysis.json',
+  'detailed_cohort_analysis.json',
+  'repomix-output.xml',
+  'repomix-src-output.xml',
+  'student_risk_trajectories.csv',
 ])
 
 const GENERATED_SUFFIXES = [

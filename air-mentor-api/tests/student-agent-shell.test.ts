@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { and, asc, eq } from 'drizzle-orm'
 import {
+  academicTerms,
   facultyAppointments,
   facultyOfferingOwnerships,
   mentorAssignments,
   roleGrants,
   simulationRuns,
   simulationStageCheckpoints,
+  studentEnrollments,
   studentObservedSemesterStates,
 } from '../src/db/schema.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
@@ -338,6 +340,76 @@ describe('student agent shell', () => {
     expect(adminResponse.json().simulationRunId).toBe(activeRun.simulationRunId)
   })
 
+  it('blocks mentor student-shell access when the selected proof semester has no active mentee enrollment', async () => {
+    current = await createTestApp()
+    const mentorLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const mentorRole = mentorLogin.body.activeRoleGrant.roleCode === 'MENTOR'
+      ? mentorLogin.body
+      : (await switchToRole(mentorLogin.cookie, mentorLogin.body.availableRoleGrants, 'MENTOR')).json()
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const mentorRecomputeAdminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const recomputeResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: mentorRecomputeAdminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeResponse.statusCode).toBe(200)
+    const mentorRows = await current.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, mentorRole.faculty.facultyId))
+    const checkpointRows = await current.db.select().from(simulationStageCheckpoints).where(and(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+    )).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
+    const scopedCheckpoint = checkpointRows.find(row => row.semesterNumber < 6) ?? checkpointRows[0] ?? null
+    expect(scopedCheckpoint).toBeTruthy()
+    expect(scopedCheckpoint!.semesterNumber).toBeLessThan(6)
+
+    const futureSemesterEnrollments = await current.db.select({
+      studentId: studentEnrollments.studentId,
+      semesterNumber: academicTerms.semesterNumber,
+    }).from(studentEnrollments).innerJoin(
+      academicTerms,
+      eq(studentEnrollments.termId, academicTerms.termId),
+    ).where(and(
+      eq(studentEnrollments.academicStatus, 'active'),
+      eq(academicTerms.semesterNumber, 6),
+    ))
+    const futureMenteeId = futureSemesterEnrollments.find(row => mentorRows.some(assignment => assignment.effectiveTo === null && assignment.studentId === row.studentId))?.studentId
+    expect(futureMenteeId).toBeTruthy()
+    const scopedEnrollmentRows = await current.db.select({
+      enrollmentId: studentEnrollments.enrollmentId,
+    }).from(studentEnrollments).innerJoin(
+      academicTerms,
+      eq(studentEnrollments.termId, academicTerms.termId),
+    ).where(and(
+      eq(studentEnrollments.studentId, futureMenteeId!),
+      eq(studentEnrollments.academicStatus, 'active'),
+      eq(academicTerms.semesterNumber, scopedCheckpoint!.semesterNumber),
+    ))
+    for (const row of scopedEnrollmentRows) {
+      await current.db.update(studentEnrollments).set({
+        academicStatus: 'inactive',
+        updatedAt: '2026-03-16T00:00:00.000Z',
+      }).where(eq(studentEnrollments.enrollmentId, row.enrollmentId))
+    }
+
+    const [futureCardResponse, futureRiskExplorerResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/student-shell/students/${futureMenteeId}/card?simulationStageCheckpointId=${encodeURIComponent(scopedCheckpoint!.simulationStageCheckpointId)}`,
+        headers: { cookie: mentorLogin.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/students/${futureMenteeId}/risk-explorer?simulationStageCheckpointId=${encodeURIComponent(scopedCheckpoint!.simulationStageCheckpointId)}`,
+        headers: { cookie: mentorLogin.cookie },
+      }),
+    ])
+    expect(futureCardResponse.statusCode).toBe(403)
+    expect(futureRiskExplorerResponse.statusCode).toBe(403)
+  }, 300000)
+
   it('allows HOD student shell access when the active role grant remains in scope after appointment drift', async () => {
     current = await createTestApp()
     const hodLogin = await loginAs(current.app, 'kavitha.rao', '1234')
@@ -582,9 +654,17 @@ describe('student agent shell', () => {
 
     expect(defaultCardResponse.statusCode).toBe(200)
     expect(checkpointCardResponse.statusCode).toBe(200)
-    expect(defaultCardResponse.json().countSource).toBe('proof-run')
-    expect(defaultCardResponse.json().activeOperationalSemester).toBe(4)
-    expect(defaultCardResponse.json().student.currentSemester).toBe(4)
+    const defaultPayload = defaultCardResponse.json()
+    expect(defaultPayload.countSource).toBe('proof-checkpoint')
+    expect(defaultPayload.simulationStageCheckpointId).toBeTruthy()
+    expect(defaultPayload.simulationStageCheckpointId).not.toBe(playbackCheckpoint!.simulationStageCheckpointId)
+    expect(defaultPayload.activeOperationalSemester).toBe(4)
+    expect(defaultPayload.student.currentSemester).toBe(4)
+    expect(defaultPayload.checkpointContext?.semesterNumber).toBe(4)
+    expect(defaultPayload.resolvedFrom).toMatchObject({
+      kind: 'proof-checkpoint',
+      scopeId: defaultPayload.simulationStageCheckpointId,
+    })
     expect(checkpointCardResponse.json().countSource).toBe('proof-checkpoint')
     expect(checkpointCardResponse.json().simulationStageCheckpointId).toBe(playbackCheckpoint!.simulationStageCheckpointId)
     expect(checkpointCardResponse.json().activeOperationalSemester).toBe(playbackCheckpoint!.semesterNumber)
@@ -652,9 +732,16 @@ describe('student agent shell', () => {
 
       expect(defaultCardResponse.statusCode).toBe(200)
       expect(checkpointCardResponse.statusCode).toBe(200)
-      expect(defaultCardResponse.json().countSource).toBe('proof-run')
-      expect(defaultCardResponse.json().activeOperationalSemester).toBe(semesterNumber)
-      expect(defaultCardResponse.json().student.currentSemester).toBe(semesterNumber)
+      const defaultPayload = defaultCardResponse.json()
+      expect(defaultPayload.countSource).toBe('proof-checkpoint')
+      expect(defaultPayload.simulationStageCheckpointId).toBeTruthy()
+      expect(defaultPayload.activeOperationalSemester).toBe(semesterNumber)
+      expect(defaultPayload.student.currentSemester).toBe(semesterNumber)
+      expect(defaultPayload.checkpointContext?.semesterNumber).toBe(semesterNumber)
+      expect(defaultPayload.resolvedFrom).toMatchObject({
+        kind: 'proof-checkpoint',
+        scopeId: defaultPayload.simulationStageCheckpointId,
+      })
       expect(checkpointCardResponse.json().countSource).toBe('proof-checkpoint')
       expect(checkpointCardResponse.json().simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
       expect(checkpointCardResponse.json().activeOperationalSemester).toBe(checkpoint!.semesterNumber)
@@ -730,9 +817,16 @@ describe('student agent shell', () => {
       expect(defaultCardResponse.statusCode).toBe(200)
       expect(checkpointCardResponse.statusCode).toBe(200)
       expect(dashboardResponse.statusCode).toBe(200)
-      expect(defaultCardResponse.json().countSource).toBe('proof-run')
-      expect(defaultCardResponse.json().activeOperationalSemester).toBe(semesterNumber)
-      expect(defaultCardResponse.json().student.currentSemester).toBe(semesterNumber)
+      const defaultPayload = defaultCardResponse.json()
+      expect(defaultPayload.countSource).toBe('proof-checkpoint')
+      expect(defaultPayload.simulationStageCheckpointId).toBeTruthy()
+      expect(defaultPayload.activeOperationalSemester).toBe(semesterNumber)
+      expect(defaultPayload.student.currentSemester).toBe(semesterNumber)
+      expect(defaultPayload.checkpointContext?.semesterNumber).toBe(semesterNumber)
+      expect(defaultPayload.resolvedFrom).toMatchObject({
+        kind: 'proof-checkpoint',
+        scopeId: defaultPayload.simulationStageCheckpointId,
+      })
       const checkpointPayload = checkpointCardResponse.json()
       const dashboardCheckpoint = dashboardResponse.json().activeRunDetail?.checkpoints?.find(
         (item: { simulationStageCheckpointId: string }) => item.simulationStageCheckpointId === checkpoint!.simulationStageCheckpointId,
@@ -748,6 +842,9 @@ describe('student agent shell', () => {
       expect(checkpointPayload.checkpointContext?.playbackAccessible).toBe(dashboardCheckpoint?.playbackAccessible)
       expect(checkpointPayload.checkpointContext?.blockedByCheckpointId ?? null).toBe(dashboardCheckpoint?.blockedByCheckpointId ?? null)
       expect(checkpointPayload.checkpointContext?.blockedProgressionReason ?? null).toBe(dashboardCheckpoint?.blockedProgressionReason ?? null)
+      expect(checkpointPayload.overview.currentEvidence.seePct).toEqual(expect.any(Number))
+      expect(checkpointPayload.summaryRail.currentCgpa).toEqual(expect.any(Number))
+      expect(checkpointPayload.summaryRail.predictedCgpa).toEqual(expect.any(Number))
       expect(checkpointPayload.counterfactual?.counterfactualLiftScaled).toEqual(expect.any(Number))
       expect(checkpointPayload.overview.currentStatus.policyComparison?.counterfactualLiftScaled ?? checkpointPayload.counterfactual?.counterfactualLiftScaled).toEqual(expect.any(Number))
       if (semesterNumber < 6) {

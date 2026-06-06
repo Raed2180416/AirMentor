@@ -416,7 +416,7 @@ describe('proof-control-plane-advance-service', () => {
     }
   })
 
-  it('auto-resolves prior-stage queue cases with deterministic interventions before the playback rebuild', async () => {
+  it('auto-resolves prior-stage queue cases with deterministic interventions without forcing playback rebuild', async () => {
     const queueCases = [
       makeQueueCase({
         simulationStageQueueCaseId: 'queue_case_intervene',
@@ -468,7 +468,7 @@ describe('proof-control-plane-advance-service', () => {
         interventionCount: 1,
       },
     })
-    expect(deps.rebuildSimulationStagePlayback).toHaveBeenCalledTimes(1)
+    expect(deps.rebuildSimulationStagePlayback).not.toHaveBeenCalled()
     expect(getQueueCases()).toEqual(expect.arrayContaining([
       expect.objectContaining({ status: 'Resolved', countsTowardCapacity: 0 }),
     ]))
@@ -489,6 +489,117 @@ describe('proof-control-plane-advance-service', () => {
         summary: expect.objectContaining({ resolvedCount: 2, interventionCount: 1 }),
       }),
     }))
+  })
+
+  it('does not rebuild playback for auto-resolution-only transitions even when stage realization is enabled', async () => {
+    const originalFlag = process.env.AIRMENTOR_STAGE_REALIZATION_V1
+    process.env.AIRMENTOR_STAGE_REALIZATION_V1 = '1'
+    try {
+      const queueCases = [
+        makeQueueCase({
+          simulationStageQueueCaseId: 'queue_case_intervene',
+          studentId: 'stud_5',
+          recommendedAction: 'targeted-tutoring',
+        }),
+      ]
+      const queueProjections = queueCases.map(queueCase =>
+        makeQueueProjection({
+          simulationStageQueueProjectionId: 'queue_projection_intervene',
+          simulationStageQueueCaseId: queueCase.simulationStageQueueCaseId,
+          studentId: queueCase.studentId,
+        }))
+      const { db, getInsertedInterventions } = createMockDb({
+        run: {
+          activeStageKey: 'post-tt1',
+          simulatedDateIso: '2026-02-05T00:00:00.000Z',
+        },
+        queueCases,
+        queueProjections,
+      })
+      const deps = {
+        createId: vi.fn(() => 'simulation_reset_auto_resolution_flag_on'),
+        emitSimulationAudit: vi.fn(async () => {}),
+        publishOperationalProjection: vi.fn(async () => {}),
+        rebuildSimulationStagePlayback: vi.fn(async () => {}),
+        hasUnrealizedInterventionsSinceLastAdvance: vi.fn(async () => false),
+      }
+
+      const result = await advanceProofSimulationStage(db, {
+        simulationRunId: 'run_001',
+        actorFacultyId: 'faculty_sysadmin',
+        now: '2026-02-05T12:00:00.000Z',
+        policy: {} as never,
+      }, deps)
+
+      expect(result.autoResolutionSummary).toMatchObject({
+        resolvedCount: 1,
+        interventionCount: 1,
+      })
+      expect(deps.hasUnrealizedInterventionsSinceLastAdvance).toHaveBeenCalled()
+      expect(deps.rebuildSimulationStagePlayback).not.toHaveBeenCalled()
+      expect(getInsertedInterventions()).toHaveLength(1)
+    } finally {
+      if (originalFlag === undefined) delete process.env.AIRMENTOR_STAGE_REALIZATION_V1
+      else process.env.AIRMENTOR_STAGE_REALIZATION_V1 = originalFlag
+    }
+  })
+
+  it('rebuilds exactly once when manual realization and auto-resolution happen together', async () => {
+    const originalFlag = process.env.AIRMENTOR_STAGE_REALIZATION_V1
+    process.env.AIRMENTOR_STAGE_REALIZATION_V1 = '1'
+    try {
+      const queueCases = [
+        makeQueueCase({
+          simulationStageQueueCaseId: 'queue_case_intervene',
+          studentId: 'stud_5',
+          recommendedAction: 'targeted-tutoring',
+        }),
+      ]
+      const queueProjections = queueCases.map(queueCase =>
+        makeQueueProjection({
+          simulationStageQueueProjectionId: 'queue_projection_intervene',
+          simulationStageQueueCaseId: queueCase.simulationStageQueueCaseId,
+          studentId: queueCase.studentId,
+        }))
+      const { db, getInsertedInterventions } = createMockDb({
+        run: {
+          activeStageKey: 'post-tt1',
+          simulatedDateIso: '2026-02-05T00:00:00.000Z',
+        },
+        queueCases,
+        queueProjections,
+      })
+      const deps = {
+        createId: vi.fn(() => 'simulation_reset_manual_plus_auto'),
+        emitSimulationAudit: vi.fn(async () => {}),
+        publishOperationalProjection: vi.fn(async () => {}),
+        rebuildSimulationStagePlayback: vi.fn(async () => {}),
+        hasUnrealizedInterventionsSinceLastAdvance: vi.fn(async () => true),
+      }
+
+      const result = await advanceProofSimulationStage(db, {
+        simulationRunId: 'run_001',
+        actorFacultyId: 'faculty_sysadmin',
+        now: '2026-02-05T12:00:00.000Z',
+        policy: {} as never,
+      }, deps)
+
+      expect(result.autoResolutionSummary).toMatchObject({
+        resolvedCount: 1,
+        interventionCount: 1,
+      })
+      expect(deps.rebuildSimulationStagePlayback).toHaveBeenCalledTimes(1)
+      expect(getInsertedInterventions()).toHaveLength(1)
+      expect(deps.emitSimulationAudit).toHaveBeenCalledWith(db, expect.objectContaining({
+        actionType: 'stage-realization-applied',
+      }))
+      expect(deps.emitSimulationAudit).toHaveBeenCalledWith(db, expect.objectContaining({
+        actionType: 'stage-queue-auto-resolved',
+      }))
+    } finally {
+      if (originalFlag === undefined) delete process.env.AIRMENTOR_STAGE_REALIZATION_V1
+      else process.env.AIRMENTOR_STAGE_REALIZATION_V1 = originalFlag
+    }
   })
 
   it('keeps semester-6 terminal runs completed-inspectable after the last checkpoint', () => {

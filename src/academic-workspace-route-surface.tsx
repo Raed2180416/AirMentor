@@ -77,6 +77,7 @@ export function AcademicWorkspaceRouteSurface({
           onOpenStudents={workspace.handleOpenStudents}
           onOpenUpload={workspace.handleOpenUpload}
           onOpenCalendar={workspace.handleOpenCalendar}
+          onOpenFacultyProfile={workspace.handleOpenFacultyProfile}
           onOpenPendingActions={workspace.handleToggleActionQueue}
           loadStudentRiskExplorer={workspace.loadStudentRiskExplorer}
           loadStudentAgentCard={workspace.loadStudentAgentCard}
@@ -93,7 +94,7 @@ export function AcademicWorkspaceRouteSurface({
         />
       )}
       {role === 'Course Leader' && page === 'students' && (
-        <LazyAllStudentsPage offerings={workspace.assignedOfferings} onBack={workspace.handleNavigateBack} onOpenStudent={workspace.handleOpenStudent} onOpenHistory={workspace.handleOpenHistoryFromStudent} onOpenUpload={workspace.handleOpenUpload} />
+        <LazyAllStudentsPage offerings={workspace.assignedOfferings} proofStageKey={workspace.academicBootstrap?.proofPlayback?.stageKey} onBack={workspace.handleNavigateBack} onOpenStudent={workspace.handleOpenStudent} onOpenHistory={workspace.handleOpenHistoryFromStudent} onOpenUpload={workspace.handleOpenUpload} />
       )}
       {role === 'Course Leader' && page === 'course' && workspace.offering && (
         <LazyCourseDetail
@@ -104,6 +105,8 @@ export function AcademicWorkspaceRouteSurface({
           blueprints={workspace.ttBlueprintsByOffering[workspace.offering.offId] ?? workspace.getFallbackBlueprintSet(workspace.offering.offId)}
           courseOutcomes={workspace.academicBootstrap?.courseOutcomesByOffering?.[workspace.offering.offId]}
           coAttainmentRows={workspace.academicBootstrap?.coAttainmentByOffering?.[workspace.offering.offId]}
+          studentHistoryByUsn={workspace.studentHistoryByUsn}
+          proofStageKey={workspace.academicBootstrap?.proofPlayback?.stageKey}
           onUpdateBlueprint={(kind: string, next: unknown) => workspace.handleUpdateBlueprint(workspace.offering.offId, kind, next)}
           onBack={workspace.handleNavigateBack}
           onOpenStudent={(student: unknown) => workspace.handleOpenStudent(student, workspace.offering)}
@@ -181,8 +184,10 @@ export function AcademicWorkspaceRouteSurface({
           onUpdateStudentAttendance={workspace.handleUpdateStudentAttendance}
           schemeByOffering={workspace.schemeByOffering}
           ttBlueprintsByOffering={workspace.ttBlueprintsByOffering}
+          studentHistoryByUsn={workspace.studentHistoryByUsn}
           lockAuditByTarget={workspace.lockAuditByTarget}
           availableOfferings={workspace.assignedOfferings}
+          proofStageKey={workspace.academicBootstrap?.proofPlayback?.stageKey}
         />
       )}
       {role === 'Course Leader' && page === 'queue-history' && (
@@ -305,6 +310,8 @@ export function AcademicWorkspaceRouteSurface({
           blueprints={workspace.ttBlueprintsByOffering[workspace.offering.offId] ?? workspace.getFallbackBlueprintSet(workspace.offering.offId)}
           courseOutcomes={workspace.academicBootstrap?.courseOutcomesByOffering?.[workspace.offering.offId]}
           coAttainmentRows={workspace.academicBootstrap?.coAttainmentByOffering?.[workspace.offering.offId]}
+          studentHistoryByUsn={workspace.studentHistoryByUsn}
+          proofStageKey={workspace.academicBootstrap?.proofPlayback?.stageKey}
           onUpdateBlueprint={(kind: string, next: unknown) => workspace.handleUpdateBlueprint(workspace.offering.offId, kind, next)}
           onBack={workspace.handleNavigateBack}
           onOpenStudent={(student: unknown) => workspace.handleOpenStudent(student, workspace.offering)}

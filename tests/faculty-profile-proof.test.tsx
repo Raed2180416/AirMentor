@@ -41,6 +41,10 @@ afterEach(() => {
   mockStorage.clear()
 })
 
+function getProofButton(name: string) {
+  return screen.getAllByRole('button', { name })[0]
+}
+
 Object.defineProperty(window, 'localStorage', {
   value: mockStorage,
   writable: true
@@ -341,20 +345,20 @@ describe('FacultyProfilePage proof mode', () => {
       onStepProofPlayback,
     }))
 
-    expect(screen.getByRole('button', { name: 'Stop Proof Run' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Next Stage' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Next Day' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Previous Stage' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Previous Day' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Reset Stage' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Reset Proof Run' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Preview Next Checkpoint' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Jump To Latest Stage' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Reset Playback' })).toBeTruthy()
+    expect(getProofButton('Stop Proof Run')).toBeTruthy()
+    expect(getProofButton('Next Stage')).toBeTruthy()
+    expect(getProofButton('Next Day')).toBeTruthy()
+    expect(getProofButton('Previous Stage')).toBeTruthy()
+    expect(getProofButton('Previous Day')).toBeTruthy()
+    expect(getProofButton('Reset Stage')).toBeTruthy()
+    expect(getProofButton('Reset Proof Run')).toBeTruthy()
+    expect(getProofButton('Preview Next Checkpoint')).toBeTruthy()
+    expect(getProofButton('Jump To Latest Stage')).toBeTruthy()
+    expect(getProofButton('Reset Playback')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Next Stage' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Next Day' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Previous Stage' }))
+    fireEvent.click(getProofButton('Next Stage'))
+    fireEvent.click(getProofButton('Next Day'))
+    fireEvent.click(getProofButton('Previous Stage'))
 
     expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'stage')
     expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'day')
@@ -506,7 +510,7 @@ describe('FacultyProfilePage proof mode', () => {
       onStepProofPlayback,
     }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Playback' }))
+    fireEvent.click(getProofButton('Reset Playback'))
     expect(JSON.parse(window.localStorage.getItem(PROOF_PLAYBACK_SELECTION_STORAGE_KEY) ?? '{}')).toMatchObject({
       simulationRunId: 'run_001',
       simulationStageCheckpointId: 'checkpoint_001',
@@ -514,7 +518,7 @@ describe('FacultyProfilePage proof mode', () => {
     expect(onStepProofPlayback).toHaveBeenCalledWith('start')
 
     window.localStorage.clear()
-    fireEvent.click(screen.getByRole('button', { name: 'Previous Day' }))
+    fireEvent.click(getProofButton('Previous Day'))
     expect(window.localStorage.getItem(PROOF_PLAYBACK_SELECTION_STORAGE_KEY)).toBeNull()
     expect(onAdvanceProofRun).toHaveBeenLastCalledWith('run_001', 'previous-day')
     expect(onStepProofPlayback).not.toHaveBeenLastCalledWith('previous')

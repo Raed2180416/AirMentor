@@ -28,8 +28,8 @@ test('editable data recompute: Course Leader attendance evidence reaches proof p
 
   await loginAs(page, 'course-leader')
   await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
-  const courseLeaderSummary = page.locator('[data-proof-surface="academic-proof-summary"][data-proof-scope="course-leader-dashboard"]').first()
-  await expect(courseLeaderSummary).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/Total Students/i).first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[data-proof-surface="academic-proof-summary"]')).toHaveCount(0)
 
   const { session: courseLeaderSession } = await loginWithApiContext(request, 'course-leader')
   const attendanceResponse = await request.put(apiPath(`/api/academic/offerings/${OFFERING_ID}/attendance`), {

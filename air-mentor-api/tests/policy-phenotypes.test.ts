@@ -292,6 +292,11 @@ describe('policy phenotype classification', () => {
       expect(comparison.actionCatalog.allCandidatesStageValid).toBe(true)
       expect(comparison.actionCatalog.recommendedActionStageValid).toBe(true)
       expect(candidateActions).toEqual(expectedActions)
+      if (stageKey === 'post-see') {
+        expect(comparison.actionCatalog.stageActions).not.toContain('pre-see-rescue')
+        expect(candidateActions).not.toContain('pre-see-rescue')
+        expect(comparison.recommendedAction).not.toBe('pre-see-rescue')
+      }
       if (comparison.recommendedAction) {
         expect(expectedCatalog.stageActions.includes(comparison.recommendedAction)).toBe(true)
       }

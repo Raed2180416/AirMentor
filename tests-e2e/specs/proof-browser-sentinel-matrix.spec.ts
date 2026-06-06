@@ -32,18 +32,21 @@ const BASE_SENTINELS = [
 const ROLE_SURFACES = [
   {
     role: 'course-leader',
-    selector: '[data-proof-surface="academic-proof-summary"][data-proof-scope="course-leader-dashboard"]',
-    text: /Course Leader Dashboard/i,
+    selector: '[data-proof-surface="teacher-proof-panel"]',
+    text: /Proof Control Plane/i,
+    openFacultyProfile: true,
   },
   {
     role: 'mentor',
-    selector: '[data-proof-surface="academic-proof-summary"]',
-    text: /Mentor|Mentees|My Mentees/i,
+    selector: '[data-proof-surface="teacher-proof-panel"]',
+    text: /Proof Control Plane/i,
+    openFacultyProfile: true,
   },
   {
     role: 'hod',
     selector: '[data-proof-surface="hod-proof-analytics"]',
     text: /Department proof records|Semester|Sem/i,
+    openFacultyProfile: false,
   },
 ] as const
 
@@ -53,6 +56,27 @@ function asArray<T>(value: unknown): T[] {
 
 function checkpointLabel(checkpoint: CheckpointSummary) {
   return `Semester ${checkpoint.semesterNumber} / ${checkpoint.stageKey}`
+}
+
+function checkpointDisplayStage(stageKey: string) {
+  switch (stageKey) {
+    case 'pre-tt1':
+      return 'Pre TT1'
+    case 'post-tt1':
+      return 'Post TT1'
+    case 'post-tt2':
+      return 'Post TT2'
+    case 'post-assignments':
+      return 'Post Assignments'
+    case 'post-see':
+      return 'Post SEE'
+    default:
+      return stageKey
+  }
+}
+
+function checkpointDisplayPattern(checkpoint: CheckpointSummary) {
+  return new RegExp(`Semester\\s*${checkpoint.semesterNumber}\\s*[·/]\\s*${checkpointDisplayStage(checkpoint.stageKey)}`, 'i')
 }
 
 function riskTailCount(checkpoint: CheckpointSummary) {
@@ -147,7 +171,7 @@ test('proof browser sentinel matrix: pinned checkpoints render across core roles
 
   await loginAs(page, 'system-admin')
   const adminCheckpoint = checkpoints[0].checkpoint
-  await pinProofPlaybackCheckpoint(page, seededRun.runId, adminCheckpoint.simulationStageCheckpointId)
+  await pinProofPlaybackCheckpoint(page, seededRun.runId, adminCheckpoint.simulationStageCheckpointId, 'system-admin')
   await page.goto('/#/admin/proof-dashboard', { waitUntil: 'domcontentloaded' })
   const adminSurface = page.locator('[data-proof-surface="system-admin-proof-control-plane"]').first()
   await expect(adminSurface).toBeVisible({ timeout: 45_000 })
@@ -164,25 +188,16 @@ test('proof browser sentinel matrix: pinned checkpoints render across core roles
     for (const roleSurface of ROLE_SURFACES) {
       await loginAs(page, roleSurface.role)
       await pinProofPlaybackCheckpoint(page, seededRun.runId, item.checkpoint.simulationStageCheckpointId)
-      const responsePromise = roleSurface.role === 'hod'
-        ? page.waitForResponse(response =>
-            response.url().includes('/api/academic/hod/proof-bundle')
-            && response.url().includes(encodeURIComponent(item.checkpoint.simulationStageCheckpointId))
-            && response.status() === 200,
-          { timeout: 90_000 })
-        : page.waitForResponse(response =>
-            response.url().includes('/api/academic/bootstrap')
-            && response.url().includes(encodeURIComponent(item.checkpoint.simulationStageCheckpointId))
-            && response.status() === 200,
-          { timeout: 90_000 })
-      await Promise.all([
-        responsePromise,
-        page.goto('/#/app', { waitUntil: 'domcontentloaded' }),
-      ])
+      await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
+      if (roleSurface.openFacultyProfile) {
+        await page.locator('[data-proof-action="open-faculty-profile"]').click()
+      }
       const surface = page.locator(roleSurface.selector).first()
       await expect(surface).toBeVisible({ timeout: 45_000 })
       await expect(page.getByText(roleSurface.text).first()).toBeVisible({ timeout: 30_000 })
       await expect(page.locator('[data-proof-section="proof-playback-notice"]').first()).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByText(checkpointDisplayPattern(item.checkpoint)).first()).toBeVisible({ timeout: 30_000 })
+      await expect(page.locator('[data-proof-surface="academic-proof-summary"]')).toHaveCount(0)
       await capture(page, `${roleSurface.role}-${item.label}.png`)
       matrix.push({
         role: roleSurface.role,

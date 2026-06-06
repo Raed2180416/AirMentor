@@ -39,10 +39,12 @@ test('full demo ladder: sysadmin, teacher, mentor, and HoD surfaces stay populat
 
   await loginAs(page, 'course-leader')
   await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
-  const courseLeaderSurface = page.locator('[data-proof-surface="academic-proof-summary"][data-proof-scope="course-leader-dashboard"]').first()
-  await expect(courseLeaderSurface).toBeVisible({ timeout: 30_000 })
-  await expect(courseLeaderSurface).toContainText(/Course Leader Dashboard/i)
   await expect(page.getByText(/Total Students/i).first()).toBeVisible()
+  await expect(page.locator('[data-proof-surface="academic-proof-summary"]')).toHaveCount(0)
+  await page.locator('[data-proof-action="open-faculty-profile"]').click()
+  const courseLeaderSurface = page.locator('[data-proof-surface="teacher-proof-panel"]').first()
+  await expect(courseLeaderSurface).toBeVisible({ timeout: 30_000 })
+  await expect(courseLeaderSurface).toContainText(/Proof Control Plane/i)
 
   await loginAs(page, 'mentor')
   await page.goto('/#/app', { waitUntil: 'domcontentloaded' })

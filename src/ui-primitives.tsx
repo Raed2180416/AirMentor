@@ -159,9 +159,9 @@ export function getSurfaceStyle(role: SurfaceRole, tone = T.accent): CSSProperti
   }
   if (role === 'selected') {
     return {
-      background: `linear-gradient(180deg, ${withAlpha(tone, '14')}, ${T.surface})`,
-      border: `1px solid ${withAlpha(tone, '1f')}`,
-      boxShadow: `0 0 0 1px ${withAlpha(tone, '08')} inset, 0 10px 22px ${withAlpha(tone, '0c')}`,
+      background: `linear-gradient(180deg, ${withAlpha(tone, '0a')}, ${T.surface})`,
+      border: `1px solid ${withAlpha(tone, '16')}`,
+      boxShadow: `0 0 0 1px ${withAlpha(tone, '06')} inset, 0 8px 18px ${withAlpha(tone, '08')}`,
       borderRadius: UI_RADII.card,
     }
   }
@@ -725,9 +725,9 @@ function getCardSurfaceStyle(surface: NonNullable<CardProps['surface']>, tone: s
   }
   if (surface === 'launch') {
     return {
-      background: `linear-gradient(160deg, ${withAlpha(tone, '12')} 0%, ${withAlpha(tone, '04')} 20%, ${T.surface} 100%)`,
-      border: `1px solid ${withAlpha(tone, '16')}`,
-      boxShadow: `0 10px 22px ${withAlpha(tone, '08')}`,
+      background: `linear-gradient(160deg, ${withAlpha(tone, '0a')} 0%, ${withAlpha(tone, '03')} 20%, ${T.surface} 100%)`,
+      border: `1px solid ${withAlpha(tone, '12')}`,
+      boxShadow: `0 8px 18px ${withAlpha(tone, '06')}`,
       borderRadius: UI_RADII.card,
     }
   }
@@ -744,9 +744,9 @@ export const Card = ({ children, style = {}, glow, surface, onClick, ...rest }: 
   const hoverShadow = style.boxShadow
     ? style.boxShadow
     : variant === 'launch'
-      ? `0 12px 26px ${withAlpha(tone, '0b')}`
+      ? `0 12px 26px ${withAlpha(tone, '08')}`
       : variant === 'selected'
-        ? `0 12px 26px ${withAlpha(tone, '0d')}`
+        ? `0 12px 26px ${withAlpha(tone, '0a')}`
         : '0 14px 32px rgba(15, 23, 42, 0.09)'
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {

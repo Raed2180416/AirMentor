@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react"
+import { useEffect, useRef, useCallback, useMemo, useState } from "react"
 import * as d3 from "d3"
 
 export type GraphNodeKind = "semester" | "course" | "outcome"
@@ -91,8 +91,12 @@ function applyVisibility(nodes: GraphNode[]) {
     if (n.kind === "semester") {
       n.hidden = false
     } else if (n.kind === "course") {
-      const parent = n.parentSemesterId ? nm.get(n.parentSemesterId) : undefined
-      n.hidden = !parent || !parent.isExpanded
+      if (n.parentSemesterId) {
+        const parent = nm.get(n.parentSemesterId)
+        n.hidden = !parent || !parent.isExpanded
+      } else {
+        n.hidden = false
+      }
     } else if (n.kind === "outcome") {
       const parent = n.parentCourseId ? nm.get(n.parentCourseId) : undefined
       n.hidden = !parent || parent.hidden || !parent.isExpanded
@@ -165,7 +169,7 @@ export default function ObsidianGraph({
   layoutKey = 0,
   showWeights = true,
 }: Props) {
-  const colors = getThemeColors(themeMode)
+  const colors = useMemo(() => getThemeColors(themeMode), [themeMode])
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -183,8 +187,7 @@ export default function ObsidianGraph({
   const [dims, setDims] = useState({ w: 800, h: 600 })
   const [editingEdge, setEditingEdge] = useState<{ id: string; screenX: number; screenY: number; weight: number } | null>(null)
   const dimsRef = useRef(dims)
-  dimsRef.current = dims
-  const dprRef = useRef(typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1)
+  const dpr = useMemo(() => typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1, [])
   const dragNodeRef = useRef<GraphNode | null>(null)
   const dragGroupRef = useRef<Map<string, { ox: number; oy: number }> | null>(null)
   const wasDraggedRef = useRef(false)
@@ -199,52 +202,30 @@ export default function ObsidianGraph({
   const mutableNodesRef = useRef<GraphNode[]>([])
   const mutableEdgesRef = useRef<GraphEdge[]>([])
 
-  onNodeClickRef.current = onNodeClick
-  onNodeHoverRef.current = onNodeHover
-  onEdgeClickRef.current = onEdgeClick
-  onEdgeCreateRef.current = onEdgeCreate
-  onEdgeDeleteRef.current = onEdgeDelete
-  onEdgeWeightChangeRef.current = onEdgeWeightChange
-  selectedNodeIdRef.current = selectedNodeId ?? null
-
   const W = dims.w
   const H = dims.h
-  const dpr = dprRef.current
 
   useEffect(() => {
-    const existing = mutableNodesRef.current
-    const existingMap = new Map(existing.map(n => [n.id, n]))
-    const merged: GraphNode[] = []
-    for (const n of nodes) {
-      const old = existingMap.get(n.id)
-      if (old) {
-        old.label = n.label
-        old.code = n.code
-        old.kind = n.kind
-        old.semesterNumber = n.semesterNumber
-        old.parentSemesterId = n.parentSemesterId
-        old.parentCourseId = n.parentCourseId
-        old.bloomLevel = n.bloomLevel
-        old.masteryTarget = n.masteryTarget
-        old.isExpanded = n.isExpanded ?? old.isExpanded
-        merged.push(old)
-      } else {
-        merged.push({ ...n, isExpanded: n.isExpanded ?? false })
-      }
-    }
-    mutableNodesRef.current = merged
-    mutableEdgesRef.current = edges.map(e => ({ ...e }))
-    applyVisibility(merged)
+    dimsRef.current = dims
+  }, [dims])
 
-    const sim = simRef.current
-    if (sim) {
-      sim.nodes(merged)
-      const linkForce = sim.force("link") as d3.ForceLink<GraphNode, GraphEdge> | undefined
-      if (linkForce) linkForce.links(mutableEdgesRef.current)
-      if (!pinnedRef.current) sim.alpha(0.3).restart()
-    }
-    draw()
-  }, [nodes, edges])
+  useEffect(() => {
+    onNodeClickRef.current = onNodeClick
+    onNodeHoverRef.current = onNodeHover
+    onEdgeClickRef.current = onEdgeClick
+    onEdgeCreateRef.current = onEdgeCreate
+    onEdgeDeleteRef.current = onEdgeDelete
+    onEdgeWeightChangeRef.current = onEdgeWeightChange
+    selectedNodeIdRef.current = selectedNodeId ?? null
+  }, [
+    onNodeClick,
+    onNodeHover,
+    onEdgeClick,
+    onEdgeCreate,
+    onEdgeDelete,
+    onEdgeWeightChange,
+    selectedNodeId,
+  ])
 
   useEffect(() => {
     const el = containerRef.current
@@ -515,27 +496,57 @@ export default function ObsidianGraph({
     nf.forEach(drawN)
     f.forEach(drawN)
     ctx.restore()
-  }, [dpr, themeMode])
+  }, [colors, dpr, showWeights])
+
+  useEffect(() => {
+    const existing = mutableNodesRef.current
+    const existingMap = new Map(existing.map(n => [n.id, n]))
+    const merged: GraphNode[] = []
+    for (const n of nodes) {
+      const old = existingMap.get(n.id)
+      if (old) {
+        old.label = n.label
+        old.code = n.code
+        old.kind = n.kind
+        old.semesterNumber = n.semesterNumber
+        old.parentSemesterId = n.parentSemesterId
+        old.parentCourseId = n.parentCourseId
+        old.bloomLevel = n.bloomLevel
+        old.masteryTarget = n.masteryTarget
+        old.isExpanded = n.isExpanded ?? old.isExpanded
+        merged.push(old)
+      } else {
+        merged.push({ ...n, isExpanded: n.isExpanded ?? false })
+      }
+    }
+    mutableNodesRef.current = merged
+    mutableEdgesRef.current = edges.map(e => ({ ...e }))
+    applyVisibility(merged)
+
+    const sim = simRef.current
+    if (sim) {
+      sim.nodes(merged)
+      const linkForce = sim.force("link") as d3.ForceLink<GraphNode, GraphEdge> | undefined
+      if (linkForce) linkForce.links(mutableEdgesRef.current)
+      if (!pinnedRef.current) sim.alpha(0.3).restart()
+    }
+    draw()
+  }, [nodes, edges, draw])
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const cn = mutableNodesRef.current
-    const ce = mutableEdgesRef.current
     const layoutKeyChanged = prevLayoutKeyRef.current !== layoutKey
     prevLayoutKeyRef.current = layoutKey
+    const cn = mutableNodesRef.current.map(n => layoutKeyChanged
+      ? { ...n, x: undefined, y: undefined, fx: null, fy: null }
+      : { ...n })
+    const ce = mutableEdgesRef.current.map(e => ({ ...e }))
+    mutableNodesRef.current = cn
+    mutableEdgesRef.current = ce
 
     if (simRef.current) simRef.current.stop()
     pinnedRef.current = false
-
-    if (layoutKeyChanged) {
-      for (const n of cn) {
-        n.x = undefined
-        n.y = undefined
-        n.fx = null
-        n.fy = null
-      }
-    }
 
     const dw = dimsRef.current.w
     const dh = dimsRef.current.h

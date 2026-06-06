@@ -87,6 +87,7 @@ import {
   computeSeeMark,
   evaluateResult,
 } from './grading-formula-config.js'
+import { counterfactualAdjustment } from './proof-control-plane-playback-service.js'
 
 const STUDENT_AGENT_CARD_VERSION = 2
 const studentAgentCardBuildInflight = new Map<string, Promise<StudentAgentCardPayload>>()
@@ -133,7 +134,7 @@ type FacultyProofViewResult = {
   electiveFits: Array<Record<string, unknown>>
 }
 
-type TailInspectableRunLike = Pick<typeof simulationRuns.$inferSelect, 'activeOperationalSemester' | 'lifecycleState'>
+type TailInspectableRunLike = Pick<typeof simulationRuns.$inferSelect, 'activeOperationalSemester' | 'activeStageKey' | 'lifecycleState'>
 type TailBatchSemesterLike = Pick<typeof batches.$inferSelect, 'currentSemester'>
 
 export function isInspectableProofRunLifecycle(lifecycleState: string | null | undefined) {
@@ -164,6 +165,7 @@ function resolveOperationalCheckpointSummary(
   checkpointRows: Array<typeof simulationStageCheckpoints.$inferSelect>,
   queueCaseRows: Array<typeof simulationStageQueueCases.$inferSelect>,
   semesterNumber: number,
+  activeStageKey: string | null | undefined,
   deps: Pick<ProofControlPlaneTailServiceDeps, 'parseProofCheckpointSummary' | 'withProofPlaybackGate'>,
 ) {
   const summaries = deps.withProofPlaybackGate(
@@ -174,12 +176,62 @@ function resolveOperationalCheckpointSummary(
     queueCaseRows,
   )
   const semesterSummaries = summaries.filter(item => item.semesterNumber === semesterNumber)
-  return semesterSummaries
-    .slice()
-    .reverse()
-    .find(item => item.playbackAccessible !== false)
-    ?? semesterSummaries.at(-1)
+  const normalizedStageKey = typeof activeStageKey === 'string' && activeStageKey.trim().length > 0
+    ? activeStageKey
+    : 'pre-tt1'
+  return semesterSummaries.find(item => item.stageKey === normalizedStageKey)
+    ?? semesterSummaries.find(item => item.stageKey === 'pre-tt1')
+    ?? semesterSummaries[0]
     ?? null
+}
+
+function proofStageAllowsElectiveFit(stageKey: string | null | undefined) {
+  return stageKey === 'post-see'
+}
+
+function riskBandFromScaledProbability(value: number | null | undefined): 'High' | 'Medium' | 'Low' | null {
+  if (value == null || !Number.isFinite(value)) return null
+  const scaled = Math.max(0, Math.min(100, Number(value)))
+  return scaled >= PROOF_DEMO_OPERATIONAL_THRESHOLDS.high * 100
+    ? 'High'
+    : scaled >= PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium * 100
+      ? 'Medium'
+      : 'Low'
+}
+
+type ObservableDriverRow = { label: string; impact: number; feature: string }
+
+function readObservableDriversFromProjectionJson(projectionJson: string): ObservableDriverRow[] {
+  const payload = parseJson(projectionJson, {} as Record<string, unknown>)
+  const status = (payload.currentStatus ?? {}) as Record<string, unknown>
+  const rawDrivers = Array.isArray(status.observableDrivers) ? status.observableDrivers : []
+  return rawDrivers.flatMap(driver => {
+    if (!driver || typeof driver !== 'object') return []
+    const row = driver as Record<string, unknown>
+    const label = typeof row.label === 'string' ? row.label.trim() : ''
+    const feature = typeof row.feature === 'string' ? row.feature.trim() : ''
+    const impact = Number(row.impact)
+    return label && feature && Number.isFinite(impact) ? [{ label, feature, impact }] : []
+  })
+}
+
+function sortProjectionRowsByGovernance<T extends { projectionJson: string; riskProbScaled: number; courseCode: string }>(rows: T[]) {
+  return rows.slice().sort((left, right) => {
+    const leftPayload = parseJson(left.projectionJson, {} as Record<string, unknown>)
+    const rightPayload = parseJson(right.projectionJson, {} as Record<string, unknown>)
+    const leftGovernance = (leftPayload.governance ?? {}) as Record<string, unknown>
+    const rightGovernance = (rightPayload.governance ?? {}) as Record<string, unknown>
+    const leftPrimary = leftGovernance.primaryCase === true
+    const rightPrimary = rightGovernance.primaryCase === true
+    if (leftPrimary !== rightPrimary) return Number(rightPrimary) - Number(leftPrimary)
+    const leftCounts = leftGovernance.countsTowardCapacity === true
+    const rightCounts = rightGovernance.countsTowardCapacity === true
+    if (leftCounts !== rightCounts) return Number(rightCounts) - Number(leftCounts)
+    const leftRank = Number.isFinite(Number(leftGovernance.priorityRank)) ? Number(leftGovernance.priorityRank) : Number.MAX_SAFE_INTEGER
+    const rightRank = Number.isFinite(Number(rightGovernance.priorityRank)) ? Number(rightGovernance.priorityRank) : Number.MAX_SAFE_INTEGER
+    if (leftRank !== rightRank) return leftRank - rightRank
+    return right.riskProbScaled - left.riskProbScaled || left.courseCode.localeCompare(right.courseCode)
+  })
 }
 
 type EvidenceTimelineItem = {
@@ -221,9 +273,11 @@ export async function buildFacultyProofView(db: AppDb, input: {
   facultyId: string
   viewerRoleCode?: string | null
   simulationStageCheckpointId?: string | null
+  demoWorkspaceId?: string | null
 }, deps: ProofControlPlaneTailServiceDeps): Promise<FacultyProofViewResult> {
   const facultyId = input.facultyId
   const viewerRoleCode = input.viewerRoleCode as FacultyProofViewerRole
+  const demoWorkspaceId = input.demoWorkspaceId ?? null
   if (input.simulationStageCheckpointId) {
     const [
       checkpoint,
@@ -234,6 +288,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
       studentRows,
       electiveRows,
       queueRows,
+      stageStudentRows,
       batchRows,
       branchRows,
     ] = await Promise.all([
@@ -245,6 +300,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
       db.select().from(students),
       db.select().from(electiveRecommendations),
       db.select().from(simulationStageQueueProjections).where(eq(simulationStageQueueProjections.simulationStageCheckpointId, input.simulationStageCheckpointId)),
+      db.select().from(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationStageCheckpointId, input.simulationStageCheckpointId)),
       db.select().from(batches),
       db.select().from(branches),
     ])
@@ -255,10 +311,11 @@ export async function buildFacultyProofView(db: AppDb, input: {
       asc(simulationStageCheckpoints.stageOrder),
     )
     const activeRunCheckpoints = deps.withProofPlaybackGate(orderedCheckpointRows.map(deps.parseProofCheckpointSummary), queueCaseRows)
+    const scopedRunRows = runRows.filter(row => (row.demoWorkspaceId ?? null) === demoWorkspaceId)
     const checkpointSummary = activeRunCheckpoints
       .find(item => item.simulationStageCheckpointId === checkpoint.simulationStageCheckpointId)
       ?? deps.parseProofCheckpointSummary(checkpoint)
-    const run = runRows.find(row => row.simulationRunId === checkpoint.simulationRunId) ?? null
+    const run = scopedRunRows.find(row => row.simulationRunId === checkpoint.simulationRunId) ?? null
     if (!run) throw new Error('Simulation run not found for stage checkpoint')
     const batch = batchRows.find(row => row.batchId === run.batchId) ?? null
     const branch = batch ? (branchRows.find(row => row.branchId === batch.branchId) ?? null) : null
@@ -281,6 +338,11 @@ export async function buildFacultyProofView(db: AppDb, input: {
         countsTowardCapacity: detail.countsTowardCapacity === true,
       }
     }
+    const projectionRowsByStudentCourse = new Map<string, typeof stageStudentRows[number]>()
+    for (const row of stageStudentRows) {
+      projectionRowsByStudentCourse.set(`${row.studentId}::${row.offeringId ?? ''}::${row.courseCode}`, row)
+      projectionRowsByStudentCourse.set(`${row.studentId}::::${row.courseCode}`, row)
+    }
     const queueItems = queueRows
       .filter(row => isFacultyProofQueueItemVisible({
         viewerRoleCode,
@@ -295,6 +357,8 @@ export async function buildFacultyProofView(db: AppDb, input: {
         const detail = parseJson(row.detailJson, {} as Record<string, unknown>)
         const currentEvidence = parseJson(JSON.stringify(detail.currentEvidence ?? {}), {} as Record<string, unknown>)
         const student = studentById.get(row.studentId)
+        const projectionRow = projectionRowsByStudentCourse.get(`${row.studentId}::${row.offeringId ?? ''}::${row.courseCode}`)
+          ?? projectionRowsByStudentCourse.get(`${row.studentId}::::${row.courseCode}`)
         return {
           riskAssessmentId: `checkpoint:${checkpoint.simulationStageCheckpointId}:${row.studentId}:${row.courseCode}`,
           simulationRunId: row.simulationRunId,
@@ -313,7 +377,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
           riskChangeFromPreviousCheckpointScaled: Number(detail.riskChangeFromPreviousCheckpointScaled ?? 0),
           counterfactualLiftScaled: Number(detail.counterfactualLiftScaled ?? (row.noActionRiskProbScaled ?? row.riskProbScaled) - row.riskProbScaled),
           recommendedAction: row.recommendedAction ?? 'Continue routine monitoring on the current evidence window.',
-          drivers: [],
+          drivers: projectionRow ? readObservableDriversFromProjectionJson(projectionRow.projectionJson) : [],
           dueAt: typeof detail.dueAt === 'string' ? detail.dueAt : null,
           queueState: canonicalPublicProofQueueStatus(row.status),
           reassessmentStatus: queueReassessmentStatusFromStatus(row.status),
@@ -346,9 +410,9 @@ export async function buildFacultyProofView(db: AppDb, input: {
             : null,
         }
       })
-      .sort((left, right) => right.riskProbScaled - left.riskProbScaled || String(left.dueAt ?? '').localeCompare(String(right.dueAt ?? '')))
+      .sort((left, right) => right.riskProbScaled - left.riskProbScaled || String(left.dueAt ?? '').localeCompare(String(right.dueAt ?? '')) || left.riskAssessmentId.localeCompare(right.riskAssessmentId))
 
-    const electiveVisible = checkpoint.stageKey === 'post-see'
+    const electiveVisible = checkpoint.semesterNumber >= 6 && proofStageAllowsElectiveFit(checkpoint.stageKey)
     const electiveFits = electiveVisible
       ? filterElectiveRecommendationsForSemester(electiveRows, {
           simulationRunId: checkpoint.simulationRunId,
@@ -448,8 +512,9 @@ export async function buildFacultyProofView(db: AppDb, input: {
   ])
 
   const inspectableRunRows = runRows.filter(row => isInspectableProofRunLifecycle(row.lifecycleState))
-  const activeRunIds = new Set(inspectableRunRows.map(row => row.simulationRunId))
-  const selectedActiveRun = pickMostRecentActiveRun(inspectableRunRows)
+  const scopedRunRows = inspectableRunRows.filter(row => (row.demoWorkspaceId ?? null) === demoWorkspaceId)
+  const activeRunIds = new Set(scopedRunRows.map(row => row.simulationRunId))
+  const selectedActiveRun = pickMostRecentActiveRun(scopedRunRows)
   const selectedActiveRunId = selectedActiveRun?.simulationRunId ?? null
   const relevantOfferingIds = new Set(ownershipRows.filter(row => row.status === 'active').map(row => row.offeringId))
   const relevantStudentIds = new Set(mentorRows.filter(row => row.effectiveTo === null).map(row => row.studentId))
@@ -497,6 +562,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
       selectedActiveRunCheckpointRows,
       selectedActiveRunQueueCaseRows,
       selectedCurrentSemester,
+      selectedActiveRun.activeStageKey,
       deps,
     )
     : null
@@ -520,10 +586,6 @@ export async function buildFacultyProofView(db: AppDb, input: {
     && selectedActiveRun
     && selectedBatch
     && operationalCheckpointSummary
-    && (
-      (selectedActiveRun.activeOperationalSemester != null && selectedActiveRun.activeOperationalSemester !== selectedBatch.currentSemester)
-      || activeRiskRows.length === 0
-    )
   ) {
     const checkpointView = await buildFacultyProofView(db, {
       ...input,
@@ -638,34 +700,38 @@ export async function buildFacultyProofView(db: AppDb, input: {
       }
     })
     .filter((item): item is NonNullable<typeof item> => !!item)
-    .sort((left, right) => (right.riskProbScaled - left.riskProbScaled) || String(left.dueAt ?? '').localeCompare(String(right.dueAt ?? '')))
+    .sort((left, right) => (right.riskProbScaled - left.riskProbScaled) || String(left.dueAt ?? '').localeCompare(String(right.dueAt ?? '')) || left.riskAssessmentId.localeCompare(right.riskAssessmentId))
 
-  const electiveFits = filterElectiveRecommendationsForSemester(electiveRows, {
-    simulationRunId: selectedActiveRunId,
-    semesterNumber: selectedCurrentSemester,
-  })
-    .filter(row => selectedActiveRunId ? true : activeRunIds.has(row.simulationRunId ?? ''))
-    .filter(row => isFacultyProofStudentVisible({
-      viewerRoleCode,
-      visibleViaAssignedMentorScope: relevantStudentIds.has(row.studentId),
-      visibleViaOwnedOffering: studentsVisibleViaOwnedOfferings.has(row.studentId),
-    }))
-    .map(row => {
-      const student = studentById.get(row.studentId)
-      return {
-        electiveRecommendationId: row.electiveRecommendationId,
-        studentId: row.studentId,
-        studentName: student?.name ?? row.studentId,
-        usn: student?.usn ?? '',
-        recommendedCode: row.recommendedCode,
-        recommendedTitle: row.recommendedTitle,
-        stream: row.stream,
-        rationale: parseJson(row.rationaleJson, [] as string[]),
-        alternatives: parseJson(row.alternativesJson, [] as Array<{ code: string; title: string; stream: string }>),
-        updatedAt: row.updatedAt,
-      }
-    })
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  const activeElectiveVisible = selectedCurrentSemester >= 6
+    && proofStageAllowsElectiveFit(selectedActiveRun?.activeStageKey)
+  const electiveFits = activeElectiveVisible
+    ? filterElectiveRecommendationsForSemester(electiveRows, {
+        simulationRunId: selectedActiveRunId,
+        semesterNumber: selectedCurrentSemester,
+      })
+      .filter(row => selectedActiveRunId ? true : activeRunIds.has(row.simulationRunId ?? ''))
+      .filter(row => isFacultyProofStudentVisible({
+        viewerRoleCode,
+        visibleViaAssignedMentorScope: relevantStudentIds.has(row.studentId),
+        visibleViaOwnedOffering: studentsVisibleViaOwnedOfferings.has(row.studentId),
+      }))
+      .map(row => {
+        const student = studentById.get(row.studentId)
+        return {
+          electiveRecommendationId: row.electiveRecommendationId,
+          studentId: row.studentId,
+          studentName: student?.name ?? row.studentId,
+          usn: student?.usn ?? '',
+          recommendedCode: row.recommendedCode,
+          recommendedTitle: row.recommendedTitle,
+          stream: row.stream,
+          rationale: parseJson(row.rationaleJson, [] as string[]),
+          alternatives: parseJson(row.alternativesJson, [] as Array<{ code: string; title: string; stream: string }>),
+          updatedAt: row.updatedAt,
+        }
+      })
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    : []
 
   const countProvenance = selectedActiveRun
     ? buildProofCountProvenance({
@@ -956,12 +1022,30 @@ type ProofRiskInferenceContext = {
   } | null
 }
 
+function downgradeFallbackSimulatedSourceRefs(
+  sourceRefs: ObservableSourceRefsWithFeatureMetadata | null,
+): ObservableSourceRefsWithFeatureMetadata | null {
+  if (!sourceRefs || sourceRefs.coEvidenceMode !== 'fallback-simulated') return sourceRefs
+  const fallbackSummary = buildMissingGraphAwarePrerequisiteSummary({
+    graphAvailable: false,
+    historyAvailable: false,
+  })
+  return {
+    ...sourceRefs,
+    featureCompleteness: fallbackSummary.featureCompleteness,
+    prerequisiteCompleteness: fallbackSummary.featureCompleteness,
+    featureConfidenceClass: fallbackSummary.featureCompleteness.confidenceClass,
+    featureProvenance: sourceRefs.featureProvenance ?? fallbackSummary.featureProvenance,
+  }
+}
+
 async function loadProofRiskInferenceContext(db: AppDb, input: {
   batchId: string
   simulationRunId: string
   simulationStageCheckpointId?: string | null
   studentId: string
   primaryCourseCode?: string | null
+  preferredStageKey?: string | null
 }, deps: ProofControlPlaneTailServiceDeps): Promise<ProofRiskInferenceContext> {
   const activeArtifacts = await deps.loadActiveProofRiskArtifacts(db, input.batchId)
 
@@ -1005,7 +1089,7 @@ async function loadProofRiskInferenceContext(db: AppDb, input: {
       const [evidenceRow] = await db.select().from(riskEvidenceSnapshots).where(eq(riskEvidenceSnapshots.riskEvidenceSnapshotId, evidenceSnapshotId))
       if (evidenceRow) {
         featurePayload = parseJson(evidenceRow.featureJson, null as ObservableFeaturePayload | null)
-        sourceRefs = parseJson(evidenceRow.sourceRefsJson, null as ObservableSourceRefsWithFeatureMetadata | null)
+        sourceRefs = downgradeFallbackSimulatedSourceRefs(parseJson(evidenceRow.sourceRefsJson, null as ObservableSourceRefsWithFeatureMetadata | null))
         featureSchemaVersion = evidenceRow.featureSchemaVersion
         evidenceWindow = evidenceRow.evidenceWindow
       }
@@ -1015,13 +1099,67 @@ async function loadProofRiskInferenceContext(db: AppDb, input: {
       eq(riskEvidenceSnapshots.simulationRunId, input.simulationRunId),
       eq(riskEvidenceSnapshots.studentId, input.studentId),
     ))
-    const activeEvidenceRow = evidenceRows.find(row => (
+    const activeEvidenceMatchesCourse = (row: typeof riskEvidenceSnapshots.$inferSelect) => (
       row.simulationStageCheckpointId === null
       && (!input.primaryCourseCode || row.courseCode === input.primaryCourseCode)
-    )) ?? evidenceRows.find(row => row.simulationStageCheckpointId === null) ?? null
+    )
+    let activeEvidenceRow: typeof riskEvidenceSnapshots.$inferSelect | null = null
+    let activeEvidenceStageFallback = false
+    if (input.preferredStageKey) {
+      activeEvidenceRow = evidenceRows.find(row => (
+        activeEvidenceMatchesCourse(row)
+        && row.stageKey === input.preferredStageKey
+      )) ?? evidenceRows.find(row => (
+        row.simulationStageCheckpointId === null
+        && row.stageKey === input.preferredStageKey
+      )) ?? null
+      if (!activeEvidenceRow) {
+        activeEvidenceRow = evidenceRows.find(activeEvidenceMatchesCourse)
+          ?? evidenceRows.find(row => row.simulationStageCheckpointId === null)
+          ?? null
+        activeEvidenceStageFallback = !!activeEvidenceRow
+      }
+    } else {
+      activeEvidenceRow = evidenceRows.find(activeEvidenceMatchesCourse)
+        ?? evidenceRows.find(row => row.simulationStageCheckpointId === null)
+        ?? null
+    }
     if (activeEvidenceRow) {
       featurePayload = parseJson(activeEvidenceRow.featureJson, null as ObservableFeaturePayload | null)
       sourceRefs = parseJson(activeEvidenceRow.sourceRefsJson, null as ObservableSourceRefsWithFeatureMetadata | null)
+      if (activeEvidenceStageFallback) {
+        const fallbackSummary = buildMissingGraphAwarePrerequisiteSummary({
+          graphAvailable: false,
+          historyAvailable: false,
+        })
+        const baseSourceRefs: ObservableSourceRefsWithFeatureMetadata = sourceRefs ?? {
+          simulationRunId: activeEvidenceRow.simulationRunId ?? input.simulationRunId,
+          simulationStageCheckpointId: activeEvidenceRow.simulationStageCheckpointId ?? null,
+          studentId: activeEvidenceRow.studentId,
+          offeringId: activeEvidenceRow.offeringId ?? null,
+          semesterNumber: activeEvidenceRow.semesterNumber,
+          sectionCode: activeEvidenceRow.sectionCode,
+          courseCode: activeEvidenceRow.courseCode,
+          courseTitle: activeEvidenceRow.courseTitle,
+          stageKey: activeEvidenceRow.stageKey ?? null,
+          prerequisiteCourseCodes: [],
+          prerequisiteWeakCourseCodes: [],
+          weakCourseOutcomeCodes: [],
+          dominantQuestionTopics: [],
+          featureCompleteness: fallbackSummary.featureCompleteness,
+          featureProvenance: fallbackSummary.featureProvenance,
+          featureConfidenceClass: fallbackSummary.featureCompleteness.confidenceClass,
+        }
+        sourceRefs = {
+          ...baseSourceRefs,
+          coEvidenceMode: 'fallback-simulated',
+          featureCompleteness: fallbackSummary.featureCompleteness,
+          prerequisiteCompleteness: fallbackSummary.featureCompleteness,
+          featureConfidenceClass: fallbackSummary.featureCompleteness.confidenceClass,
+          featureProvenance: fallbackSummary.featureProvenance,
+        }
+      }
+      sourceRefs = downgradeFallbackSimulatedSourceRefs(sourceRefs)
       featureSchemaVersion = activeEvidenceRow.featureSchemaVersion
       evidenceWindow = activeEvidenceRow.evidenceWindow
     }
@@ -1107,6 +1245,20 @@ function summarizeQuestionPatterns(input: {
 
 function formatEvidencePct(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not recorded yet'
+}
+
+function stageKeyFromRiskEvidence(evidence: {
+  tt1Pct?: number | null
+  tt2Pct?: number | null
+  quizPct?: number | null
+  assignmentPct?: number | null
+  seePct?: number | null
+}) {
+  if (evidence.seePct != null) return 'post-see'
+  if (evidence.assignmentPct != null || evidence.quizPct != null) return 'post-assignments'
+  if (evidence.tt2Pct != null) return 'post-tt2'
+  if (evidence.tt1Pct != null) return 'post-tt1'
+  return 'pre-tt1'
 }
 
 function buildStudentAgentCitations(input: {
@@ -1485,6 +1637,25 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
   if (input.simulationStageCheckpointId && !stageCheckpoint) {
     throw new Error(`Simulation stage checkpoint ${input.simulationStageCheckpointId} was not found`)
   }
+  if (!input.simulationStageCheckpointId) {
+    const [runBatch, runCheckpointRows, runQueueCaseRows] = await Promise.all([
+      db.select().from(batches).where(eq(batches.batchId, run.batchId)).then(rows => rows[0] ?? null),
+      db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)),
+      db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, input.simulationRunId)),
+    ])
+    const operationalSemester = resolveFacultyProofOperationalSemester(run, runBatch)
+    const operationalCheckpointSummary = operationalSemester != null
+      ? resolveOperationalCheckpointSummary(runCheckpointRows, runQueueCaseRows, operationalSemester, run.activeStageKey, deps)
+      : null
+    if (
+      operationalCheckpointSummary
+    ) {
+      return buildStudentAgentCardFresh(db, {
+        ...input,
+        simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
+      }, deps)
+    }
+  }
 
   const riskIds = new Set(riskRows.map(row => row.riskAssessmentId))
   const relevantReassessments = reassessmentRows
@@ -1532,8 +1703,24 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     ?? Math.max(1, ...observedRows.map(row => row.semesterNumber))
   const evidenceTimeline = deps.buildEvidenceTimelineFromRows(observedRows)
   const currentSemesterRows = observedRows.filter(row => row.semesterNumber === currentSemester)
+  const currentSemesterOfferingIds = new Set<string>()
+  for (const row of currentSemesterRows) {
+    const payload = parseObservedStateRow(row)
+    const offeringId = typeof payload.offeringId === 'string' ? payload.offeringId : null
+    if (offeringId) currentSemesterOfferingIds.add(offeringId)
+  }
+  for (const row of stageStudentRows) {
+    if (row.offeringId) currentSemesterOfferingIds.add(row.offeringId)
+  }
+  const visibleRiskRows = riskRows.filter(row =>
+    currentSemesterOfferingIds.size === 0 || currentSemesterOfferingIds.has(row.offeringId),
+  )
+  const visibleRiskIds = new Set(visibleRiskRows.map(row => row.riskAssessmentId))
+  const visibleReassessments = relevantReassessments
+    .filter(row => visibleRiskIds.has(row.riskAssessmentId))
+    .filter(row => !stageCheckpoint || row.createdAt <= stageCheckpoint.updatedAt)
   const riskSortRank = (row: typeof riskRows[number]) => {
-    const reassessment = relevantReassessments.find(item => item.riskAssessmentId === row.riskAssessmentId) ?? null
+    const reassessment = visibleReassessments.find(item => item.riskAssessmentId === row.riskAssessmentId) ?? null
     return reassessment && deps.isOpenReassessmentStatus(reassessment.status) ? 2 : reassessment ? 1 : 0
   }
   const stageProjectionGovernance = (row: typeof stageStudentRows[number]) => {
@@ -1545,7 +1732,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
       priorityRank: Number.isFinite(Number(governance.priorityRank)) ? Number(governance.priorityRank) : Number.MAX_SAFE_INTEGER,
     }
   }
-  const sortedRiskRows = riskRows.slice().sort((left, right) => {
+  const sortedRiskRows = visibleRiskRows.slice().sort((left, right) => {
     const rankDelta = riskSortRank(right) - riskSortRank(left)
     if (rankDelta !== 0) return rankDelta
     return (right.riskProbScaled - left.riskProbScaled) || left.offeringId.localeCompare(right.offeringId)
@@ -1595,25 +1782,39 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     .filter(row => (row.tt2Pct != null && row.tt2Pct < 50) || (row.seePct != null && row.seePct < 45) || row.transferGap < -0.04)
     .slice(0, 6)
   const topicBuckets = summarizeTopicBuckets(currentTopicRows)
-  const latestElective = latestElectiveRecommendationForSemester(electiveRows, {
-    simulationRunId: input.simulationRunId,
-    studentId: input.studentId,
-    semesterNumber: currentSemester,
-  })
-  const responseByInterventionId = new Map(
+  const currentStageKey = stageCheckpoint?.stageKey ?? run.activeStageKey ?? null
+  const latestElective = currentSemester >= 6 && proofStageAllowsElectiveFit(currentStageKey)
+    ? latestElectiveRecommendationForSemester(electiveRows, {
+        simulationRunId: input.simulationRunId,
+        studentId: input.studentId,
+        semesterNumber: currentSemester,
+      })
+    : null
+  const scopedResponseRows = responseRows
+    .filter(row => row.semesterNumber === currentSemester)
+    .filter(row => !row.offeringId || currentSemesterOfferingIds.size === 0 || currentSemesterOfferingIds.has(row.offeringId))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  const interventionIdsWithAnyResponse = new Set(
     responseRows
+      .map(row => row.interventionId)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0),
+  )
+  const responseByInterventionId = new Map(
+    scopedResponseRows
       .filter(row => typeof row.interventionId === 'string' && row.interventionId.length > 0)
       .map(row => [String(row.interventionId), row]),
   )
   const interventionHistory: StudentAgentCardPayload['interventions']['interventionHistory'] = interventionRows
     .filter(row => {
-      if (!row.offeringId) return true
-      return offeringRows.some(offering => offering.offeringId === row.offeringId)
+      const scopedResponse = responseByInterventionId.get(row.interventionId)
+      if (scopedResponse) return true
+      if (interventionIdsWithAnyResponse.has(row.interventionId)) return false
+      return !!row.offeringId && currentSemesterOfferingIds.has(row.offeringId)
     })
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
     .slice(0, 10)
     .map(row => {
-      const responseRow = responseByInterventionId.get(row.interventionId) ?? responseRows
+      const responseRow = responseByInterventionId.get(row.interventionId) ?? scopedResponseRows
         .filter(item => item.interventionId === row.interventionId)
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
       const responseState = responseRow ? parseJson(responseRow.responseStateJson, {} as Record<string, unknown>) : {}
@@ -1638,13 +1839,14 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
   const latestResolutionByEventId = new Map<string, typeof reassessmentResolutions.$inferSelect>()
   relevantResolutionRows
     .slice()
+    .filter(row => !stageCheckpoint || row.createdAt <= stageCheckpoint.updatedAt)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .forEach(row => {
       if (!latestResolutionByEventId.has(row.reassessmentEventId)) {
         latestResolutionByEventId.set(row.reassessmentEventId, row)
       }
     })
-  let reassessmentMap: StudentAgentCardPayload['interventions']['currentReassessments'] = relevantReassessments.map(row => {
+  let reassessmentMap: StudentAgentCardPayload['interventions']['currentReassessments'] = visibleReassessments.map(row => {
     const matchingRisk = riskRows.find(risk => risk.riskAssessmentId === row.riskAssessmentId) ?? null
     const matchingOffering = matchingRisk
       ? offeringRows.find(offering => offering.offeringId === matchingRisk.offeringId) ?? null
@@ -1694,18 +1896,23 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
       if (leftRank !== rightRank) return leftRank - rightRank
       return left.dueAt.localeCompare(right.dueAt)
     })
+  const visibleReassessmentEventIds = new Set(visibleReassessments.map(row => row.reassessmentEventId))
+  const visibleResolutionRows = relevantResolutionRows.filter(row =>
+    visibleReassessmentEventIds.has(row.reassessmentEventId)
+    && (!stageCheckpoint || row.createdAt <= stageCheckpoint.updatedAt),
+  )
   const humanActionLog = [
     ...interventionHistory.map(item => ({
       title: `Intervention · ${item.interventionType}`,
       detail: item.note,
       occurredAt: item.occurredAt,
     })),
-    ...relevantReassessments.map(item => ({
+    ...visibleReassessments.map(item => ({
       title: `Reassessment · ${item.status}`,
       detail: `Assigned to ${item.assignedToRole}, due ${item.dueAt}.`,
       occurredAt: item.createdAt,
     })),
-    ...relevantResolutionRows
+    ...visibleResolutionRows
       .map(row => ({
         title: `Resolution · ${row.resolutionStatus}`,
         detail: row.note ?? 'Resolution stored on the proof record.',
@@ -1715,7 +1922,9 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
     .slice(0, 12)
 
-  const semesterSummaries = evidenceTimeline.map(item => {
+  const semesterSummaries = evidenceTimeline
+    .filter(item => item.semesterNumber <= currentSemester)
+    .map(item => {
     const observedState = item.observedState as Record<string, unknown>
     const riskBands = parseJson(JSON.stringify(observedState.riskBands ?? observedState.riskBand ? [observedState.riskBand] : []), [] as string[])
       .filter((value): value is string => typeof value === 'string' && value.length > 0)
@@ -1740,7 +1949,11 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     seePct: nullablePct(currentObservedPayload.seePct),
     weakCoCount: Number(currentObservedPayload.weakCoCount ?? weakCourseOutcomes.length),
     weakQuestionCount: Number((currentObservedPayload.questionEvidenceSummary as Record<string, unknown> | undefined)?.weakQuestionCount ?? questionPatterns.weakQuestionCount),
-    coEvidenceMode: currentCoRows.length > 0 ? dominantCoEvidenceMode(currentCoRows) : null,
+    coEvidenceMode: currentCoRows.length > 0
+      ? dominantCoEvidenceMode(currentCoRows)
+      : typeof currentObservedPayload.coEvidenceMode === 'string'
+        ? currentObservedPayload.coEvidenceMode
+        : null,
     interventionRecoveryStatus: currentObservedPayload.interventionResponse && typeof currentObservedPayload.interventionResponse === 'object'
       ? String((currentObservedPayload.interventionResponse as Record<string, unknown>).recoveryConfirmed ? 'confirmed' : 'watch')
       : null,
@@ -1977,6 +2190,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     assessmentComponents = sortedStageRows.map(row => {
       const payload = parseJson(row.projectionJson, {} as Record<string, unknown>)
       const evidence = (payload.currentEvidence ?? {}) as Record<string, unknown>
+      const drivers = readObservableDriversFromProjectionJson(row.projectionJson)
       return {
         courseCode: row.courseCode,
         courseTitle: row.courseTitle,
@@ -1990,7 +2204,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
         weakCoCount: Number(evidence.weakCoCount ?? 0),
         weakQuestionCount: Number(evidence.weakQuestionCount ?? 0),
         coEvidenceMode: typeof evidence.coEvidenceMode === 'string' ? evidence.coEvidenceMode : null,
-        drivers: [],
+        drivers,
       }
     })
   }
@@ -2024,9 +2238,11 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     simulationStageCheckpointId: stageCheckpoint?.simulationStageCheckpointId ?? null,
     studentId: input.studentId,
     primaryCourseCode: primaryCourse?.courseCode ?? null,
+    preferredStageKey: stageCheckpoint ? null : stageKeyFromRiskEvidence(currentEvidence),
   }, deps)
   const overallHeadDisplay = deps.headDisplayState(proofRiskInference.inferred, 'overallCourseRisk')
     ?? proofRiskInference.fallbackOverallHeadDisplay
+  const displayableOverallHeadRiskProbScaled = deps.displayableHeadProbabilityScaled(proofRiskInference.inferred, 'overallCourseRisk')
   const fallbackFeatureSummary = buildMissingGraphAwarePrerequisiteSummary({
     graphAvailable: false,
     historyAvailable: false,
@@ -2040,9 +2256,17 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     ?? featureCompleteness.confidenceClass
   const featureProvenance = proofRiskInference.sourceRefs?.featureProvenance
     ?? fallbackFeatureSummary.featureProvenance
+  const explicitCheckpointRequested = !!input.simulationStageCheckpointId
+  const currentRiskDisplayProbabilityAllowed = explicitCheckpointRequested
+    ? currentStatus.riskProbScaled != null
+    : overallHeadDisplay?.displayProbabilityAllowed ?? null
+  const displayedOverallRiskBand = explicitCheckpointRequested
+    ? currentStatus.riskBand
+    : (riskBandFromScaledProbability(displayableOverallHeadRiskProbScaled) ?? currentStatus.riskBand)
   currentStatus = {
     ...currentStatus,
-    riskProbScaled: deps.displayableHeadProbabilityScaled(proofRiskInference.inferred, 'overallCourseRisk'),
+    riskBand: displayedOverallRiskBand,
+    riskProbScaled: explicitCheckpointRequested ? currentStatus.riskProbScaled : displayableOverallHeadRiskProbScaled,
     riskCompleteness: featureCompleteness,
     featureCompleteness,
     featureProvenance,
@@ -2054,6 +2278,16 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     `Mentor track: ${String(parseJson(behaviorProfile.profileJson, {} as Record<string, unknown>).mentorTrack ?? 'unspecified')}`,
     ...(topicBuckets.highUncertainty.length > 0 ? ['High uncertainty topics present'] : []),
   ] : []
+  const latestSemesterSummary = semesterSummaries[semesterSummaries.length - 1] ?? null
+  const currentCgpa = Number(currentObservedPayload.cgpa ?? latestSemesterSummary?.cgpaAfterSemester ?? 0)
+  const predictedCgpaCandidate = currentEvidence.seePct != null
+    ? currentObservedPayload.predictedCgpa
+      ?? currentObservedPayload.cgpaAfterSemester
+      ?? latestSemesterSummary?.cgpaAfterSemester
+      ?? currentObservedPayload.cgpa
+      ?? null
+    : null
+  const predictedCgpa = predictedCgpaCandidate == null ? null : Number(predictedCgpaCandidate)
   const countProvenance = buildProofCountProvenance({
     // Checkpoint-bound student surfaces must expose the selected checkpoint semester
     // as their authoritative semester context. Falling back to the run semester here
@@ -2113,8 +2347,8 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
       previousRiskProbScaled: currentStatus.previousRiskProbScaled,
       riskChangeFromPreviousCheckpointScaled: currentStatus.riskChangeFromPreviousCheckpointScaled,
       counterfactualLiftScaled: currentStatus.counterfactualLiftScaled,
-      currentRiskDisplayProbabilityAllowed: overallHeadDisplay?.displayProbabilityAllowed ?? null,
-      currentRiskSupportWarning: overallHeadDisplay?.supportWarning ?? null,
+      currentRiskDisplayProbabilityAllowed,
+      currentRiskSupportWarning: explicitCheckpointRequested ? null : overallHeadDisplay?.supportWarning ?? null,
       currentRiskCalibrationMethod: overallHeadDisplay?.calibrationMethod ?? null,
       currentRiskConfidenceClass: featureConfidenceClass,
       primaryCourseCode: primaryCourse?.courseCode ?? null,
@@ -2123,8 +2357,9 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
       currentReassessmentStatus: currentStatus.reassessmentStatus,
       currentQueueState: currentStatus.queueState ?? null,
       currentRecoveryState: currentStatus.recoveryState ?? null,
-      currentCgpa: Number(currentObservedPayload.cgpa ?? semesterSummaries[semesterSummaries.length - 1]?.cgpaAfterSemester ?? 0),
-      backlogCount: Number(currentObservedPayload.backlogCount ?? semesterSummaries[semesterSummaries.length - 1]?.backlogCount ?? 0),
+      currentCgpa,
+      predictedCgpa: Number.isFinite(predictedCgpa) ? predictedCgpa : null,
+      backlogCount: Number(currentObservedPayload.backlogCount ?? latestSemesterSummary?.backlogCount ?? 0),
       electiveFit,
     },
     overview: {
@@ -2297,6 +2532,166 @@ function deriveScenarioRiskHeads(input: {
   }
 }
 
+type XaiRiskReductionPayload = NonNullable<StudentRiskExplorerPayload['xaiRiskReduction']>
+
+function finiteNumber(value: unknown): number | null {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function roundToTwo(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function clampScore(value: number, min = 0, max = 100): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function meanFinite(values: unknown[]): number | null {
+  const finite = values
+    .map(finiteNumber)
+    .filter((value): value is number => value != null)
+  if (finite.length === 0) return null
+  return roundToTwo(finite.reduce((sum, value) => sum + value, 0) / finite.length)
+}
+
+function actionFromProjectionPayload(row: typeof simulationStageStudentProjections.$inferSelect, payload: Record<string, unknown>) {
+  if (typeof row.simulatedActionTaken === 'string' && row.simulatedActionTaken.length > 0) return row.simulatedActionTaken
+  const currentStatus = (payload.currentStatus ?? {}) as Record<string, unknown>
+  const currentPolicy = (currentStatus.policyComparison ?? {}) as Record<string, unknown>
+  if (typeof currentPolicy.simulatedActionTaken === 'string' && currentPolicy.simulatedActionTaken.length > 0) return currentPolicy.simulatedActionTaken
+  const policyDiagnostics = (payload.counterfactualPolicyDiagnostics ?? {}) as Record<string, unknown>
+  if (typeof policyDiagnostics.simulatedActionTaken === 'string' && policyDiagnostics.simulatedActionTaken.length > 0) return policyDiagnostics.simulatedActionTaken
+  return null
+}
+
+function buildRiskReductionComponentImpacts(input: {
+  currentEvidence: StudentAgentCardPayload['overview']['currentEvidence']
+  summary: XaiRiskReductionPayload['summary']
+  stageKey: string | null
+}) {
+  const actionTaken = input.summary?.activeInterventions[0] ?? null
+  const lateStage = input.stageKey === 'post-tt2' || input.stageKey === 'post-assignments' || input.stageKey === 'post-see'
+  const adjustment = lateStage ? counterfactualAdjustment(actionTaken) : counterfactualAdjustment(null)
+  const scoreImpact = (
+    componentKey: XaiRiskReductionPayload['componentImpacts'][number]['componentKey'],
+    componentLabel: string,
+    simulatedScore: number | null | undefined,
+    penalty: number,
+  ): XaiRiskReductionPayload['componentImpacts'][number] => {
+    const simulated = finiteNumber(simulatedScore)
+    const baseline = simulated == null ? null : roundToTwo(clampScore(simulated - penalty))
+    return {
+      componentKey,
+      componentLabel,
+      baselineScore: baseline,
+      simulatedScore: simulated == null ? null : roundToTwo(simulated),
+      lift: simulated == null || baseline == null ? null : roundToTwo(simulated - baseline),
+      direction: 'score-lift',
+    }
+  }
+
+  return [
+    scoreImpact('attendance', 'Attendance', input.currentEvidence.attendancePct, adjustment.attendancePenalty),
+    scoreImpact('tt1', 'TT1', input.currentEvidence.tt1Pct, 0),
+    scoreImpact('tt2', 'TT2', input.currentEvidence.tt2Pct, adjustment.tt2Penalty),
+    scoreImpact('assignment', 'Assignment', input.currentEvidence.assignmentPct, 0),
+    scoreImpact('see', 'SEE', input.currentEvidence.seePct, adjustment.seePenalty),
+    {
+      componentKey: 'overall',
+      componentLabel: 'Overall risk',
+      baselineScore: input.summary?.baselineRiskProbScaled ?? null,
+      simulatedScore: input.summary?.simulatedRiskProbScaled ?? null,
+      lift: input.summary?.riskReducedByProbScaled ?? null,
+      direction: 'risk-reduction',
+    },
+  ] satisfies XaiRiskReductionPayload['componentImpacts']
+}
+
+function buildXaiRiskReduction(input: {
+  stageRows: Array<typeof simulationStageStudentProjections.$inferSelect>
+  checkpoints: Array<typeof simulationStageCheckpoints.$inferSelect>
+  effectiveCheckpointId: string | null
+  currentSemesterNumber: number
+  currentEvidence: StudentAgentCardPayload['overview']['currentEvidence']
+  inferred: ModelBackedRiskOutput | null
+}) {
+  const checkpointById = new Map(input.checkpoints.map(row => [row.simulationStageCheckpointId, row]))
+  const effectiveCheckpoint = input.effectiveCheckpointId ? checkpointById.get(input.effectiveCheckpointId) ?? null : null
+  const maxStageOrder = effectiveCheckpoint?.stageOrder ?? Number.POSITIVE_INFINITY
+  const groups = new Map<string, Array<typeof simulationStageStudentProjections.$inferSelect>>()
+
+  for (const row of input.stageRows) {
+    const checkpoint = checkpointById.get(row.simulationStageCheckpointId)
+    if (!checkpoint) continue
+    if (checkpoint.semesterNumber !== input.currentSemesterNumber) continue
+    if (checkpoint.stageOrder > maxStageOrder) continue
+    const group = groups.get(row.simulationStageCheckpointId) ?? []
+    group.push(row)
+    groups.set(row.simulationStageCheckpointId, group)
+  }
+
+  const deltaTimelineWithOrder = Array.from(groups.entries()).map(([checkpointId, rows]) => {
+    const checkpoint = checkpointById.get(checkpointId)!
+    const baselineRiskProbScaled = meanFinite(rows.map(row => row.noActionRiskProbScaled)) ?? 0
+    const simulatedRiskProbScaled = meanFinite(rows.map(row => row.riskProbScaled)) ?? 0
+    const activeInterventions = Array.from(new Set(rows
+      .map(row => actionFromProjectionPayload(row, parseJson(row.projectionJson, {} as Record<string, unknown>)))
+      .filter((value): value is string => !!value)))
+    const deltaProbScaled = roundToTwo(simulatedRiskProbScaled - baselineRiskProbScaled)
+    return {
+      stageKey: checkpoint.stageKey,
+      label: `Semester ${checkpoint.semesterNumber} · ${checkpoint.stageLabel}`,
+      baselineRiskProbScaled,
+      simulatedRiskProbScaled,
+      deltaProbScaled,
+      riskReducedByProbScaled: roundToTwo(baselineRiskProbScaled - simulatedRiskProbScaled),
+      activeInterventions,
+      stageOrder: checkpoint.stageOrder,
+    }
+  }).sort((left, right) => left.stageOrder - right.stageOrder)
+
+  const deltaTimeline = deltaTimelineWithOrder.map(point => ({
+    stageKey: point.stageKey,
+    label: point.label,
+    baselineRiskProbScaled: point.baselineRiskProbScaled,
+    simulatedRiskProbScaled: point.simulatedRiskProbScaled,
+    deltaProbScaled: point.deltaProbScaled,
+    riskReducedByProbScaled: point.riskReducedByProbScaled,
+    activeInterventions: point.activeInterventions,
+  }))
+  const summary = input.effectiveCheckpointId
+    ? deltaTimeline.find(point => point.stageKey === effectiveCheckpoint?.stageKey) ?? deltaTimeline[deltaTimeline.length - 1] ?? null
+    : deltaTimeline[deltaTimeline.length - 1] ?? null
+
+  if (!summary && deltaTimeline.length === 0) return null
+
+  return {
+    explanationMode: 'same-checkpoint-no-action-replay' as const,
+    disclaimer: 'Projected risk reduction compares saved checkpoint projection rows against deterministic no-action replay. It is not a causal claim or a live intervention outcome guarantee.',
+    driverSource: input.inferred?.driverSource ?? null,
+    scorerFamily: input.inferred?.effectiveScorerFamily ?? null,
+    summary: summary
+      ? {
+          stageKey: summary.stageKey,
+          label: summary.label,
+          baselineRiskProbScaled: summary.baselineRiskProbScaled,
+          simulatedRiskProbScaled: summary.simulatedRiskProbScaled,
+          deltaProbScaled: summary.deltaProbScaled,
+          riskReducedByProbScaled: summary.riskReducedByProbScaled,
+          activeInterventions: summary.activeInterventions,
+        }
+      : null,
+    deltaTimeline,
+    componentImpacts: buildRiskReductionComponentImpacts({
+      currentEvidence: input.currentEvidence,
+      summary,
+      stageKey: summary?.stageKey ?? null,
+    }),
+    topDriverEvidence: (input.inferred?.observableDrivers ?? []).slice(0, 5),
+  } satisfies XaiRiskReductionPayload
+}
+
 export async function buildStudentRiskExplorer(db: AppDb, input: {
   simulationRunId: string
   studentId: string
@@ -2308,15 +2703,14 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
   const card = await buildStudentAgentCard(db, input, deps)
   const effectiveCheckpointId = card.simulationStageCheckpointId ?? input.simulationStageCheckpointId ?? null
   let checkpointPolicyComparison: StudentRiskExplorerPayload['policyComparison'] = null
+  let selectedStageRows: Array<typeof simulationStageStudentProjections.$inferSelect> = []
 
   if (effectiveCheckpointId) {
-    const stageRows = await db.select().from(simulationStageStudentProjections).where(and(
+    selectedStageRows = await db.select().from(simulationStageStudentProjections).where(and(
       eq(simulationStageStudentProjections.simulationStageCheckpointId, effectiveCheckpointId),
       eq(simulationStageStudentProjections.studentId, input.studentId),
     ))
-    const primaryStageRow = stageRows
-      .slice()
-      .sort((left, right) => right.riskProbScaled - left.riskProbScaled || left.courseCode.localeCompare(right.courseCode))[0] ?? null
+    const primaryStageRow = sortProjectionRowsByGovernance(selectedStageRows)[0] ?? null
     const stagePayload = primaryStageRow
       ? parseJson(primaryStageRow.projectionJson, {} as Record<string, unknown>)
       : {}
@@ -2346,9 +2740,11 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     simulationStageCheckpointId: effectiveCheckpointId,
     studentId: input.studentId,
     primaryCourseCode: card.summaryRail.primaryCourseCode,
+    preferredStageKey: effectiveCheckpointId ? null : stageKeyFromRiskEvidence(card.overview.currentEvidence),
   }, deps)
   const inferred = proofRiskInference.inferred
   const overallHeadDisplay = deps.headDisplayState(inferred, 'overallCourseRisk')
+  const displayableOverallHeadRiskProbScaled = deps.displayableHeadProbabilityScaled(inferred, 'overallCourseRisk')
   const fallbackFeatureSummary = buildMissingGraphAwarePrerequisiteSummary({
     graphAvailable: false,
     historyAvailable: false,
@@ -2362,9 +2758,10 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     ?? featureCompleteness.confidenceClass
   const featureProvenance = proofRiskInference.sourceRefs?.featureProvenance
     ?? fallbackFeatureSummary.featureProvenance
+  const explicitCheckpointRequested = !!input.simulationStageCheckpointId
   const currentStatus = {
     ...card.overview.currentStatus,
-    riskProbScaled: deps.displayableHeadProbabilityScaled(proofRiskInference.inferred, 'overallCourseRisk'),
+    riskProbScaled: explicitCheckpointRequested ? card.overview.currentStatus.riskProbScaled : displayableOverallHeadRiskProbScaled,
     riskCompleteness: featureCompleteness,
     featureCompleteness,
     featureProvenance,
@@ -2374,9 +2771,11 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId),
     eq(studentObservedSemesterStates.studentId, input.studentId),
   )).orderBy(asc(studentObservedSemesterStates.semesterNumber), asc(studentObservedSemesterStates.createdAt))
-  const cgpaTrace = buildCgpaCalculationTrace(observedRows)
 
   const currentSemesterNumber = card.checkpointContext?.semesterNumber ?? card.student.currentSemester
+  const cgpaTrace = buildCgpaCalculationTrace(
+    observedRows.filter(row => row.semesterNumber <= currentSemesterNumber),
+  )
   const currentSemesterSummary = card.overview.semesterSummaries.find(item => item.semesterNumber === currentSemesterNumber) ?? null
   const previousSemesterSummary = card.overview.semesterSummaries.find(item => item.semesterNumber === currentSemesterNumber - 1) ?? null
   const derivedScenarioHeads = deriveScenarioRiskHeads({
@@ -2389,6 +2788,28 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     currentSemesterSummary,
     previousSemesterSummary,
   }, deps)
+  const [studentStageRows, checkpointRows] = await Promise.all([
+    selectedStageRows.length > 0
+      ? db.select().from(simulationStageStudentProjections).where(and(
+          eq(simulationStageStudentProjections.simulationRunId, input.simulationRunId),
+          eq(simulationStageStudentProjections.studentId, input.studentId),
+        ))
+      : Promise.resolve([] as Array<typeof simulationStageStudentProjections.$inferSelect>),
+    selectedStageRows.length > 0
+      ? db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)).orderBy(
+          asc(simulationStageCheckpoints.semesterNumber),
+          asc(simulationStageCheckpoints.stageOrder),
+        )
+      : Promise.resolve([] as Array<typeof simulationStageCheckpoints.$inferSelect>),
+  ])
+  const xaiRiskReduction = buildXaiRiskReduction({
+    stageRows: studentStageRows,
+    checkpoints: checkpointRows,
+    effectiveCheckpointId,
+    currentSemesterNumber,
+    currentEvidence: card.overview.currentEvidence,
+    inferred,
+  })
 
   return {
     simulationRunId: card.simulationRunId,
@@ -2429,6 +2850,7 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
       downstreamCarryoverRiskProbScaled: deps.displayableHeadProbabilityScaled(inferred, 'downstreamCarryoverRisk'),
     },
     trainedRiskHeadDisplays: inferred?.headDisplay ?? null,
+    xaiRiskReduction,
     derivedScenarioHeads,
     currentEvidence: card.overview.currentEvidence,
     currentStatus,

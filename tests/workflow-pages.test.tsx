@@ -2,8 +2,8 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AllStudentsPage } from '../src/pages/workflow-pages'
-import { AppSelectorsContext, createAppSelectors } from '../src/selectors'
+import { AllStudentsPage, EntryWorkspacePage } from '../src/pages/workflow-pages'
+import { AppSelectorsContext, createAppSelectors, defaultSchemeForOffering } from '../src/selectors'
 import type { Offering, Student } from '../src/data'
 
 afterEach(() => {
@@ -92,4 +92,66 @@ describe('workflow pages', () => {
       expect.objectContaining({ offId: 'sem1_eee_a' }),
     )
   }, 15000)
+
+  it('keeps direct-entry current CE and CGPA scoped to the proof playback stage', () => {
+    const offering: Offering = {
+      ...makeOffering(),
+      stage: 5,
+      stageInfo: { stage: 5, label: 'Post SEE', desc: 'Late live state', color: '#22c55e' },
+      tt1Done: true,
+      tt2Done: true,
+    }
+    const student: Student = {
+      ...makeStudent(1),
+      present: 50,
+      totalClasses: 50,
+      tt1Score: 25,
+      tt2Score: 25,
+      quiz1: 10,
+      asgn1: 10,
+      proofObservedTt1Pct: 100,
+      proofObservedTt2Pct: 100,
+      proofObservedQuizPct: 100,
+      proofObservedAssignmentPct: 100,
+      proofObservedSeePct: 100,
+      predictedCgpa: 9.1,
+    }
+    const scheme = defaultSchemeForOffering(offering)
+    const selectors = createAppSelectors({
+      studentPatches: {},
+      schemeByOffering: { [offering.offId]: scheme },
+      ttBlueprintsByOffering: {},
+      studentsByOffering: { [offering.offId]: [student] },
+      studentSourceMode: 'live',
+    })
+
+    render(createElement(AppSelectorsContext.Provider, { value: selectors }, createElement(EntryWorkspacePage, {
+      capabilities: { canApproveUnlock: false, canEditMarks: true },
+      offeringId: offering.offId,
+      kind: 'tt1',
+      onBack: vi.fn(),
+      lockByOffering: { [offering.offId]: { attendance: false, tt1: false, tt2: false, quiz: false, assignment: false, finals: false } },
+      draftBySection: {},
+      onSaveDraft: vi.fn(),
+      onSubmitLock: vi.fn(),
+      onRequestUnlock: vi.fn(),
+      cellValues: {},
+      onCellValueChange: vi.fn(),
+      onOpenStudent: vi.fn(),
+      onOpenTaskComposer: vi.fn(),
+      onUpdateStudentAttendance: vi.fn(),
+      schemeByOffering: { [offering.offId]: scheme },
+      ttBlueprintsByOffering: {},
+      studentHistoryByUsn: {},
+      lockAuditByTarget: {},
+      availableOfferings: [offering],
+      proofStageKey: 'post-tt1',
+    })))
+
+    const pageText = document.body.textContent ?? ''
+    expect(pageText).toContain(`CE ${scheme.termTestWeights.tt1.toFixed(1)}/${scheme.policyContext.ce}`)
+    expect(pageText).toContain('CGPA —')
+    expect(pageText).not.toContain(`CE ${scheme.policyContext.ce.toFixed(1)}/${scheme.policyContext.ce}`)
+    expect(pageText).not.toContain('CGPA 9.10')
+  })
 })

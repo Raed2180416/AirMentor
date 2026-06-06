@@ -13,8 +13,12 @@ import {
   batches,
   branches,
   curriculumImportVersions,
+  departments,
   institutions,
+  mentorAssignments,
   simulationRuns,
+  simulationStageCheckpoints,
+  students,
 } from '../src/db/schema.js'
 import {
   EMBEDDED_CURRICULUM_SOURCE_PATH,
@@ -213,6 +217,142 @@ describe('msruas proof sandbox seed recovery', () => {
     expect(batchRows).toHaveLength(1)
     expect(importRows).toHaveLength(1)
     expect(runRows).toHaveLength(1)
+  })
+
+  it('repairs an empty import marker instead of treating it as a complete proof sandbox', async () => {
+    current = await createProofSeedTestDb()
+
+    await current.db.insert(departments).values({
+      departmentId: 'dept_cse',
+      institutionId: 'inst_airmentor',
+      academicFacultyId: 'academic_faculty_engineering_and_technology',
+      code: 'CSE',
+      name: 'Computer Science and Engineering',
+      status: 'active',
+      version: 1,
+      createdAt: TEST_NOW,
+      updatedAt: TEST_NOW,
+    })
+    await current.db.insert(branches).values({
+      branchId: MSRUAS_PROOF_BRANCH_ID,
+      departmentId: 'dept_cse',
+      code: 'BTECH-MNC',
+      name: 'B.Tech Mathematics and Computing',
+      programLevel: 'undergraduate',
+      semesterCount: 8,
+      status: 'active',
+      version: 1,
+      createdAt: TEST_NOW,
+      updatedAt: TEST_NOW,
+    })
+    await current.db.insert(batches).values({
+      batchId: MSRUAS_PROOF_BATCH_ID,
+      branchId: MSRUAS_PROOF_BRANCH_ID,
+      admissionYear: 2023,
+      batchLabel: 'B.Tech MNC 2023',
+      currentSemester: 6,
+      sectionLabelsJson: JSON.stringify(['A', 'B']),
+      status: 'active',
+      version: 1,
+      createdAt: TEST_NOW,
+      updatedAt: TEST_NOW,
+    })
+    await current.db.insert(curriculumImportVersions).values({
+      curriculumImportVersionId: MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
+      batchId: MSRUAS_PROOF_BATCH_ID,
+      sourceLabel: 'partial-import-marker',
+      sourceChecksum: 'partial-import-marker',
+      sourcePath: null,
+      sourceType: 'bundled-json',
+      compilerVersion: 'partial-import-marker',
+      outputChecksum: 'partial-import-marker',
+      firstSemester: 1,
+      lastSemester: 6,
+      courseCount: 0,
+      totalCredits: 0,
+      explicitEdgeCount: 0,
+      addedEdgeCount: 0,
+      bridgeModuleCount: 0,
+      electiveOptionCount: 0,
+      unresolvedMappingCount: 0,
+      validationStatus: 'partial',
+      completenessCertificateJson: '{}',
+      approvedByFacultyId: null,
+      approvedAt: null,
+      status: 'validated',
+      createdAt: TEST_NOW,
+      updatedAt: TEST_NOW,
+    })
+
+    const result = await ensureMsruasProofSandboxSeeded(current.db, {
+      now: TEST_NOW,
+      policy: DEFAULT_POLICY,
+    })
+
+    expect(result).toEqual({
+      seeded: true,
+      batchId: MSRUAS_PROOF_BATCH_ID,
+    })
+    expect(await current.db.select().from(students)).toHaveLength(120)
+    expect(await current.db.select().from(mentorAssignments)).toHaveLength(120)
+  })
+
+  it('fails closed when a proof import exists with an incomplete cohort', async () => {
+    current = await createProofSeedTestDb()
+
+    await ensureMsruasProofSandboxSeeded(current.db, {
+      now: TEST_NOW,
+      policy: DEFAULT_POLICY,
+    })
+    await current.db.delete(mentorAssignments)
+
+    await expect(ensureMsruasProofSandboxSeeded(current.db, {
+      now: TEST_NOW,
+      policy: DEFAULT_POLICY,
+    })).rejects.toThrow(/cohort is incomplete/)
+  })
+
+  it('fails closed when a proof import exists without its rich curriculum graph', async () => {
+    current = await createProofSeedTestDb()
+
+    await ensureMsruasProofSandboxSeeded(current.db, {
+      now: TEST_NOW,
+      policy: DEFAULT_POLICY,
+    })
+    await current.pool.query('TRUNCATE TABLE curriculum_nodes CASCADE')
+
+    await expect(ensureMsruasProofSandboxSeeded(current.db, {
+      now: TEST_NOW,
+      policy: DEFAULT_POLICY,
+    })).rejects.toThrow(/curriculumNodes=0\/36/)
+  })
+
+  it('fails closed when a proof import exists with an incomplete projection ledger', async () => {
+    current = await createProofSeedTestDb()
+
+    await ensureMsruasProofSandboxSeeded(current.db, {
+      now: TEST_NOW,
+      policy: DEFAULT_POLICY,
+    })
+    await current.db.insert(simulationStageCheckpoints).values({
+      simulationStageCheckpointId: 'partial_checkpoint_sem1_pre_tt1',
+      simulationRunId: MSRUAS_PROOF_SIMULATION_RUN_ID,
+      semesterNumber: 1,
+      stageKey: 'pre-tt1',
+      stageLabel: 'Pre TT1',
+      stageDescription: 'Partial playback payload used to prove fail-closed recovery.',
+      stageOrder: 0,
+      previousCheckpointId: null,
+      nextCheckpointId: null,
+      summaryJson: '{}',
+      createdAt: TEST_NOW,
+      updatedAt: TEST_NOW,
+    })
+
+    await expect(ensureMsruasProofSandboxSeeded(current.db, {
+      now: TEST_NOW,
+      policy: DEFAULT_POLICY,
+    })).rejects.toThrow(/checkpoints=1\/30, projectionRows=0\/21600/)
   })
 
   it('rebuilds the canonical proof batch shell when the proof cohort already exists', async () => {

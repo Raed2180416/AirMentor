@@ -52,6 +52,25 @@ describe('AirMentorApiClient', () => {
     }))
   })
 
+  it('aborts stalled operational requests with a clear timeout error', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason ?? new Error('aborted')), { once: true })
+    }))
+    const client = new AirMentorApiClient('http://127.0.0.1:4000', fetchMock as typeof fetch, undefined, 25)
+
+    try {
+      const pending = expect(client.getUiPreferences()).rejects.toMatchObject({
+        status: 0,
+        message: 'API request timed out after 25ms',
+      })
+      await vi.advanceTimersByTimeAsync(25)
+      await pending
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('throws an API error for non-2xx responses', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       error: 'UNAUTHORIZED',

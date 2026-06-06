@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { AlertTriangle, ArrowUpRight, Eye, Shield } from 'lucide-react'
-import { CO_COLORS, CO_MAP, T, mono, sora, yearColor, type CODef, type CoAttainmentRow, type Offering, type Student } from '../data'
+import { CO_COLORS, CO_MAP, T, mono, sora, yearColor, type CODef, type CoAttainmentRow, type Offering, type Student, type StudentHistoryRecord } from '../data'
 import type {
   EntryKind,
   EntryLockMap,
@@ -14,7 +14,8 @@ import type {
 import {
   addBlueprintPart,
   addBlueprintQuestion,
-  computeEvaluation,
+  computeStageAwareEvaluation,
+  computeCoAttainmentRows,
   getAssessmentComponentScore,
   normalizeBlueprint,
   removeBlueprintPart,
@@ -29,8 +30,61 @@ function getAttendancePct(student: Student) {
   return student.totalClasses > 0 ? Math.round((student.present / Math.max(1, student.totalClasses)) * 100) : null
 }
 
-function hasRiskEvidence(offering: Offering, student: Student) {
-  return offering.stage >= 2 && student.riskBand != null && student.riskProb != null
+type StageEvidenceKind = 'tt1' | 'tt2' | 'coursework' | 'see'
+
+const PROOF_STAGE_RANK: Record<string, number> = {
+  'pre-tt1': 0,
+  'post-tt1': 1,
+  'post-tt2': 2,
+  'post-assignments': 3,
+  'post-see': 4,
+}
+
+function getProofStageRank(proofStageKey?: string | null) {
+  if (!proofStageKey) return null
+  return PROOF_STAGE_RANK[proofStageKey.toLowerCase()] ?? null
+}
+
+function isProofEvidenceVisible(proofStageKey: string | null | undefined, kind: StageEvidenceKind) {
+  const rank = getProofStageRank(proofStageKey)
+  if (rank == null) return true
+  if (kind === 'tt1') return rank >= 1
+  if (kind === 'tt2') return rank >= 2
+  if (kind === 'coursework') return rank >= 3
+  return rank >= 4
+}
+
+function isRiskEvidenceVisible(offering: Offering, proofStageKey?: string | null) {
+  const rank = getProofStageRank(proofStageKey)
+  return rank == null ? offering.stage >= 2 : rank >= 1
+}
+
+function hasRiskEvidence(offering: Offering, student: Student, proofStageKey?: string | null) {
+  return isRiskEvidenceVisible(offering, proofStageKey) && student.riskBand != null && student.riskProb != null
+}
+
+function getStageRailProgress(offering: Offering, proofStageKey?: string | null) {
+  const rank = getProofStageRank(proofStageKey)
+  return rank == null ? offering.stageInfo.stage : Math.max(1, Math.min(5, rank + 1))
+}
+
+function getDisplayStageInfo(offering: Offering, proofStageKey?: string | null) {
+  const rank = getProofStageRank(proofStageKey)
+  if (rank == null) return offering.stageInfo
+  const labels: Record<string, { label: string; desc: string }> = {
+    'pre-tt1': { label: 'Pre TT1', desc: 'Before first term-test evidence' },
+    'post-tt1': { label: 'Post TT1', desc: 'TT1 evidence available' },
+    'post-tt2': { label: 'Post TT2', desc: 'TT1 and TT2 evidence available' },
+    'post-assignments': { label: 'Post Assignments', desc: 'Coursework evidence available' },
+    'post-see': { label: 'Post SEE', desc: 'Semester-end evidence available' },
+  }
+  const copy = labels[proofStageKey?.toLowerCase() ?? ''] ?? labels['pre-tt1']
+  return {
+    ...offering.stageInfo,
+    stage: rank + 1,
+    label: copy.label,
+    desc: copy.desc,
+  }
 }
 
 function CourseOutcomeControl({ co, active, color, disabled, onClick }: { co: CODef; active: boolean; color: string; disabled: boolean; onClick: () => void }) {
@@ -74,6 +128,8 @@ export function CourseDetail({
   onUpdateBlueprint,
   courseOutcomes,
   coAttainmentRows,
+  studentHistoryByUsn,
+  proofStageKey,
 }: {
   offering: Offering
   onBack: () => void
@@ -87,6 +143,8 @@ export function CourseDetail({
   onUpdateBlueprint: (kind: TTKind, next: TermTestBlueprint) => void
   courseOutcomes?: CODef[]
   coAttainmentRows?: CoAttainmentRow[]
+  studentHistoryByUsn?: Record<string, StudentHistoryRecord>
+  proofStageKey?: string | null
 }) {
   const { getStudentsPatched } = useAppSelectors()
   const [tab, setTab] = useState(initialTab ?? 'overview')
@@ -94,6 +152,12 @@ export function CourseDetail({
   const yearTint = yearColor(offering.year)
   const students = useMemo(() => getStudentsPatched(offering), [getStudentsPatched, offering])
   const cos = courseOutcomes && courseOutcomes.length > 0 ? courseOutcomes : (CO_MAP[offering.code] || CO_MAP.default)
+  const fallbackCoAttainmentRows = useMemo(() => computeCoAttainmentRows(students, cos, blueprints), [blueprints, cos, students])
+  const displayCoAttainmentRows = coAttainmentRows?.some(row => row.studentsCounted > 0)
+    ? coAttainmentRows
+    : fallbackCoAttainmentRows
+  const stageRailProgress = getStageRailProgress(offering, proofStageKey)
+  const displayStageInfo = getDisplayStageInfo(offering, proofStageKey)
   const stageRail = [
     'Pre TT1',
     'Post TT1',
@@ -102,24 +166,29 @@ export function CourseDetail({
     'Post SEE',
     'Post Project',
   ]
-  const tabLocked = (tabId: string) => (tabId === 'tt2' && offering.stageInfo.stage < 2) || (tabId === 'risk' && offering.stage < 2)
+  const tabLocked = (tabId: string) => {
+    if (proofStageKey && (tabId === 'quizzes' || tabId === 'assignments')) return !isProofEvidenceVisible(proofStageKey, 'coursework')
+    if (proofStageKey && tabId === 'co') return !isProofEvidenceVisible(proofStageKey, 'tt1')
+    if (tabId === 'tt2') return proofStageKey ? !isProofEvidenceVisible(proofStageKey, 'tt2') : offering.stageInfo.stage < 2
+    return tabId === 'risk' && !isRiskEvidenceVisible(offering, proofStageKey)
+  }
   const activeTabContent = tab === 'overview'
-    ? <OverviewTab offering={offering} cos={cos} students={students} scheme={scheme} setTab={setTab} />
+    ? <OverviewTab offering={offering} cos={cos} students={students} scheme={scheme} proofStageKey={proofStageKey} setTab={setTab} />
     : tab === 'risk'
-      ? <RiskTab offering={offering} students={students} onOpenStudent={onOpenStudent} />
+      ? <RiskTab offering={offering} students={students} proofStageKey={proofStageKey} onOpenStudent={onOpenStudent} />
       : tab === 'attendance'
-        ? <AttendanceTab offering={offering} students={students} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('attendance')} />
+        ? <AttendanceTab offering={offering} students={students} proofStageKey={proofStageKey} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('attendance')} />
         : tab === 'tt1'
-          ? <TTTab offering={offering} ttNum={1} cos={cos} blueprint={blueprints.tt1} isLocked={lockMap.tt1} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt1', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />
+          ? <TTTab offering={offering} ttNum={1} cos={cos} blueprint={blueprints.tt1} isLocked={lockMap.tt1} students={students} proofStageKey={proofStageKey} onChangeBlueprint={next => onUpdateBlueprint('tt1', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />
           : tab === 'tt2'
-            ? <TTTab offering={offering} ttNum={2} cos={cos} blueprint={blueprints.tt2} isLocked={lockMap.tt2} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt2', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />
+            ? <TTTab offering={offering} ttNum={2} cos={cos} blueprint={blueprints.tt2} isLocked={lockMap.tt2} students={students} proofStageKey={proofStageKey} onChangeBlueprint={next => onUpdateBlueprint('tt2', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />
             : tab === 'quizzes'
-              ? <QuizzesTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('quiz')} />
+              ? <QuizzesTab students={students} scheme={scheme} proofStageKey={proofStageKey} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('quiz')} />
               : tab === 'assignments'
-                ? <AssignmentsTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('assignment')} />
+                ? <AssignmentsTab students={students} scheme={scheme} proofStageKey={proofStageKey} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('assignment')} />
                 : tab === 'co'
-                  ? <COTab cos={cos} rows={coAttainmentRows ?? []} />
-                  : <GradeBookTab offering={offering} students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('finals')} onOpenSchemeSetup={onOpenSchemeSetup} />
+                  ? <COTab cos={cos} rows={displayCoAttainmentRows} proofStageKey={proofStageKey} />
+                  : <GradeBookTab offering={offering} students={students} scheme={scheme} studentHistoryByUsn={studentHistoryByUsn} proofStageKey={proofStageKey} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('finals')} onOpenSchemeSetup={onOpenSchemeSetup} />
 
   return (
     <PageShell size="wide" style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', padding: 0 }}>
@@ -130,7 +199,7 @@ export function CourseDetail({
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
               <Chip color={yearTint}>{offering.year}</Chip><Chip color={T.muted}>{offering.dept}</Chip>
               <Chip color={T.muted}>Sem {offering.sem}</Chip><Chip color={T.muted}>Sec {offering.section}</Chip>
-              <Chip color={offering.stageInfo.color}>{offering.stageInfo.label} · {offering.stageInfo.desc}</Chip>
+              <Chip color={displayStageInfo.color}>{displayStageInfo.label} · {displayStageInfo.desc}</Chip>
             </div>
             <div style={{ ...sora, fontWeight: 800, fontSize: 20, color: T.text, lineHeight: 1.2 }}>
               <span style={{ color: yearTint }}>{offering.code}</span> — {offering.title}
@@ -142,21 +211,21 @@ export function CourseDetail({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5 }}>Academic progress</div>
-              <div style={{ ...sora, fontWeight: 800, fontSize: 14, color: T.text }}>Current stage: <span style={{ color: offering.stageInfo.color }}>{offering.stageInfo.label}</span></div>
-              <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>{offering.stageInfo.desc}</div>
+              <div style={{ ...sora, fontWeight: 800, fontSize: 14, color: T.text }}>Current stage: <span style={{ color: displayStageInfo.color }}>{displayStageInfo.label}</span></div>
+              <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>{displayStageInfo.desc}</div>
             </div>
-            <Chip color={offering.stageInfo.color}>Stage {offering.stageInfo.stage}</Chip>
+            <Chip color={displayStageInfo.color}>Stage {displayStageInfo.stage}</Chip>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginTop: 14, maxWidth: 640 }}>
             {stageRail.map((label, index) => {
-              const stageReached = index + 1 <= offering.stageInfo.stage
+              const stageReached = index + 1 <= stageRailProgress
               return (
               <div key={label} style={{ display: 'flex', alignItems: 'center', flex: index < stageRail.length - 1 ? 1 : 0 }}>
                 <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...mono, fontSize: 10, fontWeight: 700, background: stageReached ? offering.stageInfo.color : T.border2, border: `2px solid ${stageReached ? offering.stageInfo.color : T.dim}`, color: stageReached ? '#fff' : T.dim }}>
                   {stageReached ? '✓' : index + 1}
                 </div>
                 <span style={{ ...mono, fontSize: 9, color: T.dim, marginLeft: 6, whiteSpace: 'nowrap' }}>{label}</span>
-                {index < stageRail.length - 1 && <div style={{ flex: 1, height: 2, background: index < offering.stageInfo.stage - 1 ? offering.stageInfo.color : T.border, margin: '0 8px' }} />}
+                {index < stageRail.length - 1 && <div style={{ flex: 1, height: 2, background: index < stageRailProgress - 1 ? offering.stageInfo.color : T.border, margin: '0 8px' }} />}
               </div>
             )})}
           </div>
@@ -199,7 +268,7 @@ export function CourseDetail({
   )
 }
 
-function OverviewTab({ offering, cos, students, scheme, setTab }: { offering: Offering; cos: CODef[]; students: Student[]; scheme: SchemeState; setTab: (tab: string) => void }) {
+function OverviewTab({ offering, cos, students, scheme, proofStageKey, setTab }: { offering: Offering; cos: CODef[]; students: Student[]; scheme: SchemeState; proofStageKey?: string | null; setTab: (tab: string) => void }) {
   const studentsWithAttendance = students.filter(student => student.totalClasses > 0)
   const detained = studentsWithAttendance.filter(student => student.present / student.totalClasses < 0.65).length
   const atRisk = studentsWithAttendance.filter(student => {
@@ -207,13 +276,17 @@ function OverviewTab({ offering, cos, students, scheme, setTab }: { offering: Of
     return pct >= 0.65 && pct < 0.75
   }).length
   const good = studentsWithAttendance.filter(student => student.present / student.totalClasses >= 0.75).length
-  const studentsWithRisk = students.filter(student => hasRiskEvidence(offering, student))
+  const studentsWithRisk = students.filter(student => hasRiskEvidence(offering, student, proofStageKey))
   const highRisk = studentsWithRisk.filter(student => student.riskBand === 'High').length
   const hasAttendance = studentsWithAttendance.length > 0
-  const hasTt1Scores = students.some(student => student.tt1Score !== null)
-  const hasTt2Scores = students.some(student => student.tt2Score !== null)
-  const hasQuizScores = students.some(student => student.quiz1 !== null || student.quiz2 !== null)
-  const hasAssignmentScores = students.some(student => student.asgn1 !== null || student.asgn2 !== null)
+  const hasTt1Scores = isProofEvidenceVisible(proofStageKey, 'tt1') && students.some(student => student.tt1Score !== null)
+  const hasTt2Scores = isProofEvidenceVisible(proofStageKey, 'tt2') && students.some(student => student.tt2Score !== null)
+  const hasQuizScores = isProofEvidenceVisible(proofStageKey, 'coursework') && students.some(student =>
+    scheme.quizComponents.some((component, index) => getAssessmentComponentScore(student, 'quiz', component, index) !== null),
+  )
+  const hasAssignmentScores = isProofEvidenceVisible(proofStageKey, 'coursework') && students.some(student =>
+    scheme.assignmentComponents.some((component, index) => getAssessmentComponentScore(student, 'assignment', component, index) !== null),
+  )
   const checks = [
     { label: 'Scheme configured', done: scheme.status !== 'Needs Setup', tab: 'gradebook' },
     { label: 'Attendance captured', done: hasAttendance, tab: 'attendance' },
@@ -289,9 +362,9 @@ function OverviewTab({ offering, cos, students, scheme, setTab }: { offering: Of
   )
 }
 
-function RiskTab({ offering, students, onOpenStudent }: { offering: Offering; students: Student[]; onOpenStudent: (student: Student) => void }) {
+function RiskTab({ offering, students, proofStageKey, onOpenStudent }: { offering: Offering; students: Student[]; proofStageKey?: string | null; onOpenStudent: (student: Student) => void }) {
   const [filter, setFilter] = useState<'all' | RiskBand>('all')
-  const atRisk = students.filter(student => hasRiskEvidence(offering, student))
+  const atRisk = students.filter(student => hasRiskEvidence(offering, student, proofStageKey))
   const filtered = filter === 'all' ? atRisk : atRisk.filter(student => student.riskBand === filter)
   const sorted = [...filtered].sort((left, right) => (right.riskProb ?? 0) - (left.riskProb ?? 0))
   const high = atRisk.filter(student => student.riskBand === 'High').length
@@ -377,7 +450,7 @@ function RiskTab({ offering, students, onOpenStudent }: { offering: Offering; st
   )
 }
 
-function AttendanceTab({ offering, students, onOpenStudent, onOpenEntryHub }: { offering: Offering; students: Student[]; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
+function AttendanceTab({ offering, students, proofStageKey, onOpenStudent, onOpenEntryHub }: { offering: Offering; students: Student[]; proofStageKey?: string | null; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
   const sorted = [...students].sort((left, right) => (getAttendancePct(left) ?? Number.POSITIVE_INFINITY) - (getAttendancePct(right) ?? Number.POSITIVE_INFINITY))
   const studentsWithAttendance = students.filter(student => getAttendancePct(student) != null)
   const hasAttendance = studentsWithAttendance.length > 0
@@ -418,7 +491,7 @@ function AttendanceTab({ offering, students, onOpenStudent, onOpenEntryHub }: { 
               {sorted.map((student, index) => {
                 const pct = getAttendancePct(student)
                 const color = pct == null ? T.dim : pct >= 75 ? T.success : pct >= 65 ? T.warning : T.danger
-                const riskApplicable = hasRiskEvidence(offering, student)
+                const riskApplicable = hasRiskEvidence(offering, student, proofStageKey)
                 return (
                   <tr key={student.id} data-clickable-row="true" onClick={() => onOpenStudent(student)} style={{ cursor: 'pointer' }}>
                     <TD style={{ ...mono, fontSize: 10, color: T.dim }}>{index + 1}</TD>
@@ -446,6 +519,7 @@ function TTTab({
   blueprint,
   isLocked,
   students,
+  proofStageKey,
   onChangeBlueprint,
   onOpenEntryHub,
   onOpenStudent,
@@ -456,6 +530,7 @@ function TTTab({
   blueprint: TermTestBlueprint
   isLocked: boolean
   students: Student[]
+  proofStageKey?: string | null
   onChangeBlueprint: (next: TermTestBlueprint) => void
   onOpenEntryHub: (kind: EntryKind) => void
   onOpenStudent: (student: Student) => void
@@ -463,6 +538,7 @@ function TTTab({
   const kind: TTKind = ttNum === 1 ? 'tt1' : 'tt2'
   const normalized = useMemo(() => normalizeBlueprint(kind, blueprint), [blueprint, kind])
   const totalMax = normalized.totalMarks
+  const scoresVisible = isProofEvidenceVisible(proofStageKey, kind)
   const hasEnteredScores = students.some(student => (ttNum === 1 ? student.tt1Score : student.tt2Score) !== null)
   const canEdit = !isLocked && !hasEnteredScores
   const blueprintReady = totalMax === 25
@@ -526,6 +602,11 @@ function TTTab({
       {hasEnteredScores && !isLocked && (
         <Card glow={T.warning} style={{ marginBottom: 14 }}>
           <div style={{ ...mono, fontSize: 11, color: T.warning }}>TT{ttNum} scores already exist for this class. Structural blueprint edits are frozen to avoid remapping existing marks onto a different question shape.</div>
+        </Card>
+      )}
+      {!scoresVisible && (
+        <Card glow={T.blue} style={{ marginBottom: 14 }}>
+          <div style={{ ...mono, fontSize: 11, color: T.blue }}>TT{ttNum} marks are intentionally hidden until the proof playback reaches post-TT{ttNum}. The seeded future rows stay available to the simulation, but this checkpoint view does not leak them.</div>
         </Card>
       )}
 
@@ -596,8 +677,8 @@ function TTTab({
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['USN', 'Name', 'Raw Total', 'Scaled /15', 'Risk', ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
             <tbody>
-              {students.slice(0, 12).map(student => {
-                const raw = ttNum === 1 ? student.tt1Score : student.tt2Score
+              {students.map(student => {
+                const raw = scoresVisible ? (ttNum === 1 ? student.tt1Score : student.tt2Score) : null
                 const scaled = raw !== null ? ((raw / Math.max(1, totalMax || 25)) * 15) : null
                 return (
                   <tr key={student.id}>
@@ -605,7 +686,7 @@ function TTTab({
                     <TD style={{ ...sora, fontSize: 11, color: T.text }}>{student.name}</TD>
                     <TD style={{ ...mono, fontSize: 11, color: raw !== null ? T.text : T.dim }}>{raw !== null ? `${raw}/${Math.max(1, totalMax || 25)}` : '—'}</TD>
                     <TD style={{ ...mono, fontSize: 11, color: scaled !== null && scaled >= 7.5 ? T.success : T.warning }}>{scaled !== null ? scaled.toFixed(1) : '—'}</TD>
-                    <TD>{hasRiskEvidence(offering, student) ? <RiskBadge band={student.riskBand} prob={student.riskProb} /> : <Chip color={T.dim} size={9}>Not applicable yet</Chip>}</TD>
+                    <TD>{hasRiskEvidence(offering, student, proofStageKey) ? <RiskBadge band={student.riskBand} prob={student.riskProb} /> : <Chip color={T.dim} size={9}>Not applicable yet</Chip>}</TD>
                     <TD><button aria-label={`Open ${student.name} drawer`} title="Open student" onClick={() => onOpenStudent(student)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                   </tr>
                 )
@@ -618,23 +699,25 @@ function TTTab({
   )
 }
 
-function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { students: Student[]; scheme: SchemeState; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
+function QuizzesTab({ students, scheme, proofStageKey, onOpenStudent, onOpenEntryHub }: { students: Student[]; scheme: SchemeState; proofStageKey?: string | null; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
   const totalQuizWeight = sumComponentWeightage(scheme.quizComponents)
+  const scoresVisible = isProofEvidenceVisible(proofStageKey, 'coursework')
   const quizzes = scheme.quizComponents.map((component, index) => ({
     component,
     id: component.id,
     name: component.label,
     rawMax: component.rawMax,
     weightage: component.weightage,
-    entered: students.some(student => getAssessmentComponentScore(student, 'quiz', component, index) !== null),
+    entered: scoresVisible && students.some(student => getAssessmentComponentScore(student, 'quiz', component, index) !== null),
   }))
 
   return (
     <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Quizzes <span style={{ ...mono, fontSize: 11, color: T.muted }}>— Dynamic scheme-aware components</span></div>
-        <Btn size="sm" onClick={onOpenEntryHub}>Proceed to Quiz Entry →</Btn>
+        <Btn size="sm" disabled={!scoresVisible && Boolean(proofStageKey)} title={scoresVisible ? 'Proceed to quiz entry' : 'Quiz evidence is hidden until post-assignments playback.'} onClick={onOpenEntryHub}>Proceed to Quiz Entry →</Btn>
       </div>
+      {!scoresVisible && <Card glow={T.blue} style={{ marginBottom: 14 }}><div style={{ ...mono, fontSize: 11, color: T.blue }}>Quiz evidence is intentionally hidden until the proof playback reaches post-assignments.</div></Card>}
       <div style={{ display: 'flex', gap: 12, marginBottom: 18 }}>
         {quizzes.length === 0 && <Card style={{ flex: 1, padding: '14px 16px' }}><div style={{ ...mono, fontSize: 11, color: T.dim }}>No quiz components configured for this offering.</div></Card>}
         {quizzes.map(quiz => (
@@ -650,16 +733,16 @@ function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { stude
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['#', 'USN', 'Name', ...quizzes.map(quiz => `${quiz.name} /${quiz.rawMax} · W${quiz.weightage}`), `Weighted /${totalQuizWeight}`, ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
             <tbody>
-              {students.slice(0, 15).map((student, index) => (
+              {students.map((student, index) => (
                 <tr key={student.id}>
                   <TD style={{ ...mono, fontSize: 10, color: T.dim }}>{index + 1}</TD>
                   <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
                   <TD style={{ ...sora, fontSize: 12, color: T.text }}>{student.name}</TD>
                   {quizzes.map((quiz, quizIndex) => {
-                    const score = getAssessmentComponentScore(student, 'quiz', quiz.component, quizIndex)
+                    const score = scoresVisible ? getAssessmentComponentScore(student, 'quiz', quiz.component, quizIndex) : null
                     return <TD key={quiz.id} style={{ ...mono, fontSize: 12, color: score !== null ? T.text : T.dim }}>{score ?? '—'}</TD>
                   })}
-                  <TD style={{ ...mono, fontSize: 12, color: T.muted }}>{computeEvaluation(student, scheme).quizScaled.toFixed(1)}</TD>
+                  <TD style={{ ...mono, fontSize: 12, color: scoresVisible ? T.muted : T.dim }}>{scoresVisible ? computeStageAwareEvaluation(student, scheme, proofStageKey).quizScaled.toFixed(1) : '—'}</TD>
                   <TD><button aria-label={`Open ${student.name} drawer`} title="Open student" onClick={() => onOpenStudent(student)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                 </tr>
               ))}
@@ -671,23 +754,25 @@ function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { stude
   )
 }
 
-function AssignmentsTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { students: Student[]; scheme: SchemeState; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
+function AssignmentsTab({ students, scheme, proofStageKey, onOpenStudent, onOpenEntryHub }: { students: Student[]; scheme: SchemeState; proofStageKey?: string | null; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
   const totalAssignmentWeight = sumComponentWeightage(scheme.assignmentComponents)
+  const scoresVisible = isProofEvidenceVisible(proofStageKey, 'coursework')
   const assignments = scheme.assignmentComponents.map((component, index) => ({
     component,
     id: component.id,
     label: component.label,
     rawMax: component.rawMax,
     weightage: component.weightage,
-    entered: students.some(student => getAssessmentComponentScore(student, 'assignment', component, index) !== null),
+    entered: scoresVisible && students.some(student => getAssessmentComponentScore(student, 'assignment', component, index) !== null),
   }))
 
   return (
     <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Assignments</div>
-        <Btn size="sm" onClick={onOpenEntryHub}>Proceed to Assignment Entry →</Btn>
+        <Btn size="sm" disabled={!scoresVisible && Boolean(proofStageKey)} title={scoresVisible ? 'Proceed to assignment entry' : 'Assignment evidence is hidden until post-assignments playback.'} onClick={onOpenEntryHub}>Proceed to Assignment Entry →</Btn>
       </div>
+      {!scoresVisible && <Card glow={T.blue} style={{ marginBottom: 14 }}><div style={{ ...mono, fontSize: 11, color: T.blue }}>Assignment evidence is intentionally hidden until the proof playback reaches post-assignments.</div></Card>}
       <div style={{ display: 'flex', gap: 12, marginBottom: 18 }}>
         {assignments.length === 0 && <Card style={{ flex: 1, padding: '14px 16px' }}><div style={{ ...mono, fontSize: 11, color: T.dim }}>No assignment components configured for this offering.</div></Card>}
         {assignments.map(assignment => (
@@ -703,16 +788,16 @@ function AssignmentsTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { s
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['#', 'USN', 'Name', ...assignments.map(item => `${item.label} /${item.rawMax} · W${item.weightage}`), `Weighted /${totalAssignmentWeight}`, ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
             <tbody>
-              {students.slice(0, 15).map((student, index) => (
+              {students.map((student, index) => (
                 <tr key={student.id}>
                   <TD style={{ ...mono, fontSize: 10, color: T.dim }}>{index + 1}</TD>
                   <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
                   <TD style={{ ...sora, fontSize: 12, color: T.text }}>{student.name}</TD>
                   {assignments.map((assignment, assignmentIndex) => {
-                    const score = getAssessmentComponentScore(student, 'assignment', assignment.component, assignmentIndex)
+                    const score = scoresVisible ? getAssessmentComponentScore(student, 'assignment', assignment.component, assignmentIndex) : null
                     return <TD key={assignment.id} style={{ ...mono, fontSize: 12, color: score !== null ? T.text : T.dim }}>{score ?? '—'}</TD>
                   })}
-                  <TD style={{ ...mono, fontSize: 12, color: T.muted }}>{computeEvaluation(student, scheme).asgnScaled.toFixed(1)}</TD>
+                  <TD style={{ ...mono, fontSize: 12, color: scoresVisible ? T.muted : T.dim }}>{scoresVisible ? computeStageAwareEvaluation(student, scheme, proofStageKey).asgnScaled.toFixed(1) : '—'}</TD>
                   <TD><button aria-label={`Open ${student.name} drawer`} title="Open student" onClick={() => onOpenStudent(student)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                 </tr>
               ))}
@@ -724,23 +809,34 @@ function AssignmentsTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { s
   )
 }
 
-function COTab({ cos, rows }: { cos: CODef[]; rows: CoAttainmentRow[] }) {
-  const target = 60
+function COTab({ cos, rows, proofStageKey }: { cos: CODef[]; rows: CoAttainmentRow[]; proofStageKey?: string | null }) {
   const rowByCoId = Object.fromEntries(rows.map(row => [row.coId, row])) as Record<string, CoAttainmentRow | undefined>
+  const tt1Visible = isProofEvidenceVisible(proofStageKey, 'tt1')
+  const tt2Visible = isProofEvidenceVisible(proofStageKey, 'tt2')
+  const overallVisible = isProofEvidenceVisible(proofStageKey, 'see')
 
   return (
     <div style={{ padding: '24px 32px' }}>
       <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text, marginBottom: 16 }}>CO Attainment Report</div>
+      {!overallVisible && <Card glow={T.blue} style={{ marginBottom: 14 }}><div style={{ ...mono, fontSize: 11, color: T.blue }}>CO attainment is stage-aware in proof playback: TT1 appears after TT1, TT2 after TT2, and final overall attainment after SEE.</div></Card>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 22 }}>
         {cos.map((co, index) => {
           const attainment = rowByCoId[co.id]
-          const value = attainment?.overallAttainment ?? null
+          const target = attainment?.target ?? 60
+          const value = overallVisible
+            ? attainment?.overallAttainment ?? null
+            : tt2Visible
+              ? attainment?.tt2Attainment ?? null
+              : tt1Visible
+                ? attainment?.tt1Attainment ?? null
+                : null
+          const evidenceLabel = overallVisible ? 'Overall' : tt2Visible ? 'TT2' : tt1Visible ? 'TT1' : 'No evidence yet'
           const color = CO_COLORS[index % CO_COLORS.length]
           return (
             <Card key={co.id} glow={color} style={{ textAlign: 'center', padding: '14px 10px' }}>
               <div style={{ ...mono, fontSize: 10, color, marginBottom: 4 }}>{co.id}</div>
               <div style={{ ...sora, fontWeight: 800, fontSize: 28, color: value == null ? T.dim : value >= target ? T.success : T.danger }}>{value != null ? `${value}%` : '—'}</div>
-              <div style={{ ...mono, fontSize: 9, color: T.dim, marginBottom: 6 }}>{value != null ? (value >= target ? '✓ Met' : '✗ Below') : 'No data'}</div>
+              <div style={{ ...mono, fontSize: 9, color: T.dim, marginBottom: 6 }}>{value != null ? `${evidenceLabel} · ${value >= target ? '✓ Met' : '✗ Below'}` : 'No data'}</div>
               <div style={{ position: 'relative' }}>
                 <Bar val={value ?? 0} color={value == null ? T.border : value >= target ? T.success : T.danger} h={6} />
                 <div style={{ position: 'absolute', top: -1, left: `${target}%`, width: 1.5, height: 8, background: T.warning }} />
@@ -755,18 +851,22 @@ function COTab({ cos, rows }: { cos: CODef[]; rows: CoAttainmentRow[] }) {
           <tbody>
             {cos.map((co, index) => {
               const attainment = rowByCoId[co.id]
+              const target = attainment?.target ?? 60
               const color = CO_COLORS[index % CO_COLORS.length]
-              const overall = attainment?.overallAttainment ?? null
+              const tt1 = tt1Visible ? attainment?.tt1Attainment ?? null : null
+              const tt2 = tt2Visible ? attainment?.tt2Attainment ?? null : null
+              const overall = overallVisible ? attainment?.overallAttainment ?? null : null
+              const latestVisible = overall ?? tt2 ?? tt1
               return (
                 <tr key={co.id}>
                   <TD><Chip color={color} size={9}>{co.id}</Chip></TD>
                   <TD style={{ ...mono, fontSize: 11, color: T.text, maxWidth: 200 }}>{co.desc}</TD>
                   <TD><Chip color={T.dim} size={9}>{co.bloom}</Chip></TD>
-                  <TD style={{ ...mono, fontSize: 12, fontWeight: 700, color: attainment?.tt1Attainment != null ? (attainment.tt1Attainment >= target ? T.success : T.danger) : T.dim }}>{attainment?.tt1Attainment != null ? `${attainment.tt1Attainment}%` : '—'}</TD>
-                  <TD style={{ ...mono, fontSize: 12, fontWeight: 700, color: attainment?.tt2Attainment != null ? (attainment.tt2Attainment >= target ? T.success : T.danger) : T.dim }}>{attainment?.tt2Attainment != null ? `${attainment.tt2Attainment}%` : '—'}</TD>
+                  <TD style={{ ...mono, fontSize: 12, fontWeight: 700, color: tt1 != null ? (tt1 >= target ? T.success : T.danger) : T.dim }}>{tt1 != null ? `${tt1}%` : '—'}</TD>
+                  <TD style={{ ...mono, fontSize: 12, fontWeight: 700, color: tt2 != null ? (tt2 >= target ? T.success : T.danger) : T.dim }}>{tt2 != null ? `${tt2}%` : '—'}</TD>
                   <TD style={{ ...mono, fontSize: 12, fontWeight: 700, color: overall != null ? (overall >= target ? T.success : T.danger) : T.dim }}>{overall != null ? `${overall}%` : '—'}</TD>
                   <TD style={{ ...mono, fontSize: 11, color: T.muted }}>{attainment?.studentsCounted ?? 0}</TD>
-                  <TD>{overall != null ? (overall >= target ? <Chip color={T.success} size={9}>✓ Met</Chip> : <Chip color={T.danger} size={9}>✗ Below</Chip>) : <Chip color={T.dim} size={9}>Pending</Chip>}</TD>
+                  <TD>{latestVisible != null ? (latestVisible >= target ? <Chip color={T.success} size={9}>✓ Met</Chip> : <Chip color={T.danger} size={9}>✗ Below</Chip>) : <Chip color={T.dim} size={9}>Pending</Chip>}</TD>
                 </tr>
               )
             })}
@@ -781,6 +881,8 @@ function GradeBookTab({
   offering,
   students,
   scheme,
+  studentHistoryByUsn,
+  proofStageKey,
   onOpenStudent,
   onOpenEntryHub,
   onOpenSchemeSetup,
@@ -788,6 +890,8 @@ function GradeBookTab({
   offering: Offering
   students: Student[]
   scheme: SchemeState
+  studentHistoryByUsn?: Record<string, StudentHistoryRecord>
+  proofStageKey?: string | null
   onOpenStudent: (student: Student) => void
   onOpenEntryHub: () => void
   onOpenSchemeSetup: () => void
@@ -828,8 +932,8 @@ function GradeBookTab({
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['USN', 'Name', `TT1 /${scheme.termTestWeights.tt1}`, `TT2 /${scheme.termTestWeights.tt2}`, `Quiz /${scheme.quizWeight}`, `Asgn /${scheme.assignmentWeight}`, `CE /${scheme.policyContext.ce}`, `SEE /${scheme.policyContext.see}`, 'Final /100', 'Band', 'Pred CGPA', 'Risk', ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
             <tbody>
-              {students.slice(0, 20).map(student => {
-                const projection = deriveAcademicProjection({ offering, student, scheme })
+              {students.map(student => {
+                const projection = deriveAcademicProjection({ offering, student, scheme, history: studentHistoryByUsn?.[student.usn] ?? null, stageKey: proofStageKey })
                 return (
                   <tr key={student.id}>
                     <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
@@ -839,11 +943,11 @@ function GradeBookTab({
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: scheme.quizWeight === 0 ? T.dim : T.text }}>{scheme.quizWeight === 0 ? '—' : projection.quizScaled.toFixed(1)}</TD>
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: scheme.assignmentWeight === 0 ? T.dim : T.text }}>{scheme.assignmentWeight === 0 ? '—' : projection.asgnScaled.toFixed(1)}</TD>
                     <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: projection.ce60 >= ceThresholds.success ? T.success : projection.ce60 >= ceThresholds.warning ? T.warning : T.danger }}>{projection.ce60.toFixed(1)}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: projection.seeRaw !== null ? T.text : T.dim }}>{projection.seeRaw !== null ? projection.seeScaled40.toFixed(1) : '—'}</TD>
-                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: projection.finalScore100 >= 60 ? T.success : projection.finalScore100 >= 40 ? T.warning : T.danger }}>{projection.finalScore100.toFixed(1)}</TD>
-                    <TD><Chip color={projection.gradePoint >= 8 ? T.success : projection.gradePoint >= 4 ? T.warning : T.danger} size={9}>{projection.bandLabel}</Chip></TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: T.blue }}>{projection.predictedCgpa.toFixed(2)}</TD>
-                    <TD>{hasRiskEvidence(offering, student) ? <RiskBadge band={student.riskBand} prob={student.riskProb} /> : <Chip color={T.dim} size={9}>Not applicable yet</Chip>}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: projection.seeRaw !== null ? T.text : T.dim }}>{projection.seeRaw !== null ? projection.seeScaled40?.toFixed(1) ?? '—' : '—'}</TD>
+                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: projection.finalScore100 != null ? (projection.finalScore100 >= 60 ? T.success : projection.finalScore100 >= 40 ? T.warning : T.danger) : T.dim }}>{projection.finalScore100?.toFixed(1) ?? '—'}</TD>
+                    <TD><Chip color={projection.gradePoint != null ? (projection.gradePoint >= 8 ? T.success : projection.gradePoint >= 4 ? T.warning : T.danger) : T.dim} size={9}>{projection.bandLabel ?? '—'}</Chip></TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: T.blue }}>{projection.predictedCgpa?.toFixed(2) ?? '—'}</TD>
+                    <TD>{hasRiskEvidence(offering, student, proofStageKey) ? <RiskBadge band={student.riskBand} prob={student.riskProb} /> : <Chip color={T.dim} size={9}>Not applicable yet</Chip>}</TD>
                     <TD><button aria-label={`Open ${student.name} drawer`} title="Open student" onClick={() => onOpenStudent(student)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                   </tr>
                 )

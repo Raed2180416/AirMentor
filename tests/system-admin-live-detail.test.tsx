@@ -5,6 +5,8 @@ import {
   formatFacultyAppointmentLabel,
   formatFacultyGrantScopeLabel,
   formatRecordProofBanner,
+  shouldOverlayProofCheckpointStudentSummary,
+  shouldShowProofCheckpointCgpa,
   shouldHydrateHierarchyEditor,
   upsertAcademicFacultyRecord,
   upsertBatchRecord,
@@ -124,6 +126,28 @@ describe('system-admin-live-detail formatting', () => {
 
     expect(markup).toContain('Use this page as context only')
     expect(markup).toContain('simulation counts are not available yet')
+  })
+
+  it('keeps proof checkpoint overlays active for proof-batch students even in the global registry', () => {
+    expect(shouldOverlayProofCheckpointStudentSummary({
+      routeSection: 'students',
+      studentBatchId: 'batch_branch_mnc_btech_2023',
+      selectedProofCheckpoint: { simulationStageCheckpointId: 'checkpoint_001' },
+      registryScope: null,
+    })).toBe(true)
+  })
+
+  it('suppresses checkpoint CGPA chips for Semester 1 pre-tt1 proof views', () => {
+    expect(shouldShowProofCheckpointCgpa({
+      proofScopeActive: true,
+      semesterNumber: 1,
+      stageKey: 'pre-tt1',
+    })).toBe(false)
+    expect(shouldShowProofCheckpointCgpa({
+      proofScopeActive: true,
+      semesterNumber: 3,
+      stageKey: 'post-tt1',
+    })).toBe(true)
   })
 
   it('prefers enriched faculty labels over raw identifiers', () => {

@@ -37,16 +37,14 @@ import {
   Btn,
   Card,
   Chip,
-  Tooltip,
   getFieldChromeStyle,
   withAlpha,
 } from './ui-primitives'
 import { SystemAdminHierarchyWorkspaceShell } from './system-admin-hierarchy-workspace-shell'
 import { SystemAdminProofDashboardWorkspace } from './system-admin-proof-dashboard-workspace'
 import { SystemAdminScopedRegistryLaunches } from './system-admin-scoped-registry-launches'
-import CurriculumGraphWorkspace from './curriculum-graph-workspace'
+import { SystemAdminCurriculumGraphWorkspace } from './system-admin-curriculum-graph'
 import {
-  CANONICAL_PROOF_ROUTE,
   isCanonicalProofBatchId,
 } from './proof-pilot'
 import type {
@@ -98,7 +96,7 @@ type AdminMiniStatProps = {
 
 function AdminMiniStat({ label, value, tone = T.accent }: AdminMiniStatProps) {
   return (
-    <div style={{ borderRadius: 16, border: `1px solid ${withAlpha(tone, '28')}`, background: `linear-gradient(180deg, ${withAlpha(tone, '12')}, ${T.surface})`, padding: '12px 14px', minWidth: 0, maxWidth: 240, boxShadow: `0 10px 24px ${withAlpha(tone, '12')}` }}>
+    <div style={{ borderRadius: 16, border: `1px solid ${withAlpha(tone, '1c')}`, background: `linear-gradient(180deg, ${withAlpha(tone, '0a')}, ${T.surface})`, padding: '12px 14px', minWidth: 0, maxWidth: 240, boxShadow: `0 8px 18px ${withAlpha(tone, '0a')}` }}>
       <div style={{ ...mono, fontSize: 9, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
       <div style={{ ...sora, fontSize: 'clamp(16px, 1.8vw, 20px)', fontWeight: 800, color: T.text, marginTop: 6, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
     </div>
@@ -757,7 +755,45 @@ export function SystemAdminFacultiesWorkspace({
   registryLaunchProps,
   apiClient,
 }: SystemAdminFacultiesWorkspaceProps) {
-  void [route, activeUniversityRegistryScope, activeUniversityStudentScopeChipLabel, activeUniversityFacultyScopeChipLabel, scopedUniversityStudents, filteredUniversityFaculty]
+  void [
+    route,
+    canonicalProofBatch,
+    activeUniversityRegistryScope,
+    activeUniversityStudentScopeChipLabel,
+    activeUniversityFacultyScopeChipLabel,
+    scopedUniversityStudents,
+    filteredUniversityFaculty,
+    curriculumFeatureConfig,
+    curriculumFeatureItems,
+    selectedCurriculumFeatureCourseId,
+    setSelectedCurriculumFeatureCourseId,
+    curriculumFeatureProfileOptions,
+    curriculumFeatureBindingMode,
+    setCurriculumFeatureBindingMode,
+    curriculumFeaturePinnedProfileId,
+    setCurriculumFeaturePinnedProfileId,
+    curriculumFeatureTargetMode,
+    setCurriculumFeatureTargetMode,
+    curriculumFeatureTargetScopeKey,
+    setCurriculumFeatureTargetScopeKey,
+    curriculumFeatureTargetScopeOptions,
+    curriculumFeatureAffectedBatchPreview,
+    curriculumLinkageGenerationStatus,
+    curriculumLinkageCandidatesLoading,
+    selectedCurriculumLinkageCandidates,
+    curriculumLinkageReviewNote,
+    setCurriculumLinkageReviewNote,
+    setCurriculumFeatureForm,
+    handleSaveCurriculumFeatureBinding,
+    handleRegenerateCurriculumLinkageCandidates,
+    handleApproveCurriculumLinkageCandidate,
+    handleRejectCurriculumLinkageCandidate,
+    handleSaveCurriculumFeatureConfig,
+    handlePreviewCurriculumFeatureConfig,
+    curriculumFeaturePreview,
+    handleLoadCurriculumFeatureHistory,
+    curriculumFeatureHistory,
+  ]
   const [syntheticProvisioningEnabled, setSyntheticProvisioningEnabled] = useState(false)
 
   useEffect(() => {
@@ -976,6 +1012,12 @@ export function SystemAdminFacultiesWorkspace({
   const hasDraftPrerequisiteText = curriculumFeatureForm.prerequisitesText.trim().length > 0
   const hasCurriculumPrerequisiteErrors = curriculumPrerequisiteValidation.errors.length > 0
   const selectedBatchIsCanonicalProof = isCanonicalProofBatchId(selectedBatch?.batchId)
+  void [
+    selectedCurriculumFeatureTargetScopeChip,
+    hasDraftPrerequisiteText,
+    hasCurriculumPrerequisiteErrors,
+    selectedBatchIsCanonicalProof,
+  ]
   const authoritativeSemesterValue = authoritativeOperationalSemester ?? selectedBatch?.currentSemester ?? null
   const authoritativeSemesterChipColor = authoritativeOperationalSemesterSource === 'proof-run' ? T.warning : T.accent
   const authoritativeSemesterLabel = authoritativeSemesterValue != null ? `Sem ${authoritativeSemesterValue}` : 'Sem unavailable'
@@ -1054,7 +1096,7 @@ export function SystemAdminFacultiesWorkspace({
       <Btn type="button" variant="ghost" onClick={() => void handleResetScopeStagePolicy()}>Reset To Inherited Stage Policy</Btn>
     </div>
   )
-  const governanceBandsPanel = selectedBatch && universityTab === 'bands' ? (
+  const governanceBandsPanel = activeGovernanceScope && universityTab === 'bands' ? (
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
       <SectionHeading title="Academic Bands" eyebrow="Evaluation" caption={`Resolved grade bands for ${activeGovernanceScope?.label ?? 'the active scope'}. Save here to create or update the local override at this exact scope.`} />
       {policyStatusChips}
@@ -1074,7 +1116,7 @@ export function SystemAdminFacultiesWorkspace({
       {policyActions}
     </Card>
   ) : null
-  const governanceCeSeePanel = selectedBatch && universityTab === 'ce-see' ? (
+  const governanceCeSeePanel = activeGovernanceScope && universityTab === 'ce-see' ? (
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
       <SectionHeading title="CE / SEE Split" eyebrow="Assessment" caption={`Configure the CE/SEE split, component caps, attendance, condonation, and working calendar at ${activeGovernanceScope?.label ?? 'the active scope'}.`} />
       {policyStatusChips}
@@ -1131,7 +1173,7 @@ export function SystemAdminFacultiesWorkspace({
       {policyActions}
     </Card>
   ) : null
-  const governanceCgpaPanel = selectedBatch && universityTab === 'cgpa' ? (
+  const governanceCgpaPanel = activeGovernanceScope && universityTab === 'cgpa' ? (
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
       <SectionHeading title="CGPA And Progression" eyebrow="Rules" caption={`Configure pass thresholds, rounding, repeat handling, progression, and risk thresholds for ${activeGovernanceScope?.label ?? 'the active scope'}.`} />
       {policyStatusChips}
@@ -1173,7 +1215,7 @@ export function SystemAdminFacultiesWorkspace({
       {policyActions}
     </Card>
   ) : null
-  const stagePolicyPanel = selectedBatch && universityTab === 'stage' ? (
+  const stagePolicyPanel = activeGovernanceScope && universityTab === 'stage' ? (
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
       <SectionHeading title="Stage Policy" eyebrow="Lifecycle" caption={`Configure inherited class-stage gates at ${activeGovernanceScope?.label ?? 'the active scope'}.`} />
       {stagePolicyStatusChips}
@@ -1356,6 +1398,12 @@ export function SystemAdminFacultiesWorkspace({
       <EmptyState title="Select a year first" body="Terms and curriculum editing unlock once a batch is selected within the chosen branch." />
     )
   ) : null
+  const curriculumPanel = selectedBatch && universityTab === 'curriculum' ? (
+    <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
+      <SectionHeading title="Curriculum Graph Builder" eyebrow="Curriculum" caption={`Visual prerequisite graph, course nodes, ML suggestions, and publish workflow for Batch ${selectedBatch.batchLabel}.`} />
+      <SystemAdminCurriculumGraphWorkspace batchId={selectedBatch.batchId} apiClient={apiClient} />
+    </Card>
+  ) : null
   const provisioningSectionLabels = batchProvisioningForm.sectionLabels
     .split(/[\n,]/)
     .map(label => label.trim().toUpperCase())
@@ -1392,11 +1440,11 @@ export function SystemAdminFacultiesWorkspace({
               ))}
             </select>
           </LabeledField>
-          <LabeledField label="Provisioning mode" hint="Live-empty and manual modes keep synthetic student creation out of the default operator flow. Enable the advanced test switch below only when you intentionally want mock identities.">
+          <LabeledField label="Provisioning mode" hint="Live-empty and manual modes keep synthetic student creation out of the default operator flow. Enable the advanced test switch below only when you intentionally want synthetic fixture identities.">
             <select value={batchProvisioningForm.mode} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, mode: event.target.value as BatchProvisioningFormState['mode'] }))} style={{ ...getFieldChromeStyle({ dense: true }), cursor: 'pointer', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}>
               <option value="live-empty">Live Empty</option>
               <option value="manual">Manual</option>
-              <option value="mock" disabled={!syntheticProvisioningEnabled}>Mock / Synthetic (advanced test only)</option>
+              <option value="mock" disabled={!syntheticProvisioningEnabled}>Synthetic Fixture (advanced test only)</option>
             </select>
           </LabeledField>
           <LabeledField label="Sections"><TextInput value={batchProvisioningForm.sectionLabels} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, sectionLabels: event.target.value }))} placeholder="A, B" /></LabeledField>
@@ -1432,7 +1480,7 @@ export function SystemAdminFacultiesWorkspace({
             {syntheticProvisioningEnabled ? 'Disable Synthetic Test Mode' : 'Enable Synthetic Test Mode'}
           </Btn>
           <Chip color={syntheticProvisioningEnabled ? T.warning : T.dim}>
-            {syntheticProvisioningEnabled ? 'Mock identities available' : 'Mock identities hidden from the default flow'}
+            {syntheticProvisioningEnabled ? 'Synthetic fixture identities available' : 'Synthetic fixture identities hidden from the default flow'}
           </Chip>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -1448,9 +1496,9 @@ export function SystemAdminFacultiesWorkspace({
           <ToggleField label="Create transcript scaffolding" checked={batchProvisioningForm.createTranscriptScaffolding} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createTranscriptScaffolding: checked }))} />
         </div>
         {!syntheticProvisioningEnabled ? (
-          <InfoBanner message="Synthetic student creation is hidden in the default operator flow. Enable the advanced test mode switch only if you intentionally need mock identities for sandbox verification." />
+          <InfoBanner message="Synthetic student creation is hidden in the default operator flow. Enable the advanced test mode switch only if you intentionally need fixture identities for sandbox verification." />
         ) : provisioningModeIsSynthetic ? (
-          <InfoBanner message="Mock mode creates persisted synthetic students using mock identities. Keep this for explicit test or sandbox runs only." tone="success" />
+          <InfoBanner message="Synthetic fixture mode creates persisted synthetic students. Keep this for explicit test or sandbox runs only." tone="success" />
         ) : null}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <Chip color={selectedProvisionFacultyPool.length === batchFacultyPool.length ? T.dim : T.accent}>
@@ -1586,7 +1634,9 @@ export function SystemAdminFacultiesWorkspace({
       workspaceLabel={universityWorkspaceLabel}
       workspaceHelperText={selectedBatch
         ? 'Use the editor cards below or the sticky tabs here to jump straight into the exact year-level control surface.'
-        : 'This area behaves as a scoped navigator plus metadata surface until a year is selected.'}
+        : activeGovernanceScope
+          ? 'Governance tabs stay live at every inherited scope here, even before you drill all the way into a year.'
+          : 'Pick a scope from the hierarchy to unlock governance, policy, and stage controls for that exact layer.'}
       workspaceMeta={workspaceMeta}
       tabActions={<SystemAdminHierarchyWorkspaceTabs tabs={universityTabOptions} activeTab={universityTab} onChange={tabId => updateUniversityTab(tabId)} />}
       workspacePanelId={`university-panel-${universityTab}`}
@@ -1594,41 +1644,7 @@ export function SystemAdminFacultiesWorkspace({
       overviewNavigator={overviewNavigator}
       yearEditors={yearEditors}
     >
-      {selectedBatch && canonicalProofBatch ? (
-        <Card data-proof-section="pilot-scope-provenance" style={{ padding: 16, display: 'grid', gap: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div>
-              <div style={{ ...mono, fontSize: 9, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Pilot Scope Provenance</div>
-              <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 6 }}>
-                {selectedBatchIsCanonicalProof ? 'Active simulation batch' : 'Not the active simulation batch'}
-              </div>
-            </div>
-            {!selectedBatchIsCanonicalProof ? (
-              <Btn
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => navigate({ ...CANONICAL_PROOF_ROUTE, batchId: canonicalProofBatch.batchId })}
-              >
-                Open Canonical Proof Batch
-              </Btn>
-            ) : null}
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Chip color={selectedBatchIsCanonicalProof ? T.success : T.warning}>
-              {selectedBatchIsCanonicalProof ? `Pilot ${selectedBatch.batchLabel}` : `Current ${selectedBatch.batchLabel}`}
-            </Chip>
-            <Chip color={authoritativeSemesterChipColor}>{`${authoritativeSemesterSourceLabel} · ${authoritativeSemesterLabel}`}</Chip>
-            <Chip color={T.accent}>{`Canonical batch ${canonicalProofBatch.batchLabel}`}</Chip>
-          </div>
-          <InfoBanner
-            tone={selectedBatchIsCanonicalProof ? 'neutral' : 'error'}
-            message={selectedBatchIsCanonicalProof
-              ? `Proof-mode sysadmin is pinned to the canonical pilot cohort ${selectedBatch.batchLabel}. Semester, curriculum, and proof surfaces resolve from ${authoritativeSemesterSourceLabel.toLowerCase()} first so the semester walkthrough does not silently fall back to another batch.`
-              : `This batch is not the active simulation target. Switch to Batch ${canonicalProofBatch.batchLabel} to run simulations and collect proof evidence.`}
-          />
-        </Card>
-      ) : null}
+
 
       {selectedBatch && batchSetupReadiness && !batchSetupReadiness.ready ? (
         <Card style={{ padding: 16, display: 'grid', gap: 10, background: `linear-gradient(180deg, ${withAlpha(T.danger, '10')}, ${T.surface})` }}>
@@ -1906,276 +1922,6 @@ export function SystemAdminFacultiesWorkspace({
             </div>
           </Card>
 
-          <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
-            <SectionHeading title="Curriculum Model Inputs" eyebrow="Curriculum" caption="Manage course outcomes, prerequisite edges, bridge modules, and topic partitions through batch-local overrides or shared scope profiles that feed recalibration and world generation." />
-            {selectedBatch && (
-              <CurriculumGraphWorkspace batchId={selectedBatch.batchId} apiClient={apiClient} />
-            )}
-            {curriculumFeatureItems.length === 0 ? (
-              <EmptyState title="No model input bundle yet" body="Save at least one curriculum row first. The sysadmin editor will then project those rows into the proof curriculum snapshot." />
-            ) : (
-              <>
-                <div style={{ display: 'grid', gap: 10 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10 }}>
-                    <div>
-                      <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Course</div>
-                      <select
-                        value={selectedCurriculumFeatureCourseId}
-                        onChange={event => {
-                          const nextId = event.target.value
-                          setSelectedCurriculumFeatureCourseId(nextId)
-                        }}
-                        style={{ width: '100%' }}
-                      >
-                        {curriculumFeatureItems.map(item => (
-                          <option key={item.curriculumCourseId} value={item.curriculumCourseId}>
-                            {`Sem ${item.semesterNumber} · ${item.courseCode} · ${item.title}`}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Resolved Snapshot</div>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <Chip color={curriculumFeatureConfig?.curriculumImportVersion ? T.accent : T.dim}>
-                          {curriculumFeatureConfig?.curriculumImportVersion
-                            ? `${curriculumFeatureConfig.curriculumImportVersion.sourceLabel} · ${curriculumFeatureConfig.curriculumImportVersion.validationStatus}`
-                            : 'No import snapshot yet'}
-                        </Chip>
-                        {curriculumFeatureConfig?.curriculumFeatureProfileFingerprint ? <Chip color={T.success}>{`Fingerprint ${curriculumFeatureConfig.curriculumFeatureProfileFingerprint.slice(0, 8)}`}</Chip> : null}
-                        {selectedCurriculumFeatureItem?.resolvedSource ? <Chip color={T.warning}>{selectedCurriculumFeatureItem.resolvedSource.label}</Chip> : null}
-                        {selectedCurriculumFeatureItem?.localOverride ? <Chip color={T.orange}>Batch-local override active</Chip> : <Chip color={T.dim}>No batch-local override</Chip>}
-                      </div>
-                    </div>
-                  </div>
-
-                  <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 10 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-                      <div>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}><Tooltip label="Controls which configuration wins when a batch inherits from a scope profile and also has a local override.">If multiple configs exist, prefer</Tooltip></div>
-                        <select value={curriculumFeatureBindingMode} onChange={event => setCurriculumFeatureBindingMode(event.target.value as typeof curriculumFeatureBindingMode)} style={{ width: '100%' }}>
-                          <option value="inherit-scope-profile">Department / branch default</option>
-                          <option value="pin-profile">A specific profile</option>
-                          <option value="local-only">This batch only</option>
-                        </select>
-                      </div>
-                      <div>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Pinned Profile</div>
-                        <select value={curriculumFeaturePinnedProfileId} disabled={curriculumFeatureBindingMode !== 'pin-profile'} onChange={event => setCurriculumFeaturePinnedProfileId(event.target.value)} style={{ width: '100%' }}>
-                          <option value="">Select profile</option>
-                          {curriculumFeatureProfileOptions.map(profile => (
-                            <option key={profile.curriculumFeatureProfileId} value={profile.curriculumFeatureProfileId}>
-                              {`${formatScopeTypeLabel(profile.scopeType)} · ${profile.name}`}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}><Tooltip label="Saving to 'Just this batch' creates a batch-local override. Saving to 'Shared scope profile' updates the shared config for all batches in the selected department or branch.">Apply configuration to</Tooltip></div>
-                        <select value={curriculumFeatureTargetMode} onChange={event => setCurriculumFeatureTargetMode(event.target.value as typeof curriculumFeatureTargetMode)} style={{ width: '100%' }}>
-                          <option value="batch-local-override">Just this batch</option>
-                          <option value="scope-profile">Shared scope profile</option>
-                        </select>
-                      </div>
-                      <div>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Target Scope</div>
-                        <select value={curriculumFeatureTargetScopeKey} disabled={curriculumFeatureTargetMode !== 'scope-profile'} onChange={event => setCurriculumFeatureTargetScopeKey(event.target.value)} style={{ width: '100%' }}>
-                          {curriculumFeatureTargetScopeOptions.map(scope => (
-                            <option key={`${scope.scopeType}:${scope.scopeId}`} value={`${scope.scopeType}::${scope.scopeId}`}>
-                              {`${formatScopeTypeLabel(scope.scopeType)} · ${scope.label}`}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <Chip color={curriculumFeatureConfig?.binding?.bindingMode === 'local-only' ? T.orange : T.accent}>
-                        {`Binding · ${curriculumFeatureConfig?.binding?.bindingMode === 'local-only' ? 'this batch only' : curriculumFeatureConfig?.binding?.bindingMode === 'pin-profile' ? 'pinned profile' : 'dept/branch default'}`}
-                      </Chip>
-                      {selectedCurriculumFeatureItem?.appliedProfiles?.map(profile => (
-                        <Chip key={profile.curriculumFeatureProfileId} color={T.success}>{`${formatScopeTypeLabel(profile.scopeType)} · ${profile.name}`}</Chip>
-                      ))}
-                      {curriculumFeatureTargetMode === 'scope-profile' && selectedCurriculumFeatureTargetScope ? (
-                        <Chip color={T.warning}>{`${curriculumFeatureAffectedBatchPreview.length} affected batch${curriculumFeatureAffectedBatchPreview.length === 1 ? '' : 'es'} in target scope`}</Chip>
-                      ) : null}
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn type="button" onClick={() => void handleSaveCurriculumFeatureBinding()} disabled={curriculumFeatureBindingMode === 'pin-profile' && !curriculumFeaturePinnedProfileId}>
-                        Save Binding
-                      </Btn>
-                    </div>
-                  </Card>
-                </div>
-                <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <div style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Prerequisite Suggestions</div>
-                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                        Suggestions come from three signals: official curriculum manifest, topic similarity, and optional AI assist. Nothing changes the active graph until you accept a suggestion or edit prerequisites directly.
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <Chip color={selectedCurriculumLinkageCandidates.some(candidate => candidate.status === 'pending') ? T.warning : T.dim}>
-                        {`${selectedCurriculumLinkageCandidates.filter(candidate => candidate.status === 'pending').length} pending`}
-                      </Chip>
-                      <Chip color={T.accent}>{`${selectedCurriculumLinkageCandidates.length} total for selected course`}</Chip>
-                      {curriculumLinkageGenerationStatus ? (
-                        <Chip color={curriculumLinkageGenerationStatus.status === 'ok' ? T.success : curriculumLinkageGenerationStatus.status === 'error' ? T.danger : T.warning}>
-                          {`Generator · ${curriculumLinkageGenerationStatus.status} · ${curriculumLinkageGenerationStatus.provider === 'python-nlp' ? 'python nlp' : 'ts fallback'}`}
-                        </Chip>
-                      ) : null}
-                      <Btn type="button" variant="ghost" onClick={() => void handleRegenerateCurriculumLinkageCandidates()} disabled={!selectedCurriculumFeatureItem}>
-                        {selectedCurriculumFeatureItem ? `Re-suggest for ${selectedCurriculumFeatureItem.courseCode}` : 'Re-suggest prerequisites'}
-                      </Btn>
-                    </div>
-                  </div>
-                  {curriculumLinkageGenerationStatus?.warnings.length ? (
-                    <InfoBanner message={curriculumLinkageGenerationStatus.warnings.join(' ')} tone={curriculumLinkageGenerationStatus.status === 'error' ? 'error' : 'neutral'} />
-                  ) : null}
-                  <div>
-                    <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Review Note</div>
-                    <TextAreaInput
-                      value={curriculumLinkageReviewNote}
-                      onChange={event => setCurriculumLinkageReviewNote(event.target.value)}
-                      rows={3}
-                      placeholder="Optional review note saved with approve/reject actions."
-                    />
-                  </div>
-                  {curriculumLinkageCandidatesLoading ? (
-                    <InfoBanner message="Loading prerequisite suggestions for the selected course…" />
-                  ) : !selectedCurriculumFeatureItem ? (
-                    <EmptyState title="Select a course" body="Choose a course above to review prerequisite suggestions for it." />
-                  ) : selectedCurriculumLinkageCandidates.length === 0 ? (
-                    <EmptyState title="No suggestions yet" body="No prerequisite suggestions for this course. Click Re-suggest after editing outcomes, topics, or bridge modules." />
-                  ) : (
-                    <div style={{ display: 'grid', gap: 10 }}>
-                      {selectedCurriculumLinkageCandidates.map(candidate => (
-                        <Card key={candidate.curriculumLinkageCandidateId} style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                            <div style={{ display: 'grid', gap: 4 }}>
-                              <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{`${candidate.sourceCourseCode} -> ${candidate.targetCourseCode}`}</div>
-                              <div style={{ ...mono, fontSize: 10, color: T.muted }}>
-                                {`${candidate.sourceTitle} -> ${candidate.targetTitle}`}
-                              </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              <Chip color={candidate.status === 'approved' ? T.success : candidate.status === 'rejected' ? T.danger : T.warning}>{candidate.status}</Chip>
-                              <Chip color={candidate.edgeKind === 'explicit' ? T.accent : T.orange}>{candidate.edgeKind}</Chip>
-                              <Chip color={T.dim}>{`${candidate.confidenceScaled}% confidence`}</Chip>
-                            </div>
-                          </div>
-                          <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.8 }}>{candidate.rationale}</div>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            {candidate.sources.map(source => {
-                              const label = source === 'manifest' ? 'Official curriculum manifest' : source === 'semantic' ? 'Topic similarity' : source === 'llm' ? 'AI suggestion (qwen2.5:7b)' : source
-                              const color = source === 'manifest' ? T.accent : source === 'llm' ? T.warning : T.dim
-                              return <Chip key={`${candidate.curriculumLinkageCandidateId}:${source}`} color={color}>{`${candidate.confidenceScaled}% — ${label}`}</Chip>
-                            })}
-                          </div>
-                          {candidate.reviewNote ? <div style={{ ...mono, fontSize: 10, color: T.warning, lineHeight: 1.8 }}>{`Review note · ${candidate.reviewNote}`}</div> : null}
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            <Btn type="button" variant="ghost" onClick={() => void handleApproveCurriculumLinkageCandidate(candidate.curriculumLinkageCandidateId)} disabled={candidate.status !== 'pending'}>
-                              Accept suggestion
-                            </Btn>
-                            <Btn type="button" variant="danger" onClick={() => void handleRejectCurriculumLinkageCandidate(candidate.curriculumLinkageCandidateId)} disabled={candidate.status !== 'pending'}>
-                              Reject suggestion
-                            </Btn>
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-                <InfoBanner message="Outcome line format: CO1 | Apply | Description. Prerequisite line format: COURSE_CODE | explicit|added | rationale. The edge kind is required: explicit requires an earlier semester; added can represent approved supporting evidence. Saving to a scope profile updates that shared feature category and only refreshes affected batches whose resolved fingerprints change." />
-                {hasDraftPrerequisiteText && curriculumPrerequisiteValidation.errors.length > 0 ? (
-                  <InfoBanner
-                    tone="error"
-                    message={`Prerequisite validation failed for ${curriculumPrerequisiteValidation.parsedLineCount} parsed line${curriculumPrerequisiteValidation.parsedLineCount === 1 ? '' : 's'}: ${curriculumPrerequisiteValidation.errors.slice(0, 3).join(' ')}`}
-                  />
-                ) : hasDraftPrerequisiteText && selectedCurriculumFeatureItem ? (
-                  <InfoBanner
-                    tone="success"
-                    message={`Prerequisite validation matches the backend rules for ${curriculumPrerequisiteValidation.parsedLineCount} parsed line${curriculumPrerequisiteValidation.parsedLineCount === 1 ? '' : 's'} on ${selectedCurriculumFeatureItem.courseCode}.`}
-                  />
-                ) : null}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-                  <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Assessment Profile</div><select value={curriculumFeatureForm.assessmentProfile} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, assessmentProfile: event.target.value }))} style={{ width: '100%', padding: 8, borderRadius: 4, border: `1px solid ${T.border}`, background: 'transparent', color: T.text }}><option value="admin-authored">Admin Authored (Default)</option><option value="standard-60-40">Standard 60% CE / 40% SEE</option><option value="standard-50-50">Standard 50% CE / 50% SEE</option></select></div>
-                  <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Bridge Modules</div><TextAreaInput value={curriculumFeatureForm.bridgeModulesText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, bridgeModulesText: event.target.value }))} rows={4} placeholder={'Bridge topic 1\nBridge topic 2'} /></div>
-                  <div style={{ gridColumn: '1 / -1' }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Course Outcomes</div><TextAreaInput value={curriculumFeatureForm.outcomesText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, outcomesText: event.target.value }))} rows={6} placeholder={'CO1 | Understand | Explain the core concepts\nCO2 | Apply | Apply the methods to structured problems'} /></div>
-                  <div style={{ gridColumn: '1 / -1' }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Prerequisites</div><TextAreaInput value={curriculumFeatureForm.prerequisitesText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, prerequisitesText: event.target.value }))} rows={5} placeholder={'MATH201 | explicit | Calculus foundation for optimisation\nCS202 | added | Added dependency for implementation readiness'} /></div>
-                  <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>TT1 Topics</div><TextAreaInput value={curriculumFeatureForm.tt1TopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, tt1TopicsText: event.target.value }))} rows={4} placeholder={'Unit 1\nUnit 2'} /></div>
-                  <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>TT2 Topics</div><TextAreaInput value={curriculumFeatureForm.tt2TopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, tt2TopicsText: event.target.value }))} rows={4} placeholder={'Unit 3\nUnit 4'} /></div>
-                  <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>SEE Topics</div><TextAreaInput value={curriculumFeatureForm.seeTopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, seeTopicsText: event.target.value }))} rows={4} placeholder={'Comprehensive topic 1\nComprehensive topic 2'} /></div>
-                  <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Workbook Topics</div><TextAreaInput value={curriculumFeatureForm.workbookTopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, workbookTopicsText: event.target.value }))} rows={4} placeholder={'Workbook topic 1\nWorkbook topic 2'} /></div>
-                </div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Btn type="button" onClick={() => void handlePreviewCurriculumFeatureConfig()} disabled={!selectedCurriculumFeatureItem} style={{ background: T.surface2, color: T.accent, border: `1px solid ${T.accent}40` }}>Preview Impact</Btn>
-                  <Btn type="button" onClick={() => void handleSaveCurriculumFeatureConfig()} disabled={!selectedCurriculumFeatureItem || hasCurriculumPrerequisiteErrors}>{curriculumFeatureTargetMode === 'scope-profile' ? 'Save Shared Model Inputs' : 'Save Model Inputs'}</Btn>
-                  {selectedCurriculumFeatureItem ? <Chip color={T.warning}>{`${selectedCurriculumFeatureItem.prerequisites.length} prerequisites · ${selectedCurriculumFeatureItem.bridgeModules.length} bridge modules`}</Chip> : null}
-                  {curriculumFeatureTargetMode === 'scope-profile' && selectedCurriculumFeatureTargetScopeChip ? <Chip color={T.accent}>{selectedCurriculumFeatureTargetScopeChip}</Chip> : null}
-                </div>
-                {curriculumFeaturePreview ? (
-                  <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', display: 'grid', gap: 8 }}>
-                    <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Impact Preview · {curriculumFeaturePreview.studentCount} students</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                      {(['high', 'medium', 'low'] as const).map(band => {
-                        const color = band === 'high' ? T.danger : band === 'medium' ? T.warning : T.success
-                        const cur = Math.round((curriculumFeaturePreview.currentDistribution[band]) * 100)
-                        const proj = Math.round((curriculumFeaturePreview.projectedDistribution[band]) * 100)
-                        const delta = Math.round((curriculumFeaturePreview.delta[band]) * 100)
-                        return (
-                          <div key={band} style={{ background: T.surface, border: `1px solid ${color}30`, borderRadius: 8, padding: '8px 10px' }}>
-                            <div style={{ ...mono, fontSize: 9, color, textTransform: 'uppercase', marginBottom: 4 }}>{band} risk</div>
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                              <span style={{ ...mono, fontSize: 18, fontWeight: 700, color: T.text }}>{proj}%</span>
-                              <span style={{ ...mono, fontSize: 10, color: delta === 0 ? T.dim : delta > 0 ? T.danger : T.success }}>{delta > 0 ? `+${delta}` : delta}pp</span>
-                            </div>
-                            <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 2 }}>was {cur}%</div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                    {curriculumFeaturePreview.affectedStudents.length > 0 ? (
-                      <div style={{ ...mono, fontSize: 10, color: T.dim }}>{curriculumFeaturePreview.affectedStudents.length} student{curriculumFeaturePreview.affectedStudents.length === 1 ? '' : 's'} change risk band with this config</div>
-                    ) : (
-                      <div style={{ ...mono, fontSize: 10, color: T.dim }}>No students change risk band with this config</div>
-                    )}
-                  </div>
-                ) : null}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button type="button" onClick={() => void handleLoadCurriculumFeatureHistory()} disabled={!selectedCurriculumFeatureItem} style={{ ...mono, fontSize: 10, color: T.dim, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Configuration history</button>
-                </div>
-                {curriculumFeatureHistory && curriculumFeatureHistory.length > 0 ? (
-                  <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', display: 'grid', gap: 6 }}>
-                    <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>Configuration history</div>
-                    {curriculumFeatureHistory.slice(0, 10).map(event => {
-                      const meta = event.metadata as Record<string, unknown> | null
-                      const delta = meta?.projectedDelta as { high?: number; medium?: number; low?: number } | null
-                      const affected = typeof meta?.affectedStudentCount === 'number' ? meta.affectedStudentCount : null
-                      return (
-                        <div key={event.auditEventId} style={{ borderBottom: `1px solid ${T.border}`, paddingBottom: 6, display: 'grid', gap: 2 }}>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                            <span style={{ ...mono, fontSize: 10, color: T.text }}>{event.createdAt.slice(0, 16).replace('T', ' ')}</span>
-                            <span style={{ ...mono, fontSize: 9, color: T.dim }}>{event.actorId ?? event.actorRole}</span>
-                            {delta && affected != null && affected > 0 ? (
-                              <span style={{ ...mono, fontSize: 9, color: (delta.high ?? 0) > 0 ? T.danger : T.success }}>
-                                {`${affected} student${affected === 1 ? '' : 's'} band-shift · high ${(delta.high ?? 0) >= 0 ? '+' : ''}${Math.round((delta.high ?? 0) * 100)}pp`}
-                              </span>
-                            ) : delta ? (
-                              <span style={{ ...mono, fontSize: 9, color: T.dim }}>no band shift</span>
-                            ) : null}
-                          </div>
-                        </div>
-                      )
-                    })}
-                    {curriculumFeatureHistory.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.dim }}>No changes recorded yet</div> : null}
-                  </div>
-                ) : curriculumFeatureHistory != null && curriculumFeatureHistory.length === 0 ? (
-                  <div style={{ ...mono, fontSize: 10, color: T.dim }}>No configuration changes recorded yet.</div>
-                ) : null}
-              </>
-            )}
-          </Card>
         </Card>
       )}
 
@@ -2184,6 +1930,7 @@ export function SystemAdminFacultiesWorkspace({
       {governanceCgpaPanel}
       {stagePolicyPanel}
       {coursesPanel}
+      {curriculumPanel}
       {provisionPanel}
 
       {selectedBranch ? (

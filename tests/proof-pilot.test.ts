@@ -52,7 +52,15 @@ describe('proof pilot helpers', () => {
     })).toBe(CANONICAL_PROOF_BATCH_ID)
   })
 
-  it('preserves an explicit route batch for proof dashboard data when available', () => {
+  it('keeps the canonical proof dashboard loaded for the global student registry', () => {
+    expect(resolveProofDashboardBatchId({
+      route: { section: 'students' },
+      routeScopedBatchId: null,
+      data: dataset,
+    })).toBe(CANONICAL_PROOF_BATCH_ID)
+  })
+
+  it('does not load proof dashboard data for an explicit noncanonical batch', () => {
     expect(resolveProofDashboardBatchId({
       route: {
         section: 'faculties',
@@ -60,7 +68,18 @@ describe('proof pilot helpers', () => {
       },
       routeScopedBatchId: 'batch_2022',
       data: dataset,
-    })).toBe('batch_2022')
+    })).toBeNull()
+  })
+
+  it('loads proof dashboard data for the canonical proof hierarchy', () => {
+    expect(resolveProofDashboardBatchId({
+      route: {
+        section: 'faculties',
+        batchId: CANONICAL_PROOF_BATCH_ID,
+      },
+      routeScopedBatchId: CANONICAL_PROOF_BATCH_ID,
+      data: dataset,
+    })).toBe(CANONICAL_PROOF_BATCH_ID)
   })
 
   it('does not invent proof dashboard data scope for unrelated admin routes', () => {

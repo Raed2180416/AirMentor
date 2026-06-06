@@ -30,6 +30,8 @@ export const PRODUCTION_RISK_THRESHOLDS = {
   medium: 0.4,
   high: 0.65,
 } as const
+const SEM1_POST_TT1_EARLY_CLEAR_PCT = 56
+const EARLY_SINGLE_CHECKPOINT_CAP_MARGIN = 0.006
 
 export const OBSERVABLE_FEATURE_KEYS = [
   'attendancePctScaled',
@@ -2706,6 +2708,30 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
         ? 'Medium'
         : 'Low'
   }
+  const applyEarlySingleCheckpointCap = (score: number, thresholds: { medium: number; high: number }) => {
+    const stageKey = input.sourceRefs?.stageKey ?? input.stageKey ?? null
+    const semesterNumber = input.sourceRefs?.semesterNumber ?? input.featurePayload.semesterNumber
+    const laterEvidenceObserved = [
+      input.tt2Pct,
+      input.quizPct,
+      input.assignmentPct,
+      input.cePct,
+      input.seePct,
+      input.overallPct,
+    ].some(value => typeof value === 'number' && Number.isFinite(value))
+    const attendanceMinimum = input.policy.attendanceRules.minimumRequiredPercent
+    const firstCheckpointLikelyClear = semesterNumber === 1
+      && stageKey === 'post-tt1'
+      && input.cgpaMissing === true
+      && input.backlogMissing === true
+      && !laterEvidenceObserved
+      && input.attendancePct >= attendanceMinimum
+      && typeof input.tt1Pct === 'number'
+      && Number.isFinite(input.tt1Pct)
+      && input.tt1Pct >= SEM1_POST_TT1_EARLY_CLEAR_PCT
+    if (!firstCheckpointLikelyClear) return score
+    return Math.min(score, Math.max(0, thresholds.medium - EARLY_SINGLE_CHECKPOINT_CAP_MARGIN))
+  }
   const productionModel = input.productionModel
   const useCatBoost = productionModel?.modelFamily === 'catboost'
     && productionModel.featureSchemaVersion === RISK_FEATURE_SCHEMA_VERSION
@@ -2758,7 +2784,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     const preliminaryOverall = Math.max(headProbabilities.overallCourseRisk, policyFloor.riskFloor)
     const preliminaryBand: 'High' | 'Medium' | 'Low' = bandFromScore(preliminaryOverall, thresholds)
     const observableDrivers = ensureDriversForServedRisk(preliminaryBand, inferObservableDrivers(input), input.featurePayload)
-    const officialOverall = suppressUnexplainedServedRisk(preliminaryOverall, thresholds, observableDrivers)
+    const officialOverall = applyEarlySingleCheckpointCap(
+      suppressUnexplainedServedRisk(preliminaryOverall, thresholds, observableDrivers),
+      thresholds,
+    )
     const riskBand: 'High' | 'Medium' | 'Low' = bandFromScore(officialOverall, thresholds)
     const catBoostHeadDisplay = Object.fromEntries(
       (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
@@ -2805,7 +2834,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     const preliminaryFallbackRiskProb = Math.max(fallback.riskProb, policyFloor.riskFloor)
     const preliminaryFallbackBand = bandFromScore(preliminaryFallbackRiskProb, thresholds)
     const fallbackDrivers = ensureDriversForServedRisk(preliminaryFallbackBand, fallback.observableDrivers, input.featurePayload)
-    const fallbackRiskProb = suppressUnexplainedServedRisk(preliminaryFallbackRiskProb, thresholds, fallbackDrivers)
+    const fallbackRiskProb = applyEarlySingleCheckpointCap(
+      suppressUnexplainedServedRisk(preliminaryFallbackRiskProb, thresholds, fallbackDrivers),
+      thresholds,
+    )
     const fallbackBand = bandFromScore(fallbackRiskProb, thresholds)
     return {
       ...fallback,
@@ -2873,7 +2905,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
       ? shapDrivers
       : fallbackDrivers
   const observableDrivers = ensureDriversForServedRisk(preliminaryRiskBand, mergedDrivers, input.featurePayload)
-  const officialOverall = suppressUnexplainedServedRisk(preliminaryOverall, thresholds, observableDrivers)
+  const officialOverall = applyEarlySingleCheckpointCap(
+    suppressUnexplainedServedRisk(preliminaryOverall, thresholds, observableDrivers),
+    thresholds,
+  )
   const riskBand: 'High' | 'Medium' | 'Low' = bandFromScore(officialOverall, thresholds)
   
   // Recommend action based on actual model-identified primary driver
@@ -2952,6 +2987,12 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     rankingSuppressedReason,
     crossCourseDrivers: input.sourceRefs ? crossCourseDriversFromCorrelations(input.correlations ?? null, input.sourceRefs) : [],
     headDisplay: trainedHeadDisplay,
+    effectiveScorerFamily: ebmModel ? 'ebm' : (input.productionModel.modelFamily ?? 'logistic'),
+    artifactHash: input.productionModel.modelVersion,
+    thresholdSource: bandThresholdsOverride ? 'policy-override' : 'calibrated',
+    calibrationSource: input.productionModel.calibrationVersion ?? 'identity',
+    overrideActive: bandThresholdsOverride != null,
+    driverSource: ebmModel ? 'ebm-shap' : 'logistic-shap',
   }
 }
 

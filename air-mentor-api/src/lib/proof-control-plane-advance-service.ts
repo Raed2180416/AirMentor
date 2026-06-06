@@ -615,9 +615,9 @@ async function autoResolvePriorStageQueueCases(input: {
     })
   }
 
-  for (const queueCase of openCases) {
+  await Promise.all(openCases.map(queueCase => {
     const applied = resolutionByCaseId.get(queueCase.simulationStageQueueCaseId)!
-    await input.db
+    return input.db
       .update(simulationStageQueueCases)
       .set({
         status: 'Resolved',
@@ -626,13 +626,13 @@ async function autoResolvePriorStageQueueCases(input: {
         updatedAt: input.now,
       })
       .where(eq(simulationStageQueueCases.simulationStageQueueCaseId, queueCase.simulationStageQueueCaseId))
-  }
+  }))
 
-  for (const projectionRow of projectionRows) {
-    if (!projectionRow.simulationStageQueueCaseId) continue
+  await Promise.all(projectionRows.map(projectionRow => {
+    if (!projectionRow.simulationStageQueueCaseId) return Promise.resolve()
     const applied = resolutionByCaseId.get(projectionRow.simulationStageQueueCaseId)
-    if (!applied) continue
-    await input.db
+    if (!applied) return Promise.resolve()
+    return input.db
       .update(simulationStageQueueProjections)
       .set({
         status: 'Resolved',
@@ -641,7 +641,7 @@ async function autoResolvePriorStageQueueCases(input: {
         updatedAt: input.now,
       })
       .where(eq(simulationStageQueueProjections.simulationStageQueueProjectionId, projectionRow.simulationStageQueueProjectionId))
-  }
+  }))
 
   const applied = [...resolutionByCaseId.values()]
   return {
@@ -716,18 +716,6 @@ async function persistResolvedAdvance(
         writeInterventions: true,
       })
 
-      if (autoResolutionSummary.interventionCount > 0) {
-        await rebuildStagePlayback()
-        await autoResolvePriorStageQueueCases({
-          db,
-          simulationRunId: run.simulationRunId,
-          checkpointRows,
-          current: resolution.current,
-          now: input.now,
-          writeInterventions: false,
-        })
-      }
-
       if (autoResolutionSummary.resolvedCount > 0) {
         await deps.emitSimulationAudit(db, {
           simulationRunId: run.simulationRunId,
@@ -752,7 +740,8 @@ async function persistResolvedAdvance(
     }
     // Phase-6c: only emit this marker when playback was actually re-realized for
     // this transition. Ordinary stage pointer movement can reuse the existing
-    // checkpoint universe; manual or auto interventions still trigger rebuilds.
+    // checkpoint universe; manual interventions trigger rebuilds when the
+    // realization flag says their effect should be folded into playback.
     if (isStageRealizationAuditEnabled() && playbackRebuiltForStageTransition) {
       await deps.emitSimulationAudit(db, {
         simulationRunId: run.simulationRunId,
@@ -765,7 +754,7 @@ async function persistResolvedAdvance(
     }
   }
 
-  if (run.activeFlag === 1 && deps.publishOperationalProjection) {
+  if (run.activeFlag === 1 && deps.publishOperationalProjection && input.mode !== 'next-day' && input.mode !== 'previous-day') {
     await deps.publishOperationalProjection(db, {
       simulationRunId: run.simulationRunId,
       batchId: run.batchId,

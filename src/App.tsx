@@ -87,7 +87,12 @@ import {
 import { AcademicWorkspaceSidebar } from './academic-workspace-sidebar'
 import { AcademicWorkspaceTopbar } from './academic-workspace-topbar'
 import { AcademicWorkspaceRouteSurface } from './academic-workspace-route-surface'
-import { canAccessPage, findStudentProfileLaunchTarget, getHomePage, resolveAssignedMentees, resolveRoleSyncState } from './academic-workspace-route-helpers'
+import { canAccessPage, findStudentProfileLaunchTarget, getHomePage, getMenteeScopeIds, resolveAssignedMentees, resolveRoleSyncState } from './academic-workspace-route-helpers'
+import { materializeProofMonitoringTasks } from './proof-monitoring-tasks'
+import {
+  coreMetricsFromFacultyQueueItem,
+  type StudentCheckpointCoreMetrics,
+} from './student-checkpoint-parity'
 import { applyThemePreset, isLightTheme } from './theme'
 import {
   Bar,
@@ -109,7 +114,6 @@ import {
   withAlpha,
 } from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
-import { humanLabelForActionCode } from './action-code-humaniser'
 import { readActiveDemoWorkspacePointer } from './demo-workspace-pointer'
 import { useApiConnectionTarget } from './api-connection'
 import type {
@@ -130,7 +134,7 @@ import type {
   ApiStudentRiskExplorer,
 } from './api/types'
 import { ApiFallbackIndicator, BackendOfflineIndicator, useBackendHealthMonitor } from './backend-health-indicator'
-import { clearProofPlaybackSelection, PROOF_PLAYBACK_SELECTION_STORAGE_KEY, readProofPlaybackSelection } from './proof-playback'
+import { clearProofPlaybackSelection, PROOF_PLAYBACK_SELECTION_STORAGE_KEY, readSharedProofPlaybackSelection } from './proof-playback'
 import { collectFrontendStartupDiagnostics } from './startup-diagnostics'
 import { emitClientOperationalEvent, normalizeClientTelemetryError } from './telemetry'
 import './App.css'
@@ -295,8 +299,44 @@ function getStudentAttendancePct(student: Student) {
   return student.totalClasses > 0 ? Math.round((student.present / Math.max(1, student.totalClasses)) * 100) : null
 }
 
-function hasStudentRiskEvidence(offering: Offering | undefined, student: Student) {
-  return Boolean(offering && offering.stage >= 2 && student.riskBand != null && student.riskProb != null)
+function isRiskVisibleAtProofStage(proofStageKey?: string | null) {
+  if (!proofStageKey) return true
+  return proofStageKey.toLowerCase() !== 'pre-tt1'
+}
+
+function hasStudentRiskEvidence(offering: Offering | undefined, student: Student, proofStageKey?: string | null) {
+  const stageAllowsRisk = proofStageKey ? isRiskVisibleAtProofStage(proofStageKey) : (offering?.stage ?? 0) >= 2
+  return Boolean(offering && stageAllowsRisk && student.riskBand != null && student.riskProb != null)
+}
+
+function getEvidenceStageKey(offering?: Offering, proofStageKey?: string | null) {
+  const normalizedProofStage = proofStageKey?.toLowerCase()
+  if (normalizedProofStage) return normalizedProofStage
+  const stage = offering?.stageInfo?.stage ?? offering?.stage ?? 0
+  if (stage >= 5) return 'post-see'
+  if (stage >= 4) return 'post-assignments'
+  if (stage >= 3) return 'post-tt2'
+  if (stage >= 2) return 'post-tt1'
+  return 'pre-tt1'
+}
+
+function isPostSeeEvidenceStage(offering?: Offering, proofStageKey?: string | null) {
+  return getEvidenceStageKey(offering, proofStageKey) === 'post-see'
+}
+
+function getVisibleCeTargetForStage(scheme: SchemeState, offering?: Offering, proofStageKey?: string | null) {
+  switch (getEvidenceStageKey(offering, proofStageKey)) {
+    case 'pre-tt1':
+      return 0
+    case 'post-tt1':
+      return scheme.termTestWeights.tt1
+    case 'post-tt2':
+      return scheme.termTestWeights.tt1 + scheme.termTestWeights.tt2
+    case 'post-assignments':
+    case 'post-see':
+    default:
+      return scheme.policyContext.ce
+  }
 }
 
 export function RequiredNoteModal({ title, description, submitLabel, onClose, onSubmit }: { title: string; description: string; submitLabel: string; onClose: () => void; onSubmit: (note: string) => void }) {
@@ -623,6 +663,8 @@ export function StudentDrawer({
   onOpenStudentShell,
   onOpenRiskExplorer,
   onScheduleMeeting,
+  proofStageKey,
+  coreMetricsOverride,
 }: {
   student: Student | null
   offering?: Offering
@@ -637,6 +679,8 @@ export function StudentDrawer({
   onOpenStudentShell: (studentId: string) => void
   onOpenRiskExplorer: (studentId: string) => void
   onScheduleMeeting: (input: { student: Student; offering?: Offering; title: string; notes?: string; dateISO: string; startMinutes: number; endMinutes: number }) => Promise<void> | void
+  proofStageKey?: string | null
+  coreMetricsOverride?: StudentCheckpointCoreMetrics | null
 }) {
   const { deriveAcademicProjection, getSchemeForOffering } = useAppSelectors()
   const studentSeedName = student?.name.split(' ')[0] ?? 'Student'
@@ -655,17 +699,35 @@ export function StudentDrawer({
   )
   if (!student) return null
   const s = student
-  const attPct = getStudentAttendancePct(s)
-  const riskAvailable = hasStudentRiskEvidence(offering, s)
-  const riskCol = s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success
+  const effectiveRiskBand = coreMetricsOverride?.riskBand ?? s.riskBand
+  const effectiveRiskProbScaled = coreMetricsOverride?.riskProbScaled ?? (s.riskProb !== null ? Math.round(s.riskProb * 100) : null)
+  const attPct = coreMetricsOverride?.evidence.attendancePct ?? getStudentAttendancePct(s)
+  const riskAvailable = hasStudentRiskEvidence(offering, s, proofStageKey)
+  const riskCol = effectiveRiskBand === 'High' ? T.danger : effectiveRiskBand === 'Medium' ? T.warning : T.success
   const canSeeDetailedMarks = role !== 'Mentor'
   const drawerHistory = buildHistoryProfile({ student: s, historyByUsn })
   const activeScheme = offering ? getSchemeForOffering(offering) : null
-  const ceSummary = offering && activeScheme ? deriveAcademicProjection({ offering, student: s, scheme: activeScheme, history: drawerHistory }) : null
-  const ceSignalThresholds = activeScheme ? {
-    success: activeScheme.policyContext.ce * 0.5,
-    warning: activeScheme.policyContext.ce * 0.4,
-  } : null
+  const ceSummary = offering && activeScheme ? deriveAcademicProjection({ offering, student: s, scheme: activeScheme, history: drawerHistory, stageKey: proofStageKey }) : null
+  const visibleCeTarget = activeScheme ? getVisibleCeTargetForStage(activeScheme, offering, proofStageKey) : 0
+  const ceSignalRatio = ceSummary && visibleCeTarget > 0 ? ceSummary.ce60 / visibleCeTarget : null
+  const ceSignalValue = ceSummary && visibleCeTarget > 0 ? `${ceSummary.ce60.toFixed(1)}/${visibleCeTarget}` : 'Not applicable yet'
+  const ceSignalColor = ceSignalRatio === null
+    ? T.dim
+    : ceSignalRatio >= 0.75
+      ? T.success
+      : ceSignalRatio >= 0.6
+        ? T.warning
+        : T.danger
+  const postSeeEvidenceStage = isPostSeeEvidenceStage(offering, proofStageKey)
+  const riskStageLabel = postSeeEvidenceStage ? 'Post-SEE Status' : 'SEE Readiness'
+  const riskStageValue = riskAvailable
+    ? postSeeEvidenceStage
+      ? (effectiveRiskBand === 'High' ? 'Needs follow-up' : effectiveRiskBand === 'Medium' ? 'Review outcome' : 'On track')
+      : (effectiveRiskBand === 'High' ? 'Needs support' : effectiveRiskBand === 'Medium' ? 'Watch' : 'On track')
+    : 'Not applicable yet'
+  const predictedCgpaColor = ceSummary?.predictedCgpa != null
+    ? (ceSummary.predictedCgpa >= 7 ? T.success : ceSummary.predictedCgpa >= 6 ? T.warning : T.danger)
+    : T.dim
 
   return (
     <motion.div
@@ -696,28 +758,30 @@ export function StudentDrawer({
         </div>
 
         {/* Watch Gauge */}
-        {riskAvailable && s.riskProb !== null ? (
-          <div style={{ background: `${riskCol}0c`, border: `1px solid ${riskCol}30`, borderRadius: 12, padding: '18px 22px', marginBottom: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <div style={{ ...sora, fontWeight: 800, fontSize: 42, color: riskCol }}>{Math.round(s.riskProb * 100)}%</div>
-              <div>
-                <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: riskCol }}>Academic Watch Score — {s.riskBand}</div>
-                <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>Observable-only score from attendance, term tests, transcript history, and course outcomes.</div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                  {s.flags.backlog && <Chip color={T.danger} size={9}>Backlog history</Chip>}
-                  {s.flags.lowAttendance && <Chip color={T.warning} size={9}>Low attendance</Chip>}
-                  {s.flags.declining && <Chip color={T.warning} size={9}>Declining trend</Chip>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(1, 1fr)', gap: 16 }}>
+            {riskAvailable && effectiveRiskProbScaled !== null ? (
+              <div style={{ background: `${riskCol}0c`, border: `1px solid ${riskCol}30`, borderRadius: 12, padding: '18px 22px', marginBottom: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <div style={{ ...sora, fontWeight: 800, fontSize: 42, color: riskCol }}>{effectiveRiskProbScaled}%</div>
+                  <div>
+                    <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: riskCol }}>Academic Watch Score — {effectiveRiskBand}</div>
+                    <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>Observable-only score from attendance, term tests, transcript history, and course outcomes.</div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                      {s.flags.backlog && <Chip color={T.danger} size={9}>Backlog history</Chip>}
+                      {s.flags.lowAttendance && <Chip color={T.warning} size={9}>Low attendance</Chip>}
+                      {s.flags.declining && <Chip color={T.warning} size={9}>Declining trend</Chip>}
+                    </div>
+                  </div>
                 </div>
+                <div style={{ marginTop: 12 }}><Bar val={effectiveRiskProbScaled} color={riskCol} h={8} /></div>
               </div>
-            </div>
-            <div style={{ marginTop: 12 }}><Bar val={s.riskProb * 100} color={riskCol} h={8} /></div>
-          </div>
-        ) : (
-          <div style={{ background: T.surface2, borderRadius: 12, padding: '18px 22px', marginBottom: 18, textAlign: 'center' }}>
-            <div style={{ ...mono, fontSize: 12, color: T.muted }}>Watch score unavailable because the current evidence window is incomplete.</div>
-            <div style={{ ...mono, fontSize: 11, color: T.dim, marginTop: 4 }}>Showing attendance and transcript context only.</div>
-          </div>
-        )}
+            ) : (
+              <div style={{ background: T.surface2, borderRadius: 12, padding: '18px 22px', marginBottom: 18, textAlign: 'center' }}>
+                <div style={{ ...mono, fontSize: 12, color: T.muted }}>Watch score unavailable because the current evidence window is incomplete.</div>
+                <div style={{ ...mono, fontSize: 11, color: T.dim, marginTop: 4 }}>Showing attendance and transcript context only.</div>
+              </div>
+            )}
+        </div>
 
         {/* Observable Drivers */}
         {riskAvailable && s.reasons.length > 0 && (
@@ -771,11 +835,11 @@ export function StudentDrawer({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             {[
               { lbl: 'Attendance', val: attPct == null ? 'Not applicable yet' : `${attPct}%`, col: attPct == null ? T.dim : attPct >= 75 ? T.success : attPct >= 65 ? T.warning : T.danger },
-              { lbl: 'TT Summary', val: canSeeDetailedMarks ? `${s.tt1Score ?? '—'} / ${s.tt2Score ?? '—'}` : ceSummary ? `${(ceSummary.tt1Scaled + ceSummary.tt2Scaled).toFixed(1)}/30` : '—', col: ceSummary && ceSummary.tt1Scaled + ceSummary.tt2Scaled >= 15 ? T.success : T.warning },
-              { lbl: 'CE Signal', val: ceSummary && activeScheme ? `${ceSummary.ce60.toFixed(1)}/${activeScheme.policyContext.ce}` : '—', col: ceSummary && ceSignalThresholds ? (ceSummary.ce60 >= ceSignalThresholds.success ? T.success : ceSummary.ce60 >= ceSignalThresholds.warning ? T.warning : T.danger) : T.warning },
+              { lbl: 'TT Summary', val: canSeeDetailedMarks ? `${s.tt1Score ?? '—'}/${s.tt1Max ?? 25} / ${s.tt2Score ?? '—'}/${s.tt2Max ?? 25}` : ceSummary ? `${(ceSummary.tt1Scaled + ceSummary.tt2Scaled).toFixed(1)}/30` : '—', col: ceSummary && ceSummary.tt1Scaled + ceSummary.tt2Scaled >= 15 ? T.success : T.warning },
+              { lbl: 'CE Signal', val: ceSignalValue, col: ceSignalColor },
               { lbl: 'Primary Signal', val: riskAvailable ? (s.reasons[0]?.feature?.toUpperCase() ?? 'None') : 'Not applicable yet', col: riskAvailable && s.reasons[0] ? T.warning : riskAvailable ? T.success : T.dim },
-              { lbl: 'SEE Readiness', val: riskAvailable ? (s.riskBand === 'High' ? 'Needs support' : s.riskBand === 'Medium' ? 'Watch' : 'On track') : 'Not applicable yet', col: riskAvailable ? (s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success) : T.dim },
-              { lbl: 'Pred CGPA', val: ceSummary ? ceSummary.predictedCgpa.toFixed(2) : (s.prevCgpa > 0 ? s.prevCgpa.toFixed(1) : '—'), col: (ceSummary?.predictedCgpa ?? s.prevCgpa) >= 7 ? T.success : (ceSummary?.predictedCgpa ?? s.prevCgpa) >= 6 ? T.warning : T.danger },
+              { lbl: riskStageLabel, val: riskStageValue, col: riskAvailable ? (effectiveRiskBand === 'High' ? T.danger : effectiveRiskBand === 'Medium' ? T.warning : T.success) : T.dim },
+              { lbl: 'Pred CGPA', val: ceSummary?.predictedCgpa != null ? ceSummary.predictedCgpa.toFixed(2) : '—', col: predictedCgpaColor },
             ].map((x, i) => (
               <div key={i} style={{ background: T.surface2, borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
                 <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: x.col }}>{x.val}</div>
@@ -872,7 +936,7 @@ export function StudentDrawer({
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Btn size="sm" onClick={() => navigator.clipboard.writeText(s.phone)}><Phone size={12} /> Call</Btn>
           <Btn size="sm" variant="ghost"><Mail size={12} /> Email</Btn>
-          <Btn size="sm" variant="ghost" onClick={() => onOpenTaskComposer(s, offering, riskAvailable && s.riskBand === 'High' ? 'Remedial' : 'Follow-up')}><MessageSquare size={12} /> Add Task</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => onOpenTaskComposer(s, offering, riskAvailable && effectiveRiskBand === 'High' ? 'Remedial' : 'Follow-up')}><MessageSquare size={12} /> Add Task</Btn>
           <Btn size="sm" variant="ghost" onClick={() => setShowMeetingComposer(current => !current)}><Calendar size={12} /> {showMeetingComposer ? 'Hide Meeting Form' : 'Schedule Meeting'}</Btn>
           {(role === 'Course Leader' || role === 'HoD') && <Btn size="sm" variant="ghost" onClick={() => onAssignToMentor(s, offering)}><Users size={12} /> Defer to Mentor</Btn>}
           <Btn size="sm" variant="ghost" onClick={() => onOpenHistory(s, offering)}><Eye size={12} /> Open Full Profile</Btn>
@@ -898,7 +962,7 @@ export function ActionQueue({ role, tasks, resolvedTaskIds, simulatedDateISO, on
   const active = tasks
     .filter(t => isTaskActiveForQueue(t, resolvedTaskIds, todayISO))
     .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
-  const done = tasks.filter(t => !!resolvedTaskIds[t.id]).sort((a, b) => (resolvedTaskIds[b.id] ?? 0) - (resolvedTaskIds[a.id] ?? 0))
+  const done = tasks.filter(t => !!resolvedTaskIds[t.id] && !t.dismissal).sort((a, b) => (resolvedTaskIds[b.id] ?? 0) - (resolvedTaskIds[a.id] ?? 0))
   const buttonStyle = (color: string, variant: 'ghost' | 'filled' = 'ghost', disabled = false) => ({
     ...mono,
     fontSize: 10,
@@ -1245,16 +1309,20 @@ function OperationalWorkspace({
   const [roleChangeBusy, setRoleChangeBusy] = useState(false)
   const [roleChangeError, setRoleChangeError] = useState('')
 
-  const [isReevaluatingRisk, setIsReevaluatingRisk] = useState(false)
-  const withReevaluation = useCallback(async (action: () => any) => {
-    setIsReevaluatingRisk(true)
-    await new Promise(r => setTimeout(r, 0))
-    try {
-      await action()
-    } finally {
-      setIsReevaluatingRisk(false)
-    }
+  const [riskReevaluationPulse, setRiskReevaluationPulse] = useState(false)
+  const riskReevaluationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const markRiskReevaluationPending = useCallback((durationMs = 1800) => {
+    setRiskReevaluationPulse(true)
+    if (riskReevaluationTimeoutRef.current) clearTimeout(riskReevaluationTimeoutRef.current)
+    riskReevaluationTimeoutRef.current = setTimeout(() => {
+      setRiskReevaluationPulse(false)
+      riskReevaluationTimeoutRef.current = null
+    }, durationMs)
   }, [])
+  useEffect(() => () => {
+    if (riskReevaluationTimeoutRef.current) clearTimeout(riskReevaluationTimeoutRef.current)
+  }, [])
+  const isReevaluatingRisk = riskReevaluationPulse || facultyProfileLoading || hodProofLoading || roleChangeBusy
   const [studentPatches, setStudentPatches] = useState<Record<string, StudentRuntimePatch>>(() => repositories.entryData.getStudentPatchesSnapshot())
   const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => repositories.entryData.getSchemeStateSnapshot(allOfferings))
   const [ttBlueprintsByOffering, setTtBlueprintsByOffering] = useState<Record<string, Record<TTKind, TermTestBlueprint>>>(() => repositories.entryData.getBlueprintSnapshot(allOfferings))
@@ -1300,7 +1368,7 @@ function OperationalWorkspace({
     return () => {
       cancelled = true
     }
-  }, [currentTeacher?.facultyId, loadFacultyProfile])
+  }, [currentTeacher?.facultyId, loadFacultyProfile, page])
   useEffect(() => {
     if (role !== 'HoD' || !currentTeacher?.facultyId || !loadHodProofAnalytics) {
       setHodProofAnalytics(null)
@@ -1377,6 +1445,7 @@ function OperationalWorkspace({
   const hydratedLockAuditSnapshotRef = useRef(JSON.stringify(lockAuditByTarget))
   const hydratedTimetableSnapshotRef = useRef(JSON.stringify(timetableByFacultyId))
   const hydratedBlueprintSnapshotRef = useRef(JSON.stringify(ttBlueprintsByOffering))
+  const hydratedTaskSnapshotRef = useRef(JSON.stringify(allTasksList))
 
   useEffect(() => {
     const nextStudentPatches = repositories.entryData.getStudentPatchesSnapshot()
@@ -1399,6 +1468,7 @@ function OperationalWorkspace({
     hydratedLockAuditSnapshotRef.current = JSON.stringify(nextLockAuditByTarget)
     hydratedTimetableSnapshotRef.current = JSON.stringify(nextTimetableByFacultyId)
     hydratedBlueprintSnapshotRef.current = JSON.stringify(nextTtBlueprintsByOffering)
+    hydratedTaskSnapshotRef.current = JSON.stringify(nextAllTasksList)
 
     setStudentPatches(nextStudentPatches)
     setSchemeByOffering(nextSchemeByOffering)
@@ -1448,7 +1518,21 @@ function OperationalWorkspace({
       console.error('Could not persist cell values.', error)
     })
   }, [cellValues, repositories])
-  useEffect(() => { void repositories.tasks.saveTasks(allTasksList) }, [allTasksList, repositories])
+  useEffect(() => {
+    const serialized = JSON.stringify(allTasksList)
+    if (serialized === hydratedTaskSnapshotRef.current) return
+    const previousSnapshot = hydratedTaskSnapshotRef.current
+    hydratedTaskSnapshotRef.current = serialized
+    void repositories.tasks.saveTasks(allTasksList).catch(error => {
+      if (hydratedTaskSnapshotRef.current !== serialized) {
+        console.error('Could not persist stale task queue state.', error)
+        return
+      }
+      hydratedTaskSnapshotRef.current = previousSnapshot
+      setAllTasksList(JSON.parse(previousSnapshot))
+      console.error('Could not persist task queue state.', error)
+    })
+  }, [allTasksList, repositories])
   useEffect(() => { void repositories.tasks.saveResolvedTasks(resolvedTasks) }, [repositories, resolvedTasks])
   useEffect(() => {
     if (page !== 'calendar') return
@@ -1500,17 +1584,16 @@ function OperationalWorkspace({
   }, [lockAuditByTarget, repositories])
 
   const supervisedOfferingIds = useMemo(() => new Set(assignedOfferings.map(o => o.offId)), [assignedOfferings])
-  const supervisedMenteeIds = useMemo(() => new Set(assignedMentees.map(m => m.id)), [assignedMentees])
+  const supervisedMenteeIds = useMemo(() => new Set(assignedMentees.flatMap(m => getMenteeScopeIds(m.id))), [assignedMentees])
   const supervisedMenteeUsns = useMemo(() => new Set(assignedMentees.map(m => m.usn)), [assignedMentees])
   const calendarOfferingIds = useMemo(() => new Set(assignedOfferings.map(item => item.offId)), [assignedOfferings])
-  const calendarMenteeIds = useMemo(() => new Set(currentTeacher?.menteeIds ?? []), [currentTeacher])
-  const calendarMenteeUsns = useMemo(() => new Set(
-    allMentees
-      .filter(mentee => calendarMenteeIds.has(mentee.id))
-      .map(mentee => mentee.usn),
-  ), [allMentees, calendarMenteeIds])
+  const calendarMenteeIds = useMemo(() => new Set(assignedMentees.flatMap(mentee => getMenteeScopeIds(mentee.id))), [assignedMentees])
+  const calendarMenteeUsns = useMemo(() => new Set(assignedMentees.map(mentee => mentee.usn)), [assignedMentees])
   const calendarOfferings = useMemo(() => allOfferings.filter(item => calendarOfferingIds.has(item.offId)), [allOfferings, calendarOfferingIds])
-  const currentFacultyTimetable = useMemo(() => currentTeacher ? (timetableByFacultyId[currentTeacher.facultyId] ?? null) : null, [currentTeacher, timetableByFacultyId])
+  const currentFacultyTimetable = useMemo(() => {
+    if (!currentTeacher) return null
+    return facultyProfile?.timetableTemplate ?? timetableByFacultyId[currentTeacher.facultyId] ?? null
+  }, [currentTeacher, facultyProfile, timetableByFacultyId])
   const filteredCurrentFacultyTimetable = useMemo(() => {
     if (!currentFacultyTimetable) return null
     if (role === 'HoD') return currentFacultyTimetable
@@ -1521,9 +1604,9 @@ function OperationalWorkspace({
   }, [calendarOfferingIds, currentFacultyTimetable, role])
   const currentFacultyCalendarMarkers = useMemo(
     () => currentTeacher
-      ? (academicBootstrap?.runtime.adminCalendarByFacultyId?.[currentTeacher.facultyId]?.markers ?? [])
+      ? (facultyProfile?.calendarWorkspace?.markers ?? academicBootstrap?.runtime.adminCalendarByFacultyId?.[currentTeacher.facultyId]?.markers ?? [])
       : [],
-    [academicBootstrap, currentTeacher],
+    [academicBootstrap, currentTeacher, facultyProfile],
   )
   const mergedCalendarTasks = useMemo(() => {
     if (!currentTeacher) return [] as SharedTask[]
@@ -1566,55 +1649,28 @@ function OperationalWorkspace({
     }
   }, [academicBootstrap, allOfferings, defaultOffering, liveAcademicMode])
 
-  const roleTasks = useMemo(() => {
+  const roleTasks = useMemo<SharedTask[]>(() => {
     const base = allTasksList.filter(t => t.assignedTo === role)
-    const activeProofQueueTasks = (facultyProfile?.proofOperations.monitoringQueue ?? [])
-      .filter(item => !item.resolution && item.reassessmentStatus !== 'Resolved')
-      .filter(item => !base.some(task => task.studentId.endsWith(item.studentId) && task.offeringId === item.offeringId && task.sourceRole === 'System'))
-      .map(item => {
-        const riskBand: RiskBand = item.riskBand === 'High' || item.riskBand === 'Medium' || item.riskBand === 'Low' ? item.riskBand : 'Medium'
-        const dueDateISO = item.dueAt?.slice(0, 10)
-        return {
-          id: `proof-monitoring-${item.riskAssessmentId}`,
-          studentId: item.studentId,
-          studentName: item.studentName,
-          studentUsn: item.usn,
-          offeringId: item.offeringId,
-          courseCode: item.courseCode,
-          courseName: item.courseTitle,
-          year: item.sectionCode ? `Section ${item.sectionCode}` : 'Proof scope',
-          riskProb: item.riskProbScaled / 100,
-          riskBand,
-          title: `Proof follow-up: ${humanLabelForActionCode(item.recommendedAction) ?? item.recommendedAction}`,
-          due: dueDateISO ? toDueLabel(dueDateISO, 'This week', proofVirtualDateISO) : 'This week',
-          dueDateISO: dueDateISO ?? undefined,
-          status: item.acknowledgement ? 'In Progress' : 'New',
-          actionHint: item.decisionNote ?? item.drivers[0]?.label ?? 'Review the proof monitoring queue item and confirm the intervention path.',
-          priority: Math.max(1, Math.round(item.riskProbScaled)),
-          createdAt: item.dueAt ? Date.parse(item.dueAt) : Date.now(),
-          updatedAt: item.dueAt ? Date.parse(item.dueAt) : Date.now(),
-          assignedTo: role,
-          taskType: 'Follow-up',
-          sourceRole: 'System',
-          manual: false,
-          transitionHistory: [{
-            id: `transition-proof-monitoring-${item.riskAssessmentId}`,
-            at: item.dueAt ? Date.parse(item.dueAt) : Date.now(),
-            actorRole: 'System',
-            action: 'Queued from proof monitoring',
-            toOwner: role,
-            note: item.decisionNote ?? item.drivers[0]?.label ?? 'Proof monitoring queue item is active.',
-          }],
-        } satisfies SharedTask
-      })
+    const suppressedProofTaskIds = new Set([
+      ...allTasksList.map(task => task.id),
+      ...Object.keys(resolvedTasks).filter(taskId => taskId.startsWith('proof-monitoring-')),
+    ])
+    const activeProofQueueTasks = materializeProofMonitoringTasks({
+      queue: facultyProfile?.proofOperations.monitoringQueue ?? [],
+      role,
+      proofVirtualDateISO,
+      semesterNumber: academicBootstrap?.proofPlayback?.semesterNumber,
+      stageKey: academicBootstrap?.proofPlayback?.stageKey,
+      suppressedTaskIds: suppressedProofTaskIds,
+    })
     if (role === 'HoD') return [...base, ...activeProofQueueTasks]
     if (role === 'Course Leader') return [...base.filter(t => supervisedOfferingIds.has(t.offeringId)), ...activeProofQueueTasks.filter(t => supervisedOfferingIds.has(t.offeringId))]
-    const mentorScopedIds = new Set([...Array.from(supervisedMenteeIds), ...Array.from(supervisedMenteeIds).map(id => `mentee-${id}`)])
+    const mentorScopedIds = supervisedMenteeIds
     return [
       ...base.filter(t => mentorScopedIds.has(t.studentId) || supervisedMenteeUsns.has(t.studentUsn)),
       ...activeProofQueueTasks.filter(t => mentorScopedIds.has(t.studentId) || supervisedMenteeUsns.has(t.studentUsn)),
     ]
-  }, [allTasksList, facultyProfile?.proofOperations.monitoringQueue, proofVirtualDateISO, role, supervisedOfferingIds, supervisedMenteeIds, supervisedMenteeUsns])
+  }, [academicBootstrap?.proofPlayback?.semesterNumber, academicBootstrap?.proofPlayback?.stageKey, allTasksList, facultyProfile?.proofOperations.monitoringQueue, proofVirtualDateISO, resolvedTasks, role, supervisedOfferingIds, supervisedMenteeIds, supervisedMenteeUsns])
 
   // Pending action badge count must use the proof-playback simulated date
   // (§B.14 + audit §5.2). Without this, tasks scheduled for simulated-future
@@ -1976,7 +2032,8 @@ function OperationalWorkspace({
   const handleOpenStudentProfile = useCallback((studentId: string, offeringId?: string | null) => {
     if (role === 'Mentor') {
       const normalizedStudentId = studentId.split('::').at(-1) ?? studentId
-      const mentorMatch = assignedMentees.find(mentee => mentee.id === studentId || mentee.id === `mentee-${normalizedStudentId}`) ?? allMentees.find(mentee => mentee.id === studentId || mentee.id === `mentee-${normalizedStudentId}`)
+      const studentScopeIds = new Set(getMenteeScopeIds(normalizedStudentId))
+      const mentorMatch = assignedMentees.find(mentee => studentScopeIds.has(mentee.id))
       if (mentorMatch) {
         setSelectedMentee(mentorMatch)
         setPage('mentee-detail')
@@ -2077,6 +2134,7 @@ function OperationalWorkspace({
 
   const handleRoleChange = useCallback((r: Role) => {
     if (!allowedRoles.includes(r) || r === role || roleChangeBusy) return
+    markRiskReevaluationPending()
 
     const applyRoleLocally = () => {
       clearRouteHistory()
@@ -2108,7 +2166,7 @@ function OperationalWorkspace({
       .finally(() => {
         setRoleChangeBusy(false)
       })
-  }, [allowedRoles, clearRouteHistory, onRoleChange, role, roleChangeBusy])
+  }, [allowedRoles, clearRouteHistory, markRiskReevaluationPending, onRoleChange, role, roleChangeBusy])
 
   const buildEntryCommitPayload = useCallback((offId: string, kind: EntryKind) => {
     const targetOffering = allOfferings.find(item => item.offId === offId)
@@ -2217,6 +2275,7 @@ function OperationalWorkspace({
   }, [allOfferings, cellValues, getFallbackBlueprintSet, schemeByOffering, selectors, ttBlueprintsByOffering])
 
   const persistEntryWorkspace = useCallback(async (offId: string, kind: EntryKind, lock = false) => {
+    markRiskReevaluationPending()
     if (kind === 'attendance') {
       const commit = buildEntryCommitPayload(offId, kind)
       if (!commit || commit.kind !== 'attendance') return
@@ -2234,13 +2293,15 @@ function OperationalWorkspace({
       evaluatedAt: new Date().toISOString(),
       lock,
     })
-  }, [buildEntryCommitPayload, repositories])
+  }, [buildEntryCommitPayload, markRiskReevaluationPending, repositories])
 
   const handleSaveDraft = useCallback((offId: string, kind: EntryKind) => {
+    markRiskReevaluationPending()
     setDraftBySection(prev => ({ ...prev, [`${offId}::${kind}`]: Date.now() }))
-  }, [])
+  }, [markRiskReevaluationPending])
 
   const handleSubmitLock = useCallback((offId: string, kind: EntryKind) => {
+    markRiskReevaluationPending()
     let previousLock: boolean | undefined
     let previousSchemeStatus: SchemeState['status'] | undefined
     let previousSchemeLockedAt: number | undefined
@@ -2280,7 +2341,7 @@ function OperationalWorkspace({
       }) : prev)
       console.error('Failed to lock entry workspace', error)
     })
-  }, [allOfferings, defaultOffering, persistEntryWorkspace])
+  }, [allOfferings, defaultOffering, markRiskReevaluationPending, persistEntryWorkspace])
 
   const commitStudentPatch = useCallback((offeringId: string, studentId: string, updater: (existing: StudentRuntimePatch) => StudentRuntimePatch) => {
     setStudentPatches(prev => {
@@ -2302,6 +2363,7 @@ function OperationalWorkspace({
   }, [])
 
   const handleCellValueChange = useCallback((key: string, value: number | undefined) => {
+    markRiskReevaluationPending()
     setCellValues(prev => {
       const next = { ...prev }
       if (value === undefined) delete next[key]
@@ -2342,9 +2404,10 @@ function OperationalWorkspace({
       }
       return existing
     })
-  }, [commitStudentPatch])
+  }, [commitStudentPatch, markRiskReevaluationPending])
 
   const handleResolveTask = useCallback((id: string) => {
+    markRiskReevaluationPending()
     const resolvedAt = Date.now()
     const target = allTasksList.find(task => task.id === id)
     if (!target) {
@@ -2404,7 +2467,7 @@ function OperationalWorkspace({
         },
       }))
     }
-  }, [allTasksList, currentTeacherId, proofVirtualDateISO, role, taskPlacements])
+  }, [allTasksList, currentTeacherId, markRiskReevaluationPending, proofVirtualDateISO, role, taskPlacements])
 
   const handleToggleSchedulePause = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -2448,23 +2511,47 @@ function OperationalWorkspace({
   }, [currentTeacherId, proofVirtualDateISO, role, taskPlacements])
 
   const handleDismissTask = useCallback((taskId: string) => {
-    setAllTasksList(prev => prev.map(task => {
-      if (task.id !== taskId || task.scheduleMeta?.mode === 'scheduled' || task.dismissal) return task
-      return {
-        ...task,
-        updatedAt: Date.now(),
-        dismissal: {
-          kind: 'task',
-          dismissedAt: Date.now(),
-          dismissedByFacultyId: currentTeacherId ?? undefined,
-          dismissedDateISO: normalizeDateISO(task.dueDateISO),
-        },
-        transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Dismissed', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} dismissed this queue item from active work.` })],
-      }
-    }))
-  }, [currentTeacherId, role])
+    markRiskReevaluationPending()
+    const dismissedAt = Date.now()
+    const target = roleTasks.find(task => task.id === taskId)
+    if (!target || target.scheduleMeta?.mode === 'scheduled' || target.dismissal) return
+    const dismissedTask: SharedTask = {
+      ...target,
+      updatedAt: dismissedAt,
+      dismissal: {
+        kind: 'task',
+        dismissedAt,
+        dismissedByFacultyId: currentTeacherId ?? undefined,
+        dismissedDateISO: normalizeDateISO(target.dueDateISO),
+      },
+      transitionHistory: [
+        ...(target.transitionHistory ?? []),
+        createTransition({
+          action: 'Dismissed',
+          actorRole: role,
+          actorTeacherId: currentTeacherId ?? undefined,
+          fromOwner: target.assignedTo,
+          toOwner: target.assignedTo,
+          note: `${role} dismissed this queue item from active work.`,
+        }),
+      ],
+    }
+    if (taskId.startsWith('proof-monitoring-')) {
+      setResolvedTasks(prev => ({ ...prev, [taskId]: dismissedAt }))
+    }
+    setAllTasksList(prev => {
+      let matchedExistingTask = false
+      const nextTasks = prev.map(task => {
+        if (task.id !== taskId) return task
+        matchedExistingTask = true
+        return dismissedTask
+      })
+      return matchedExistingTask ? nextTasks : [...nextTasks, dismissedTask]
+    })
+  }, [currentTeacherId, markRiskReevaluationPending, role, roleTasks])
 
   const handleDismissSeries = useCallback((taskId: string) => {
+    markRiskReevaluationPending()
     setAllTasksList(prev => prev.map(task => {
       if (task.id !== taskId || task.scheduleMeta?.mode !== 'scheduled' || task.dismissal) return task
       return {
@@ -2479,9 +2566,16 @@ function OperationalWorkspace({
         transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Series dismissed', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} removed this recurring series from active work.` })],
       }
     }))
-  }, [currentTeacherId, role])
+  }, [currentTeacherId, markRiskReevaluationPending, role])
 
   const handleRestoreTask = useCallback((taskId: string) => {
+    markRiskReevaluationPending()
+    setResolvedTasks(prev => {
+      if (!prev[taskId]) return prev
+      const next = { ...prev }
+      delete next[taskId]
+      return next
+    })
     setAllTasksList(prev => prev.map(task => {
       if (task.id !== taskId || !task.dismissal) return task
       const action = task.dismissal.kind === 'series' ? 'Series resumed' : 'Restored'
@@ -2495,9 +2589,10 @@ function OperationalWorkspace({
         transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action, actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note })],
       }
     }))
-  }, [currentTeacherId, role])
+  }, [currentTeacherId, markRiskReevaluationPending, role])
 
   const handleUndoTask = useCallback((id: string) => {
+    markRiskReevaluationPending()
     setResolvedTasks(prev => {
       const next = { ...prev }
       delete next[id]
@@ -2509,7 +2604,7 @@ function OperationalWorkspace({
       updatedAt: Date.now(),
       transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Reopened', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} reopened the resolved queue item.` })],
     }) : task))
-  }, [currentTeacherId, role])
+  }, [currentTeacherId, markRiskReevaluationPending, role])
 
   const appendLockAudit = useCallback((offeringId: string, kind: EntryKind, transition: QueueTransition) => {
     setLockAuditByTarget(prev => ({
@@ -2861,10 +2956,12 @@ function OperationalWorkspace({
   }, [allOfferings, assignedOfferings, defaultOffering, getStudentsPatched, offering, uploadOffering])
 
   const handleRequestUnlock = useCallback((offeringId: string, kind: EntryKind) => {
+    markRiskReevaluationPending()
     setPendingNoteAction({ type: 'unlock-request', offeringId, kind })
-  }, [])
+  }, [markRiskReevaluationPending])
 
   const handleCreateTask = useCallback((input: TaskCreateInput) => {
+    markRiskReevaluationPending()
     const off = allOfferings.find(o => o.offId === input.offeringId)
     if (!off || !currentTeacher) return
     const s = getStudentsPatched(off).find(st => st.id === input.studentId)
@@ -2946,9 +3043,10 @@ function OperationalWorkspace({
         },
       }))
     }
-  }, [allOfferings, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, getStudentsPatched, proofVirtualDateISO, repositories, role])
+  }, [allOfferings, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, getStudentsPatched, markRiskReevaluationPending, proofVirtualDateISO, repositories, role])
 
   const handleRemedialCheckIn = useCallback((taskId: string) => {
+    markRiskReevaluationPending()
     setAllTasksList(prev => prev.map(task => {
       if (task.id !== taskId || !task.remedialPlan) return task
       const nextPending = task.remedialPlan.steps.find(step => !step.completedAt)
@@ -2976,9 +3074,10 @@ function OperationalWorkspace({
       void repositories.tasks.upsertTask(updatedTask)
       return updatedTask
     }))
-  }, [currentTeacherId, repositories, role])
+  }, [currentTeacherId, markRiskReevaluationPending, repositories, role])
 
   const submitUnlockRequest = useCallback((offeringId: string, kind: EntryKind, note: string) => {
+    markRiskReevaluationPending()
     const off = allOfferings.find(o => o.offId === offeringId)
     if (!off) return
     const anchorStudent = getStudentsPatched(off)[0]
@@ -3065,9 +3164,10 @@ function OperationalWorkspace({
       void repositories.tasks.upsertTask(nextTask)
       return existing ? prev.map(task => task.id === id ? nextTask : task) : [nextTask, ...prev]
     })
-  }, [allOfferings, appendLockAudit, currentTeacherId, getStudentsPatched, repositories, role])
+  }, [allOfferings, appendLockAudit, currentTeacherId, getStudentsPatched, markRiskReevaluationPending, repositories, role])
 
   const submitStudentHandoff = useCallback((studentId: string, offeringId: string, mode: 'escalate' | 'mentor', note: string) => {
+    markRiskReevaluationPending()
     const off = allOfferings.find(item => item.offId === offeringId)
     if (!off) return
     const student = getStudentsPatched(off).find(item => item.id === studentId)
@@ -3133,9 +3233,10 @@ function OperationalWorkspace({
       void repositories.tasks.upsertTask(nextTask)
       return existing ? prev.map(task => task.id === id ? nextTask : task) : [nextTask, ...prev]
     })
-  }, [allOfferings, currentTeacherId, getStudentsPatched, repositories, role])
+  }, [allOfferings, currentTeacherId, getStudentsPatched, markRiskReevaluationPending, repositories, role])
 
   const commitTaskReassignment = useCallback((taskId: string, toRole: Role, note: string) => {
+    markRiskReevaluationPending()
     setResolvedTasks(prev => {
       const next = { ...prev }
       delete next[taskId]
@@ -3164,7 +3265,7 @@ function OperationalWorkspace({
       void repositories.tasks.upsertTask(nextTask)
       return nextTask
     }))
-  }, [currentTeacherId, repositories, role])
+  }, [currentTeacherId, markRiskReevaluationPending, repositories, role])
 
   const handleReassignTask = useCallback((taskId: string, toRole: Role) => {
     const task = allTasksList.find(item => item.id === taskId)
@@ -3211,6 +3312,7 @@ function OperationalWorkspace({
   }, [commitTaskReassignment, pendingNoteAction, submitStudentHandoff, submitUnlockRequest])
 
   const handleSaveScheme = useCallback((offId: string, next: SchemeState) => {
+    markRiskReevaluationPending()
     const offeringForScheme = allOfferings.find(item => item.offId === offId) ?? defaultOffering ?? allOfferings[0]
     setSchemeByOffering(prev => ({
       ...prev,
@@ -3221,9 +3323,10 @@ function OperationalWorkspace({
       }, offeringForScheme),
     }))
     setPage('upload')
-  }, [allOfferings, defaultOffering, hasEntryStartedForOffering, role])
+  }, [allOfferings, defaultOffering, hasEntryStartedForOffering, markRiskReevaluationPending, role])
 
   const handleApproveUnlock = useCallback((taskId: string) => {
+    markRiskReevaluationPending()
     setAllTasksList(prev => prev.map(task => task.id === taskId ? ({
       ...task,
       updatedAt: Date.now(),
@@ -3237,9 +3340,10 @@ function OperationalWorkspace({
       } : task.unlockRequest,
       transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Unlock approved', actorRole: 'HoD', actorTeacherId: currentTeacherId ?? undefined, fromOwner: 'HoD', toOwner: 'HoD', note: 'Request approved pending explicit reset/unlock.' })],
     }) : task))
-  }, [currentTeacherId])
+  }, [currentTeacherId, markRiskReevaluationPending])
 
   const handleRejectUnlock = useCallback((taskId: string) => {
+    markRiskReevaluationPending()
     setAllTasksList(prev => prev.map(task => task.id === taskId ? ({
       ...task,
       updatedAt: Date.now(),
@@ -3254,9 +3358,10 @@ function OperationalWorkspace({
       transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Unlock rejected', actorRole: 'HoD', actorTeacherId: currentTeacherId ?? undefined, fromOwner: 'HoD', toOwner: 'HoD', note: 'Lock remains in effect.' })],
     }) : task))
     setResolvedTasks(prev => ({ ...prev, [taskId]: Date.now() }))
-  }, [currentTeacherId])
+  }, [currentTeacherId, markRiskReevaluationPending])
 
   const handleResetComplete = useCallback(async (taskId: string) => {
+    markRiskReevaluationPending()
     const task = allTasksList.find(item => item.id === taskId)
     if (!task?.unlockRequest) return
     const unlockKind = task.unlockRequest.kind
@@ -3305,10 +3410,11 @@ function OperationalWorkspace({
       transitionHistory: [...(item.transitionHistory ?? []), createTransition({ action: 'Reset completed and unlocked', actorRole: 'HoD', actorTeacherId: currentTeacherId ?? undefined, fromOwner: 'HoD', toOwner: item.sourceRole === 'Mentor' ? 'Mentor' : 'Course Leader', note: 'Entry dataset is unlocked for correction.' })],
     }) : item))
     setResolvedTasks(prev => ({ ...prev, [taskId]: Date.now() }))
-  }, [allOfferings, allTasksList, appendLockAudit, currentTeacherId, defaultOffering, repositories])
+  }, [allOfferings, allTasksList, appendLockAudit, currentTeacherId, defaultOffering, markRiskReevaluationPending, repositories])
 
   const handleOpenTaskStudent = useCallback((task: SharedTask) => {
-    const mentorMatch = assignedMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId) ?? allMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId)
+    const taskScopeIds = new Set(getMenteeScopeIds(task.studentId.split('::').at(-1) ?? task.studentId))
+    const mentorMatch = assignedMentees.find(mentee => mentee.usn === task.studentUsn || taskScopeIds.has(mentee.id))
     if (mentorMatch && role === 'Mentor') {
       setSelectedMentee(mentorMatch)
       setPage('mentee-detail')
@@ -3414,6 +3520,7 @@ function OperationalWorkspace({
     pendingActionCount,
     assignedOfferings,
     filteredCurrentFacultyTimetable,
+    handleOpenFacultyProfile: () => setPage('faculty-profile'),
     greetingHeadline,
     greetingMeta,
     greetingSubline,
@@ -3439,6 +3546,7 @@ function OperationalWorkspace({
     getEntryLockMap,
     getFallbackBlueprintSet,
     academicBootstrap,
+    studentHistoryByUsn,
     handleUpdateBlueprint,
     handleOpenEntryHub,
     handleOpenSchemeSetup,
@@ -3590,12 +3698,17 @@ function OperationalWorkspace({
 
       {/* ═══ STUDENT DRAWER ═══ */}
       <AnimatePresence>
-        {selectedStudent && (
-          <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} historyByUsn={studentHistoryByUsn} role={role} meetings={academicMeetings} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={handleOpenStudentEscalation} onOpenTaskComposer={(s, o, taskType) => {
-            const resolvedOffering = o ?? allOfferings.find(item => getStudentsPatched(item).some(candidate => candidate.id === s.id))
-            handleOpenTaskComposer({ offeringId: resolvedOffering?.offId, studentId: s.id, taskType })
-          }} onAssignToMentor={handleOpenStudentMentorHandoff} onOpenHistory={handleOpenHistoryFromStudent} onOpenStudentShell={studentId => handleOpenStudentShell(studentId, page)} onOpenRiskExplorer={studentId => handleOpenRiskExplorer(studentId, page)} onScheduleMeeting={handleScheduleMeeting} />
-        )}
+        {selectedStudent && (() => {
+          const matchingQueueItem = facultyProfile?.proofOperations.monitoringQueue.find(item => item.studentId === selectedStudent.id || item.studentId === selectedStudent.id.split('::').at(-1))
+          const coreMetricsOverride = matchingQueueItem ? coreMetricsFromFacultyQueueItem(matchingQueueItem) : null
+          
+          return (
+            <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} historyByUsn={studentHistoryByUsn} role={role} meetings={academicMeetings} proofStageKey={academicBootstrap?.proofPlayback?.stageKey} coreMetricsOverride={coreMetricsOverride} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={handleOpenStudentEscalation} onOpenTaskComposer={(s, o, taskType) => {
+              const resolvedOffering = o ?? allOfferings.find(item => getStudentsPatched(item).some(candidate => candidate.id === s.id))
+              handleOpenTaskComposer({ offeringId: resolvedOffering?.offId, studentId: s.id, taskType })
+            }} onAssignToMentor={handleOpenStudentMentorHandoff} onOpenHistory={handleOpenHistoryFromStudent} onOpenStudentShell={studentId => handleOpenStudentShell(studentId, page)} onOpenRiskExplorer={studentId => handleOpenRiskExplorer(studentId, page)} onScheduleMeeting={handleScheduleMeeting} />
+          )
+        })()}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -3692,7 +3805,7 @@ export function OperationalApp() {
   const [remoteSession, setRemoteSession] = useState<ApiSessionResponse | null>(null)
   const [workspaceProjection, setWorkspaceProjection] = useState<AcademicWorkspaceProjection | null>(null)
   const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>([])
-  const [playbackCheckpointId, setPlaybackCheckpointId] = useState<string | null>(() => readProofPlaybackSelection()?.simulationStageCheckpointId ?? null)
+  const [playbackCheckpointId, setPlaybackCheckpointId] = useState<string | null>(() => readSharedProofPlaybackSelection('academic')?.simulationStageCheckpointId ?? null)
   const [proofPlaybackNotice, setProofPlaybackNotice] = useState<{ tone: 'neutral' | 'error'; message: string } | null>(null)
   const handleReturnToPortal = useCallback(() => {
     if (typeof window !== 'undefined') clearPortalWorkspaceHints(window.localStorage)
@@ -3761,7 +3874,7 @@ export function OperationalApp() {
       })))
       return snapshot
     }
-    const selection = readProofPlaybackSelection()
+    const selection = readSharedProofPlaybackSelection('academic')
     try {
       const requestedCheckpointId = selection?.simulationStageCheckpointId ?? null
       const snapshot = restrictAcademicBootstrap(await apiClient.getAcademicBootstrap(requestedCheckpointId ? {
@@ -4050,6 +4163,9 @@ export function OperationalApp() {
 
   const handleRemoteLogout = useCallback(async () => {
     if (!remoteSessionRepositories) return
+    clearProofPlaybackSelection()
+    setProofPlaybackNotice(null)
+    setPlaybackCheckpointId(null)
     setRemoteSession(null)
     setWorkspaceProjection(null)
     setWorkspaceLoadingLabel('')
@@ -4222,7 +4338,7 @@ export function OperationalApp() {
     if (!apiClient) throw new Error('Academic backend is unavailable.')
     const result = await apiClient.resolveAcademicProofReassessment(reassessmentEventId, {
       outcome: 'completed_improving',
-      note: 'Demo Reality Loop guided intervention resolution.',
+      note: 'Guided intervention resolution.',
     })
     if (options.refreshWorkspace !== false) {
       await refreshAcademicProjection()
@@ -4273,7 +4389,7 @@ export function OperationalApp() {
       >
         {workspaceReady ? (
           <OperationalWorkspace
-            key={`${workspaceProjection?.revision ?? 0}:${workspaceSession!.activeRoleGrant.grantId}:${workspaceBootstrap!.proofPlayback?.simulationStageCheckpointId ?? 'active'}`}
+            key={`${workspaceSession!.activeRoleGrant.grantId}:${workspaceBootstrap!.proofPlayback?.simulationStageCheckpointId ?? 'active'}`}
             repositories={workspaceRepositories!}
             liveAcademicMode={liveAcademicMode}
             initialTeacherId={workspaceSession!.faculty!.facultyId}

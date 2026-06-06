@@ -356,7 +356,7 @@ export function AcademicBackendUnavailableState({ onBackToPortal }: { onBackToPo
     <AcademicAuthPageShell>
       <Card style={{ maxWidth: 760, margin: '0 auto', display: 'grid', gap: 12 }}>
         <div style={{ ...sora, fontSize: 22, fontWeight: 800, color: T.text }}>Teaching Workspace</div>
-        <InfoBanner tone="error" message="VITE_AIRMENTOR_API_BASE_URL is required. Mock mode has been removed." />
+        <InfoBanner tone="error" message="VITE_AIRMENTOR_API_BASE_URL is required. Offline fixture mode has been removed from the live app." />
         <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
           Configure the API URL so the teaching workspace runs entirely from system-admin managed backend data.
         </div>

@@ -5,6 +5,7 @@ import {
   addBlueprintPart,
   addBlueprintQuestion,
   canonicalizeBlueprintStructure,
+  computeCoAttainmentRows,
   createAppSelectors,
   defaultSchemeForOffering,
   flattenBlueprintLeaves,
@@ -110,6 +111,67 @@ describe('selectors', () => {
     )
   })
 
+  it('recomputes patched risk band and driver cards from patched attendance and TT scores', () => {
+    const baseStudent = getStudents(cs401a)[0]
+    const blueprint = buildBlueprintFixture()
+    const zeroTt1Scores = Object.fromEntries(flattenBlueprintLeaves(blueprint.nodes).map(leaf => [leaf.id, 0]))
+    const controlledStudent = {
+      ...baseStudent,
+      id: 'risk-recompute-student',
+      present: 45,
+      totalClasses: 45,
+      tt1Score: 23,
+      tt1Max: 25,
+      prevCgpa: 8.4,
+      riskProb: 0.05,
+      riskBand: 'Low' as const,
+      reasons: [],
+      coScores: [
+        { coId: 'CO1', attainment: 92 },
+        { coId: 'CO2', attainment: 88 },
+      ],
+      whatIf: [],
+      flags: { backlog: false, lowAttendance: false, declining: false },
+    }
+    const selectors = createAppSelectors({
+      studentPatches: {
+        [`${cs401a.offId}::risk-recompute-student`]: {
+          present: 9,
+          totalClasses: 45,
+          tt1LeafScores: zeroTt1Scores,
+        },
+      },
+      schemeByOffering: {
+        [cs401a.offId]: defaultSchemeForOffering(cs401a),
+      },
+      ttBlueprintsByOffering: {
+        [cs401a.offId]: {
+          tt1: blueprint,
+          tt2: { ...blueprint, kind: 'tt2' },
+        },
+      },
+      studentsByOffering: {
+        [cs401a.offId]: [controlledStudent],
+      },
+      studentSourceMode: 'seeded',
+    })
+
+    const patchedStudent = selectors.getStudentsPatched(cs401a)[0]
+
+    expect(patchedStudent.present).toBe(9)
+    expect(patchedStudent.tt1Score).toBe(0)
+    expect(patchedStudent.riskBand).toBe('High')
+    expect(patchedStudent.riskProb).toBeGreaterThanOrEqual(0.7)
+    expect(patchedStudent.flags.lowAttendance).toBe(true)
+    expect(patchedStudent.coScores.find(co => co.coId === 'CO1')?.attainment).toBe(0)
+    expect(patchedStudent.reasons.map(reason => reason.feature)).toEqual(
+      expect.arrayContaining(['attendance', 'tt1', 'co']),
+    )
+    expect(patchedStudent.whatIf.map(item => item.label)).toEqual(
+      expect.arrayContaining(['Improve attendance to 75%', 'CO1 attainment >= 50% in TT2']),
+    )
+  })
+
   it('normalizes scheme counts and clamps component definitions', () => {
     const normalized = normalizeSchemeState({
       finalsMax: 100,
@@ -186,6 +248,259 @@ describe('selectors', () => {
     const projection = selectors.deriveAcademicProjection({ offering: cs401a, student: patchedStudent ?? baseStudent, scheme })
     expect(projection.assignmentRawTotal).toBe(21)
     expect(projection.asgnScaled).toBeCloseTo(17.4, 5)
+  })
+
+  it('keeps CE projections stage-visible so future marks do not leak into early proof cards', () => {
+    const baseStudent = getStudents(cs401a)[0]
+    const scheme = normalizeSchemeState({
+      finalsMax: 100,
+      termTestWeights: { tt1: 15, tt2: 15 },
+      quizCount: 2,
+      assignmentCount: 2,
+      quizComponents: [
+        { id: 'quiz-1', label: 'Quiz 1', rawMax: 10, weightage: 8 },
+        { id: 'quiz-2', label: 'Quiz 2', rawMax: 10, weightage: 7 },
+      ],
+      assignmentComponents: [
+        { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 8 },
+        { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 7 },
+      ],
+      policyContext: {
+        ce: 60,
+        see: 40,
+        maxTermTests: 2,
+        maxQuizzes: 5,
+        maxAssignments: 5,
+      },
+      status: 'Configured',
+    }, cs401a)
+    const student = {
+      ...baseStudent,
+      tt1Score: 20,
+      tt1Max: 25,
+      tt2Score: 19,
+      tt2Max: 25,
+      quizScores: { 'quiz-1': 8, 'quiz-2': 7 },
+      assignmentScores: { 'assignment-1': 9, 'assignment-2': 8 },
+    }
+    const selectors = createAppSelectors({
+      studentPatches: {},
+      schemeByOffering: { [cs401a.offId]: scheme },
+      ttBlueprintsByOffering: {},
+      studentSourceMode: 'seeded',
+    })
+
+    const preTt1 = selectors.deriveAcademicProjection({ offering: cs401a, student, scheme, stageKey: 'pre-tt1' })
+    const postTt1 = selectors.deriveAcademicProjection({ offering: cs401a, student, scheme, stageKey: 'post-tt1' })
+    const postAssignments = selectors.deriveAcademicProjection({ offering: cs401a, student, scheme, stageKey: 'post-assignments' })
+
+    expect(preTt1.ce60).toBe(0)
+    expect(preTt1.tt1Raw).toBeNull()
+    expect(postTt1.ce60).toBeCloseTo(12, 5)
+    expect(postTt1.tt2Raw).toBeNull()
+    expect(postTt1.quizRawTotal).toBe(0)
+    expect(postAssignments.ce60).toBeGreaterThan(postTt1.ce60)
+    expect(postAssignments.quizRawTotal).toBe(15)
+    expect(postAssignments.assignmentRawTotal).toBe(17)
+  })
+
+  it('uses proof-observed SEE and transcript history for final score and predicted CGPA', () => {
+    const baseStudent = getStudents(cs401a)[0]
+    const scheme = normalizeSchemeState({
+      finalsMax: 100,
+      termTestWeights: { tt1: 15, tt2: 15 },
+      quizCount: 1,
+      assignmentCount: 1,
+      quizComponents: [{ id: 'quiz-1', label: 'Quiz 1', rawMax: 10, weightage: 15 }],
+      assignmentComponents: [{ id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 15 }],
+      policyContext: {
+        ce: 60,
+        see: 40,
+        maxTermTests: 2,
+        maxQuizzes: 5,
+        maxAssignments: 5,
+      },
+      status: 'Configured',
+    }, cs401a)
+    const student = {
+      ...baseStudent,
+      prevCgpa: 5.1,
+      currentCgpa: 6.4,
+      proofObservedTt1Pct: 80,
+      proofObservedTt2Pct: 70,
+      proofObservedQuizPct: 50,
+      proofObservedAssignmentPct: 100,
+      proofObservedSeePct: 80,
+    }
+    const selectors = createAppSelectors({
+      studentPatches: {},
+      schemeByOffering: { [cs401a.offId]: scheme },
+      ttBlueprintsByOffering: {},
+      studentSourceMode: 'seeded',
+    })
+
+    const projection = selectors.deriveAcademicProjection({
+      offering: { ...cs401a, credits: 4 },
+      student,
+      scheme,
+      history: {
+        usn: student.usn,
+        studentName: student.name,
+        program: 'CSE',
+        dept: 'CSE',
+        trend: 'Stable',
+        currentCgpa: 7,
+        completedCreditsForCgpa: 100,
+        progressionStatus: 'Eligible',
+        advisoryNotes: [],
+        repeatSubjects: [],
+        terms: [],
+      },
+      stageKey: 'post-see',
+    })
+
+    expect(projection.ce60).toBeCloseTo(45, 5)
+    expect(projection.seeRaw).toBe(80)
+    expect(projection.seeScaled40).toBeCloseTo(32, 5)
+    expect(projection.finalScore100).toBeCloseTo(77, 5)
+    expect(projection.predictedCgpa).toBe(7.04)
+  })
+
+  it('falls back to proof-observed TT percentages for CO attainment rows', () => {
+    const baseStudent = getStudents(cs401a)[0]
+    const rows = computeCoAttainmentRows([
+      {
+        ...baseStudent,
+        tt1Score: null,
+        tt2Score: null,
+        proofObservedTt1Pct: 80,
+        proofObservedTt2Pct: 60,
+      },
+    ], [{ id: 'CO1', desc: 'Apply proof-aware evidence', bloom: 'Apply' }])
+
+    expect(rows[0]).toMatchObject({
+      coId: 'CO1',
+      overallAttainment: 70,
+      studentsCounted: 1,
+    })
+  })
+
+  it('uses proof-observed TT percentages for CO attainment rows even when blueprints exist', () => {
+    const baseStudent = getStudents(cs401a)[0]
+    const blueprint = buildBlueprintFixture()
+    const rows = computeCoAttainmentRows([
+      {
+        ...baseStudent,
+        tt1Score: null,
+        tt2Score: null,
+        proofObservedTt1Pct: 80,
+        proofObservedTt2Pct: 60,
+      },
+    ], [{ id: 'CO1', desc: 'Apply proof-aware evidence', bloom: 'Apply' }], {
+      tt1: blueprint,
+      tt2: {
+        ...blueprint,
+        kind: 'tt2',
+      },
+    })
+
+    expect(rows[0]).toMatchObject({
+      coId: 'CO1',
+      tt1Attainment: 80,
+      tt2Attainment: 60,
+      overallAttainment: 70,
+      studentsCounted: 1,
+    })
+  })
+
+  it('excludes future TT blueprints from CO denominators when no score is visible yet', () => {
+    const baseStudent = getStudents(cs401a)[0]
+    const blueprint = buildBlueprintFixture()
+    const rows = computeCoAttainmentRows([
+      {
+        ...baseStudent,
+        tt1Score: null,
+        tt2Score: null,
+        proofObservedTt1Pct: 100,
+        proofObservedTt2Pct: null,
+      },
+    ], [{ id: 'CO1', desc: 'Apply proof-aware evidence', bloom: 'Apply' }], {
+      tt1: blueprint,
+      tt2: {
+        ...blueprint,
+        kind: 'tt2',
+      },
+    })
+
+    expect(rows[0]).toMatchObject({
+      coId: 'CO1',
+      tt1Attainment: 100,
+      tt2Attainment: null,
+      overallAttainment: 100,
+      studentsCounted: 1,
+    })
+  })
+
+  it('counts genuine zero CO evidence in class averages without treating missing future evidence as zero', () => {
+    const baseStudent = getStudents(cs401a)[0]
+    const blueprint = buildBlueprintFixture()
+    const rows = computeCoAttainmentRows([
+      {
+        ...baseStudent,
+        id: 'zero-evidence-student',
+        tt1Score: null,
+        tt2Score: null,
+        proofObservedTt1Pct: 0,
+        proofObservedTt2Pct: null,
+      },
+      {
+        ...baseStudent,
+        id: 'perfect-evidence-student',
+        tt1Score: null,
+        tt2Score: null,
+        proofObservedTt1Pct: 100,
+        proofObservedTt2Pct: null,
+      },
+    ], [{ id: 'CO1', desc: 'Apply proof-aware evidence', bloom: 'Apply' }], {
+      tt1: blueprint,
+      tt2: {
+        ...blueprint,
+        kind: 'tt2',
+      },
+    })
+
+    expect(rows[0]).toMatchObject({
+      coId: 'CO1',
+      tt1Attainment: 50,
+      tt2Attainment: null,
+      overallAttainment: 50,
+      studentsCounted: 2,
+    })
+  })
+
+  it('hides stale final score and predicted CGPA before the post-SEE checkpoint', () => {
+    const baseStudent = getStudents(cs401a)[0]
+    const selectors = createAppSelectors({
+      studentPatches: {},
+      schemeByOffering: { [cs401a.offId]: defaultSchemeForOffering(cs401a) },
+      ttBlueprintsByOffering: {},
+      studentSourceMode: 'seeded',
+    })
+    const projection = selectors.deriveAcademicProjection({
+      offering: cs401a,
+      student: {
+        ...baseStudent,
+        finalScore100: 91,
+        predictedCgpa: 9.1,
+        proofObservedSeePct: 90,
+      },
+      stageKey: 'post-assignments',
+    })
+
+    expect(projection.seeRaw).toBeNull()
+    expect(projection.finalScore100).toBeNull()
+    expect(projection.bandLabel).toBeNull()
+    expect(projection.predictedCgpa).toBeNull()
   })
 
   it('seeds TT leaf scores from aggregate backend marks without showing zero-only cells', () => {

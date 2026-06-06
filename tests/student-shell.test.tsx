@@ -287,6 +287,8 @@ describe('StudentShellPage', () => {
     expect(markup).toContain('Deterministic shell chat')
     expect(markup).toContain('Student shell does not make future-certainty claims.')
     expect(markup).toContain('Shell guardrail boundary')
+    expect(markup).toContain('CGPA 6.74 · backlogs 2')
+    expect(markup).not.toContain('Pred CGPA')
     expect(markup).toContain('Session Intro')
     expect(markup).toContain('Deterministic Reply')
     expect(markup).toContain('Model Output')
@@ -614,6 +616,7 @@ describe('StudentShellPage', () => {
           nextDueAt: null,
           currentReassessmentStatus: 'Watch',
           currentCgpa: 7.12,
+          predictedCgpa: 7.46,
           backlogCount: 0,
           electiveFit: {
             recommendedCode: 'MC6E01',
@@ -733,6 +736,7 @@ describe('StudentShellPage', () => {
     expect(markup).toContain('Sem 6')
     expect(markup).toContain('You are viewing a saved preview checkpoint (Semester 6)')
     expect(markup).toContain('MC6E01')
+    expect(markup).toContain('Pred CGPA 7.46 · current CGPA 7.12 · backlogs 0')
     expect(markup).toContain('No-action view')
     expect(markup).toContain('Semester 4')
     expect(markup).toContain('Semester 5')

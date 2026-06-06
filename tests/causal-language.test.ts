@@ -2,16 +2,13 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const scannedRoots = ['src', 'docs', 'audit-map/32-reports']
+const scannedRoots = ['src', 'docs']
 const checkedExtensions = new Set(['.ts', '.tsx', '.md'])
 const explicitlyScopedBoundaryFiles = new Set([
-  'audit-map/32-reports/airmentor-claim-ledger-2026-05-11.md',
-  'audit-map/32-reports/proof-forensic-realism-2026-05-11.md',
+  'docs/paper-evidence/claim-ledger-2026-05-11.md',
+  'docs/paper-evidence/proof-forensic-realism-2026-05-11.md',
   'docs/paper-evidence/airmentor-paper-evidence-boundaries-2026-05-11.md',
   'docs/paper-evidence/causal-evaluation-protocol.md',
-  'docs/superpowers/plans/2026-05-10-airmentor-full-realism-demo-closure.md',
-  'docs/superpowers/plans/2026-05-11-airmentor-phase1-deterministic-realism.md',
-  'docs/superpowers/specs/2026-05-11-airmentor-deterministic-realism-product-campaign-design.md',
 ])
 
 const prohibitedPatterns = [

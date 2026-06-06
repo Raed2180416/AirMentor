@@ -183,31 +183,33 @@ function chooseInterventionType(row: JsonRecord) {
 }
 
 function selectCohort(candidateRows: JsonRecord[]) {
+  const maxRows = 48
+  const mediumTarget = 12
   const selected: JsonRecord[] = []
   const seenTarget = new Set<string>()
   const add = (row: JsonRecord) => {
+    if (selected.length >= maxRows) return false
     const key = `${row.student_id}::${row.offering_id}`
-    if (seenTarget.has(key)) return
+    if (seenTarget.has(key)) return false
     seenTarget.add(key)
     selected.push(row)
+    return true
   }
 
-  candidateRows
-    .filter(row => row.risk_band === 'High')
-    .forEach(add)
-
+  const highRows = candidateRows.filter(row => row.risk_band === 'High')
+  const mediumRows = candidateRows.filter(row => row.risk_band === 'Medium' && row.queue_state !== 'idle')
   const mediumGroupCounts = new Map<string, number>()
-  candidateRows
-    .filter(row => row.risk_band === 'Medium' && row.queue_state !== 'idle')
-    .forEach(row => {
-      const groupKey = `${row.semester_number}::${row.stage_key}::${row.queue_state}`
-      const count = mediumGroupCounts.get(groupKey) ?? 0
-      if (count >= 2) return
-      add(row)
-      mediumGroupCounts.set(groupKey, count + 1)
-    })
+  for (const row of mediumRows) {
+    if (selected.filter(item => item.risk_band === 'Medium').length >= mediumTarget) break
+    const groupKey = `${row.semester_number}::${row.stage_key}::${row.queue_state}`
+    const count = mediumGroupCounts.get(groupKey) ?? 0
+    if (count >= 2) continue
+    if (add(row)) mediumGroupCounts.set(groupKey, count + 1)
+  }
+  for (const row of highRows) add(row)
+  for (const row of mediumRows) add(row)
 
-  return selected.slice(0, 48)
+  return selected
 }
 
 function containsStudent(payload: unknown, studentId: string) {

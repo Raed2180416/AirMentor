@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CourseDetail } from '../src/pages/course-pages'
 import { AppSelectorsContext, createAppSelectors, defaultSchemeForOffering } from '../src/selectors'
-import type { Offering, Student } from '../src/data'
+import type { CoAttainmentRow, Offering, Student } from '../src/data'
 
 afterEach(() => {
   cleanup()
@@ -50,44 +50,48 @@ const sem1Student: Student = {
   currentCgpa: 0,
   riskProb: 0.74,
   riskBand: 'High',
-  reasons: [{ label: 'seeded mock risk', impact: 0.2, feature: 'mock' }],
+  reasons: [{ label: 'seeded fixture risk', impact: 0.2, feature: 'fixture' }],
   coScores: [],
   whatIf: [],
   interventions: [],
   flags: { backlog: false, lowAttendance: false, declining: false },
 }
 
-function renderCourse(initialTab = 'overview') {
+function renderCourse(input: { initialTab?: string; offering?: Offering; student?: Student; proofStageKey?: string | null; coAttainmentRows?: CoAttainmentRow[] } = {}) {
+  const offering = input.offering ?? sem1Offering
+  const student = input.student ?? sem1Student
+  const scheme = defaultSchemeForOffering(offering)
   const selectors = createAppSelectors({
     studentPatches: {},
-    schemeByOffering: { [sem1Offering.offId]: defaultSchemeForOffering(sem1Offering) },
+    schemeByOffering: { [offering.offId]: scheme },
     ttBlueprintsByOffering: {},
-    studentsByOffering: { [sem1Offering.offId]: [sem1Student] },
+    studentsByOffering: { [offering.offId]: [student] },
     studentSourceMode: 'live',
   })
 
   return render(createElement(AppSelectorsContext.Provider, { value: selectors }, createElement(CourseDetail, {
-    offering: sem1Offering,
+    offering,
     onBack: vi.fn(),
     onOpenStudent: vi.fn(),
     onOpenEntryHub: vi.fn(),
     onOpenSchemeSetup: vi.fn(),
-    initialTab,
-    scheme: defaultSchemeForOffering(sem1Offering),
+    initialTab: input.initialTab,
+    scheme,
     lockMap: { attendance: false, tt1: false, tt2: true, quiz: true, assignment: true, finals: true },
-    blueprints: selectors.getBlueprintsForOffering(sem1Offering),
+    blueprints: selectors.getBlueprintsForOffering(offering),
     onUpdateBlueprint: vi.fn(),
     courseOutcomes: [
       { id: 'CO1', desc: 'Explain the core laws of electric circuits and measurements.', bloom: 'Understand' },
       { id: 'CO2', desc: 'Apply basic circuit analysis methods to structured problems.', bloom: 'Apply' },
     ],
-    coAttainmentRows: [],
+    coAttainmentRows: input.coAttainmentRows ?? [],
+    proofStageKey: input.proofStageKey,
   })))
 }
 
 describe('course pages', () => {
   it('shows Sem1 Pre-TT1 risk and attendance as not applicable until evidence exists', () => {
-    renderCourse('attendance')
+    renderCourse({ initialTab: 'attendance' })
 
     expect(screen.getAllByText(/Not applicable yet/i).length).toBeGreaterThan(0)
     expect(screen.queryByText(/NaN%/i)).toBeNull()
@@ -95,8 +99,32 @@ describe('course pages', () => {
     expect(screen.queryByText(/Detained/i)).toBeNull()
   })
 
+  it('hides stale risk badges when proof playback rewinds a late-stage course to pre-TT1', () => {
+    renderCourse({
+      initialTab: 'gradebook',
+      proofStageKey: 'pre-tt1',
+      offering: {
+        ...sem1Offering,
+        stage: 5,
+        stageInfo: { ...sem1Offering.stageInfo, stage: 5, label: 'Post SEE' },
+        tt1Done: true,
+        tt2Done: true,
+      },
+      student: {
+        ...sem1Student,
+        riskBand: 'High',
+        riskProb: 0.74,
+        tt1Score: 20,
+        tt2Score: 18,
+      },
+    })
+
+    expect(screen.queryByText(/High · 74%/i)).toBeNull()
+    expect(screen.getAllByText(/Not applicable yet/i).length).toBeGreaterThan(0)
+  })
+
   it('opens a cohesive Course Outcome explanation popup only while hovering the CO button', () => {
-    renderCourse('tt1')
+    renderCourse({ initialTab: 'tt1' })
 
     fireEvent.mouseEnter(screen.getByRole('button', { name: 'CO1' }))
     expect(screen.getByRole('tooltip').textContent).toContain('Explain the core laws of electric circuits and measurements.')
@@ -104,5 +132,27 @@ describe('course pages', () => {
 
     fireEvent.mouseLeave(screen.getByRole('button', { name: 'CO1' }))
     expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('shows latest visible CO attainment on summary cards before SEE', () => {
+    renderCourse({
+      initialTab: 'co',
+      proofStageKey: 'post-tt1',
+      coAttainmentRows: [
+        {
+          coId: 'CO1',
+          desc: 'Explain the core laws of electric circuits and measurements.',
+          bloom: 'Understand',
+          target: 60,
+          tt1Attainment: 72,
+          tt2Attainment: null,
+          overallAttainment: null,
+          studentsCounted: 1,
+        },
+      ],
+    })
+
+    expect(screen.getAllByText('72%').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('TT1 · ✓ Met')).toBeTruthy()
   })
 })

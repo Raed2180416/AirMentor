@@ -324,6 +324,10 @@ function buildStageCandidate(
     semesterNumber: source.semesterNumber,
     sectionRiskRate: input.sectionRiskRateByStage.get(`${source.semesterNumber}::${source.sectionCode}::${stage.key}`) ?? 0,
     semesterProgress: stage.order / input.stageDefs.length,
+    activeBacklogCredits: evidence.activeBacklogCredits,
+    historicalBacklogCredits: evidence.historicalBacklogCredits,
+    lowerYearBlockerCredits: evidence.lowerYearBlockerCredits,
+    backlogSensitivityScore: evidence.backlogSensitivityScore,
   })
   const inference = scoreObservableRiskWithModel({
     attendancePct: evidence.attendancePct,
@@ -406,6 +410,10 @@ function buildStageCandidate(
     semesterNumber: source.semesterNumber,
     sectionRiskRate: input.sectionRiskRateByStage.get(`${source.semesterNumber}::${source.sectionCode}::${stage.key}`) ?? 0,
     semesterProgress: stage.order / input.stageDefs.length,
+    activeBacklogCredits: evidence.activeBacklogCredits,
+    historicalBacklogCredits: evidence.historicalBacklogCredits,
+    lowerYearBlockerCredits: evidence.lowerYearBlockerCredits,
+    backlogSensitivityScore: evidence.backlogSensitivityScore,
   })
   const noActionInference = scoreObservableRiskWithModel({
     attendancePct: noAction.attendancePct,
@@ -463,9 +471,9 @@ function buildStageCandidate(
   }
 }
 
-export function buildPlaybackGovernanceArtifacts(
+export async function buildPlaybackGovernanceArtifacts(
   input: BuildPlaybackGovernanceArtifactsInput,
-): BuildPlaybackGovernanceArtifactsResult {
+): Promise<BuildPlaybackGovernanceArtifactsResult> {
   const studentProjectionRows: Array<typeof simulationStageStudentProjections.$inferInsert> = []
   const queueProjectionRows: Array<typeof simulationStageQueueProjections.$inferInsert> = []
   const queueCaseRows: Array<typeof simulationStageQueueCases.$inferInsert> = []
@@ -929,6 +937,7 @@ export function buildPlaybackGovernanceArtifacts(
         })
       })
     }
+    await new Promise(resolve => setImmediate(resolve))
   }
 
   return {

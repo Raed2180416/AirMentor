@@ -1,6 +1,7 @@
 node_modules
 node_modules
 .venv/
+**/.tabpfn-venv/
 
 # Ctxo local cache (auto-rebuilt, never committed)
 .ctxo/.cache/
@@ -19,6 +20,7 @@ air-mentor-api/dist/
 tmp/
 air-mentor-api/tmp/
 air-mentor-api/tmp_db/
+air-mentor-api/.eval-db-*/
 test-results/
 tests-e2e/artifacts/
 playwright-report/
@@ -34,6 +36,7 @@ air-mentor-api/catboost_info/
 # Tool caches and generated context bundles
 .audit/
 .agents/
+.playwright-mcp/
 .ruff_cache/
 .pytest_cache/
 .devin/
@@ -47,6 +50,31 @@ context_main.json
 **/context.json
 tmp/tsx-*/
 tmp/node-compile-cache/
+
+# Generated audit/evidence payloads. Keep concise maps and reports only.
+audit-map/17-artifacts/
+audit-map/18-snapshots/
+audit-map/20-prompts/
+audit-map/22-evals/
+audit-map/22-logs/
+audit-map/24-agent-memory/
+audit-map/26-tmux/
+audit-map/29-status/
+audit-map/30-checkpoints/
+audit-map/31-queues/
+
+# Generated repository snapshots and analysis corpora
+repomix-output.xml
+repomix-src-output.xml
+student_risk_trajectories.csv
+all_microdata_dump.json
+detailed_cohort_analysis.json
+deep_cohort_analysis.json
+antigravitydocs/
+docs/Curriculum Graph Builder UI UX Strategychat
+*-live-*.png
+*-proof-*.png
+course-leader-faculty-profile-*.png
 
 # Local MCP/editor wiring
 .mcp.json

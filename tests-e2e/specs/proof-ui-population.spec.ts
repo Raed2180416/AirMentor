@@ -36,11 +36,12 @@ test('proof UI population: sysadmin, course leader, and HoD render the active se
 
   await loginAs(page, 'course-leader')
   await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
-  const courseLeaderSummary = page.locator('[data-proof-surface="academic-proof-summary"][data-proof-scope="course-leader-dashboard"]').first()
-  await expect(courseLeaderSummary).toBeVisible({ timeout: 30_000 })
-  await expect(courseLeaderSummary).toContainText(/Course Leader Dashboard/i)
-  await expect(courseLeaderSummary).toContainText(/Open Queue|High Watch|Preview Semester|Selected Checkpoint/i)
   await expect(page.getByText(/Total Students/i).first()).toBeVisible()
+  await expect(page.locator('[data-proof-surface="academic-proof-summary"]')).toHaveCount(0)
+  await page.locator('[data-proof-action="open-faculty-profile"]').click()
+  const courseLeaderProofPanel = page.locator('[data-proof-surface="teacher-proof-panel"]').first()
+  await expect(courseLeaderProofPanel).toBeVisible({ timeout: 30_000 })
+  await expect(courseLeaderProofPanel).toContainText(/Proof Control Plane|Checkpoint overlay|Monitoring queue/i)
 
   await loginAs(page, 'hod')
   const [proofBundleResponse] = await Promise.all([

@@ -60,6 +60,8 @@ const ENUM_VALUES: ReadonlySet<ProofInterventionActionCode> = new Set<ProofInter
   'generic_default_family_action',
 ])
 
+const AUTO_RESOLUTION_INTERVENTION_ID_PREFIX = 'intervention_auto_resolution_'
+
 export function mapLegacyInterventionTypeToActionCode(
   rawType: string | null | undefined,
 ): ProofInterventionActionCode | null {
@@ -193,6 +195,10 @@ export type InterventionRowForFetcher = {
   stageKeyApplied?: InterventionStageKey | null
 }
 
+function isAutoResolutionIntervention(row: InterventionRowForFetcher): boolean {
+  return row.interventionId.startsWith(AUTO_RESOLUTION_INTERVENTION_ID_PREFIX)
+}
+
 export function buildEvidenceApplierInterventionInput(input: {
   interventionRow: InterventionRowForFetcher
   semesterNumber: number
@@ -240,6 +246,7 @@ export function groupInterventionsByStudentAndOffering(input: {
   })
 
   for (const row of sorted) {
+    if (isAutoResolutionIntervention(row)) continue
     const severityContext = input.severityContextByStudentId.get(row.studentId)
     if (!severityContext) continue
     const stageKeyApplied = row.stageKeyApplied ?? input.stageKeyApplied

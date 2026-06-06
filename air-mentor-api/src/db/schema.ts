@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { integer, real, text, pgTable } from 'drizzle-orm/pg-core'
+import { integer, real, text, pgTable, index } from 'drizzle-orm/pg-core'
 
 export const institutions = pgTable('institutions', {
   institutionId: text('institution_id').primaryKey(),
@@ -699,7 +699,9 @@ export const simulationStageCheckpoints = pgTable('simulation_stage_checkpoints'
   summaryJson: text('summary_json').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-})
+}, (table) => ({
+  simRunIdx: index('sim_stage_checkpoint_run_idx').on(table.simulationRunId),
+}))
 
 export const simulationStageQueueCases = pgTable('simulation_stage_queue_cases', {
   simulationStageQueueCaseId: text('simulation_stage_queue_case_id').primaryKey(),
@@ -750,7 +752,9 @@ export const simulationStageStudentProjections = pgTable('simulation_stage_stude
   projectionJson: text('projection_json').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-})
+}, (table) => ({
+  simRunIdx: index('sim_stage_student_proj_run_idx').on(table.simulationRunId),
+}))
 
 export const simulationStageOfferingProjections = pgTable('simulation_stage_offering_projections', {
   simulationStageOfferingProjectionId: text('simulation_stage_offering_projection_id').primaryKey(),
@@ -769,7 +773,9 @@ export const simulationStageOfferingProjections = pgTable('simulation_stage_offe
   projectionJson: text('projection_json').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-})
+}, (table) => ({
+  simRunIdx: index('sim_stage_offering_proj_run_idx').on(table.simulationRunId),
+}))
 
 export const simulationStageQueueProjections = pgTable('simulation_stage_queue_projections', {
   simulationStageQueueProjectionId: text('simulation_stage_queue_projection_id').primaryKey(),
@@ -794,7 +800,9 @@ export const simulationStageQueueProjections = pgTable('simulation_stage_queue_p
   detailJson: text('detail_json').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-})
+}, (table) => ({
+  simRunIdx: index('sim_stage_queue_proj_run_idx').on(table.simulationRunId),
+}))
 
 export const studentQuestionResults = pgTable('student_question_results', {
   studentQuestionResultId: text('student_question_result_id').primaryKey(),
@@ -884,7 +892,9 @@ export const riskEvidenceSnapshots = pgTable('risk_evidence_snapshots', {
   sourceRefsJson: text('source_refs_json').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-})
+}, (table) => ({
+  simRunIdx: index('risk_evidence_snapshots_run_idx').on(table.simulationRunId),
+}))
 
 export const riskModelArtifacts = pgTable('risk_model_artifacts', {
   riskModelArtifactId: text('risk_model_artifact_id').primaryKey(),
@@ -1275,6 +1285,14 @@ export const facultyCalendarWorkspaces = pgTable('faculty_calendar_workspaces', 
   updatedAt: text('updated_at').notNull(),
 })
 
+export const facultyCalendarCanonicalTemplates = pgTable('faculty_calendar_canonical_templates', {
+  facultyId: text('faculty_id').primaryKey().references(() => facultyProfiles.facultyId),
+  templateJson: text('template_json').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const facultyCalendarAdminWorkspaces = pgTable('faculty_calendar_admin_workspaces', {
   facultyId: text('faculty_id').primaryKey().references(() => facultyProfiles.facultyId),
   workspaceJson: text('workspace_json').notNull(),
@@ -1467,6 +1485,7 @@ export const allTables = {
   academicTaskTransitions,
   academicTaskPlacements,
   facultyCalendarWorkspaces,
+  facultyCalendarCanonicalTemplates,
   facultyCalendarAdminWorkspaces,
   academicCalendarAuditEvents,
   academicMeetings,
