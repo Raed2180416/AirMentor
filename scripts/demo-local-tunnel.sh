@@ -69,7 +69,7 @@ trap cleanup INT TERM EXIT
 
 echo "[demo-tunnel] starting seeded backend on 127.0.0.1:${api_port}..."
 (
-  cd "$repo_root"
+  cd "$repo_root/air-mentor-api"
   AIRMENTOR_API_PORT="$api_port" \
   HOST="127.0.0.1" \
   CORS_ALLOWED_ORIGINS="$cors_origins" \
@@ -79,7 +79,7 @@ echo "[demo-tunnel] starting seeded backend on 127.0.0.1:${api_port}..."
   AIRMENTOR_SEED_NOW="$seed_now" \
   AIRMENTOR_STAGE_REALIZATION_V1="1" \
   AIRMENTOR_SECTION_OVERRIDES_V1="1" \
-  npm --workspace air-mentor-api run dev:seeded \
+  npm run dev:seeded \
     >"$backend_log" 2>&1 &
   echo $! > "$repo_root/output/demo-backend.pid"
 )

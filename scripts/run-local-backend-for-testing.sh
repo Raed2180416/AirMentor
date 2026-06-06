@@ -19,8 +19,10 @@ cd "$repo_root"
 
 if [[ "$mode" == "railway-db" ]]; then
   export PORT="$AIRMENTOR_API_PORT"
-  npm --workspace air-mentor-api run db:migrate
-  exec npm --workspace air-mentor-api run dev
+  cd "$repo_root/air-mentor-api"
+  npm run db:migrate
+  exec npm run dev
 fi
 
-NODE_OPTIONS="--max-old-space-size=5120" exec npm --workspace air-mentor-api run dev:seeded
+cd "$repo_root/air-mentor-api"
+NODE_OPTIONS="--max-old-space-size=5120" exec npm run dev:seeded
