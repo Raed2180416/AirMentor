@@ -1,0 +1,9 @@
+[Unit]
+Description=AirMentor Daily Auditor
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/raed/Projects/air-mentor-ui
+ExecStart=/usr/bin/node scripts/daily-auditor.mjs
+StandardOutput=append:/home/raed/Projects/air-mentor-ui/.audit/daily-auditor.log
+StandardError=append:/home/raed/Projects/air-mentor-ui/.audit/daily-auditor.log

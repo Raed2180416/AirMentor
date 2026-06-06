@@ -148,14 +148,14 @@
     }
   },
   "totals": {
-    "trackedFiles": 920,
+    "trackedFiles": 926,
     "ignoredEntriesObserved": 32,
-    "bytes": 14898615,
-    "lines": 303929,
-    "nonEmptyLines": 283034,
-    "commentLines": 5674,
+    "bytes": 14940134,
+    "lines": 305202,
+    "nonEmptyLines": 284148,
+    "commentLines": 5817,
     "localDependencyEdges": 618,
-    "symbols": 23030,
+    "symbols": 23226,
     "apiRoutes": 190,
     "testCases": 1370,
     "filesWithTests": 194,
@@ -176,7 +176,7 @@
       ".txt": 7,
       ".py": 108,
       ".cjs": 1,
-      ".mjs": 42,
+      ".mjs": 48,
       ".js": 2,
       ".sql": 34,
       ".snap": 1,
@@ -202,7 +202,7 @@
       "documentation": 29,
       "forge-audit": 22,
       "pipeline": 171,
-      "repo-script": 89,
+      "repo-script": 95,
       "frontend": 74,
       "e2e-test": 50
     },
@@ -236,7 +236,7 @@
       "package.json": 1,
       "pipeline": 171,
       "public": 1,
-      "scripts": 89,
+      "scripts": 95,
       "skills-lock.json": 1,
       "src": 74,
       "tests-e2e": 50,
@@ -679,7 +679,7 @@
       },
       {
         "key": "node:fs",
-        "value": 108
+        "value": 114
       },
       {
         "key": "drizzle-orm",
@@ -687,7 +687,7 @@
       },
       {
         "key": "node:path",
-        "value": 90
+        "value": 95
       },
       {
         "key": "__future__",
@@ -706,16 +706,16 @@
         "value": 35
       },
       {
+        "key": "node:url",
+        "value": 33
+      },
+      {
         "key": "typing",
         "value": 32
       },
       {
         "key": "lucide-react",
         "value": 28
-      },
-      {
-        "key": "node:url",
-        "value": 27
       },
       {
         "key": "fastify",
@@ -762,16 +762,16 @@
         "value": 15
       },
       {
+        "key": "node:crypto",
+        "value": 15
+      },
+      {
         "key": "react-dom",
         "value": 14
       },
       {
         "key": "sklearn.metrics",
         "value": 14
-      },
-      {
-        "key": "node:crypto",
-        "value": 13
       },
       {
         "key": "embedded-postgres",

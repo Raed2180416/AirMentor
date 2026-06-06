@@ -659,14 +659,14 @@
   },
   {
     "path": "scripts",
-    "fileCount": 88,
-    "bytes": 896478,
-    "lines": 20603,
+    "fileCount": 94,
+    "bytes": 937997,
+    "lines": 21876,
     "roles": {
-      "repo-script": 88
+      "repo-script": 94
     },
     "extensions": {
-      ".mjs": 37,
+      ".mjs": 43,
       ".ts": 10,
       ".sh": 37,
       ".md": 1,

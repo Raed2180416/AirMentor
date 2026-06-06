@@ -10,13 +10,13 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 920 |
+| Tracked files | 926 |
 | Tracked bytes | 14.2 MiB |
-| Tracked source/doc lines | 303929 |
-| Non-empty lines | 283034 |
-| Comment lines | 5674 |
+| Tracked source/doc lines | 305202 |
+| Non-empty lines | 284148 |
+| Comment lines | 5817 |
 | Local dependency edges | 618 |
-| Symbols/blocks discovered | 23030 |
+| Symbols/blocks discovered | 23226 |
 | API route registrations found | 190 |
 | Test cases discovered | 1370 |
 | Tracked path anomalies | 0 |
@@ -136,7 +136,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | unit-test | 161 |
 | backend | 153 |
 | backend-script | 97 |
-| repo-script | 89 |
+| repo-script | 95 |
 | frontend | 74 |
 | e2e-test | 50 |
 | other | 31 |
@@ -156,8 +156,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | .yaml | 107 |
 | .tsx | 67 |
 | .md | 54 |
+| .mjs | 48 |
 | .sh | 46 |
-| .mjs | 42 |
 | .sql | 34 |
 | .json | 32 |
 | [no-ext] | 15 |
@@ -184,7 +184,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | air-mentor-api | 363 |
 | pipeline | 171 |
-| scripts | 89 |
+| scripts | 95 |
 | src | 74 |
 | tests | 67 |
 | tests-e2e | 50 |
@@ -222,7 +222,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | src | 63 | 1.6 MiB | 35572 | frontend:63 |
 | air-mentor-api/tests | 92 | 1.2 MiB | 31845 | unit-test:92 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27299 | backend-script:97 |
-| scripts | 88 | 875.5 KiB | 20603 | repo-script:88 |
+| scripts | 94 | 916.0 KiB | 21876 | repo-script:94 |
 | air-mentor-api/src/modules | 21 | 816.1 KiB | 20106 | backend:21 |
 | tests | 67 | 609.4 KiB | 17767 | unit-test:67 |
 | . | 23 | 312.7 KiB | 8200 | other:12, build-config:10, agent-config:1 |
