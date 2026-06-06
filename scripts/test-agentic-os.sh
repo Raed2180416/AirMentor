@@ -1,5 +1,5 @@
 #!/bin/bash
-# AirMentor Agentic OS Integration Test
+# AirMentor Agentic OS Integration Test v2
 # Verifies all components are installed and functional
 
 set -euo pipefail
@@ -22,7 +22,7 @@ test_fn() {
   fi
 }
 
-echo "=== AirMentor Agentic OS Integration Test ==="
+echo "=== AirMentor Agentic OS Integration Test v2 ==="
 echo ""
 
 # Layer 1: Deterministic Codebase Intelligence
@@ -48,10 +48,22 @@ test_fn "Daily auditor" "test -x scripts/daily-auditor.mjs"
 # Layer 4: Multi-Agent
 test_fn "Subagent orchestrator" "test -x scripts/subagent-orchestrator.mjs"
 
-# Layer 5: Quality
+# Layer 5: NEW - Task Heartbeat Monitor
+test_fn "Task heartbeat" "test -x scripts/task-heartbeat.mjs"
+
+# Layer 6: NEW - Skills Registry
+test_fn "Skills registry" "test -x scripts/skills-registry.mjs"
+
+# Layer 7: NEW - Agent Memory
+test_fn "Agent memory" "test -x scripts/agent-memory.mjs"
+
+# Layer 8: NEW - Auto Code Review
+test_fn "Auto code review" "test -x scripts/auto-code-review.mjs"
+
+# Layer 9: Quality Measurement
 test_fn "Quality benchmark" "test -x scripts/quality-benchmark.mjs"
 
-# Layer 6: Documentation
+# Layer 10: Documentation
 test_fn "Quality enhancement doc" "test -f docs/QUALITY_ENHANCEMENT_SUITE.md"
 test_fn "API pool doc" "test -f docs/agent-map/API_POOL_WITH_AWS_AZURE.md"
 
