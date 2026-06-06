@@ -743,7 +743,7 @@ function writeMarkdown(map) {
     '2. Read this file for repo shape and hotspots.',
     '3. Query `docs/agent-map/files.jsonl`, `symbols.jsonl`, `imports.jsonl`, `routes.jsonl`, and `tests.jsonl` for exact navigation.',
     '4. Read `docs/agent-map/CODEBASE_MAPPING_STRATEGY_2026-06-06.md`, `context-compare-modes.json`, and `TRACKED_ANOMALY_CLEANUP_2026-06-06.md` before changing the mapping/deletion policy.',
-    '5. For product/model context, read `docs/PRODUCT_DIRECTION_AND_PRUNING_2026-06-06.md`, `docs/POSITIONING.md`, and `docs/REPOSITORY_STORAGE_AND_BRANCH_CLEANUP_AUDIT_2026-06-06.md`.',
+    '5. For product/model context, read `docs/PRODUCT_DIRECTION_AND_PRUNING_2026-06-06.md`, `docs/CURRENT_PRODUCT_CLEANUP_DECISION_MATRIX_2026-06-06.md`, `docs/POSITIONING.md`, and `docs/REPOSITORY_STORAGE_AND_BRANCH_CLEANUP_AUDIT_2026-06-06.md`.',
     '6. For runtime model serving, inspect `air-mentor-api/model-contract/README.md`, `risk-model-bundle.json`, and `promotion-decision.json` before touching ML code.',
     '7. For visible proof behavior, start with `tests-e2e/specs/shared-proof-playback-sync.spec.ts`, `tests-e2e/specs/complete-realism-audit-2026-06-04.spec.ts`, and `tests-e2e/playwright.config.ts`.',
     '',

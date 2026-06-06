@@ -11,9 +11,10 @@ Read these first:
 1. `docs/agent-map/AGENT_REPO_MAP_2026-06-06.md`
 2. `docs/agent-map/repo-map.json`
 3. `docs/PRODUCT_DIRECTION_AND_PRUNING_2026-06-06.md`
-4. `docs/DETERMINISTIC_SYSTEM_MAP_2026-06-05.md`
-5. `docs/TARGET_ARCHITECTURE_2026-06-05.md`
-6. `docs/AIRMENTOR_COMPLETE_REALISM_AUDIT_2026-06-04.md`
+4. `docs/CURRENT_PRODUCT_CLEANUP_DECISION_MATRIX_2026-06-06.md`
+5. `docs/DETERMINISTIC_SYSTEM_MAP_2026-06-05.md`
+6. `docs/TARGET_ARCHITECTURE_2026-06-05.md`
+7. `docs/AIRMENTOR_COMPLETE_REALISM_AUDIT_2026-06-04.md`
 
 For exact navigation, query the generated JSONL indexes under `docs/agent-map/`
 before broad source scans. Refresh them with `npm run agent:map` after structural

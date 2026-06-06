@@ -131,8 +131,6 @@
 {"from":"src/curriculum-graph-workspace.tsx","to":"src/data.ts","specifier":"./data","line":4,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/curriculum-graph-workspace.tsx","to":"src/api/client.ts","specifier":"./api/client","line":5,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/curriculum-graph-workspace.tsx","to":"src/api/types.ts","specifier":"./api/types","line":6,"kind":"import","fromRole":"frontend","toRole":"frontend"}
-{"from":"src/data.old.ts","to":"src/domain.ts","specifier":"./domain","line":5,"kind":"import","fromRole":"frontend","toRole":"frontend"}
-{"from":"src/data.old.ts","to":"src/domain.ts","specifier":"./domain","line":20,"kind":"re-export","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/data.ts","to":"src/domain.ts","specifier":"./domain","line":5,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/data.ts","to":"src/domain.ts","specifier":"./domain","line":20,"kind":"re-export","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/demo-workspace-badge.tsx","to":"src/data.ts","specifier":"./data","line":1,"kind":"import","fromRole":"frontend","toRole":"frontend"}

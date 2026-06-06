@@ -10,13 +10,13 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 910 |
+| Tracked files | 905 |
 | Tracked bytes | 14.2 MiB |
-| Tracked source/doc lines | 303561 |
-| Non-empty lines | 282933 |
-| Comment lines | 5588 |
-| Local dependency edges | 620 |
-| Symbols/blocks discovered | 23060 |
+| Tracked source/doc lines | 302286 |
+| Non-empty lines | 281751 |
+| Comment lines | 5563 |
+| Local dependency edges | 618 |
+| Symbols/blocks discovered | 22933 |
 | API route registrations found | 190 |
 | Test cases discovered | 1370 |
 | Tracked path anomalies | 0 |
@@ -27,7 +27,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 2. Read this file for repo shape and hotspots.
 3. Query `docs/agent-map/files.jsonl`, `symbols.jsonl`, `imports.jsonl`, `routes.jsonl`, and `tests.jsonl` for exact navigation.
 4. Read `docs/agent-map/CODEBASE_MAPPING_STRATEGY_2026-06-06.md`, `context-compare-modes.json`, and `TRACKED_ANOMALY_CLEANUP_2026-06-06.md` before changing the mapping/deletion policy.
-5. For product/model context, read `docs/PRODUCT_DIRECTION_AND_PRUNING_2026-06-06.md`, `docs/POSITIONING.md`, and `docs/REPOSITORY_STORAGE_AND_BRANCH_CLEANUP_AUDIT_2026-06-06.md`.
+5. For product/model context, read `docs/PRODUCT_DIRECTION_AND_PRUNING_2026-06-06.md`, `docs/CURRENT_PRODUCT_CLEANUP_DECISION_MATRIX_2026-06-06.md`, `docs/POSITIONING.md`, and `docs/REPOSITORY_STORAGE_AND_BRANCH_CLEANUP_AUDIT_2026-06-06.md`.
 6. For runtime model serving, inspect `air-mentor-api/model-contract/README.md`, `risk-model-bundle.json`, and `promotion-decision.json` before touching ML code.
 7. For visible proof behavior, start with `tests-e2e/specs/shared-proof-playback-sync.spec.ts`, `tests-e2e/specs/complete-realism-audit-2026-06-04.spec.ts`, and `tests-e2e/playwright.config.ts`.
 
@@ -137,9 +137,9 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | backend | 153 |
 | backend-script | 97 |
 | repo-script | 78 |
-| frontend | 76 |
+| frontend | 74 |
 | e2e-test | 50 |
-| other | 34 |
+| other | 31 |
 | documentation | 26 |
 | forge-audit | 22 |
 | build-config | 16 |
@@ -151,7 +151,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Extension | Files |
 | --- | --- |
-| .ts | 385 |
+| .ts | 384 |
 | .py | 108 |
 | .yaml | 107 |
 | .tsx | 67 |
@@ -160,23 +160,21 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | .mjs | 39 |
 | .sql | 34 |
 | .json | 31 |
-| [no-ext] | 16 |
+| [no-ext] | 15 |
 | .txt | 7 |
 | .yml | 5 |
 | .toml | 3 |
 | .css | 2 |
 | .js | 2 |
-| .svg | 2 |
 | .bib | 1 |
 | .cjs | 1 |
 | .example | 1 |
 | .html | 1 |
 | .kiro | 1 |
 | .lock | 1 |
-| .log | 1 |
 | .nix | 1 |
-| .pid | 1 |
 | .snap | 1 |
+| .svg | 1 |
 
 ## Top Directories
 
@@ -185,7 +183,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | air-mentor-api | 363 |
 | pipeline | 171 |
 | scripts | 78 |
-| src | 76 |
+| src | 74 |
 | tests | 67 |
 | tests-e2e | 50 |
 | docs | 26 |
@@ -194,7 +192,6 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | .github | 8 |
 | .arctic | 4 |
 | .claude | 3 |
-| .superpowers | 3 |
 | .kiro | 2 |
 | .vscode | 2 |
 | .absolute-human | 1 |
@@ -212,6 +209,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | flake.lock | 1 |
 | flake.nix | 1 |
 | index.html | 1 |
+| jsconfig.json | 1 |
 
 ## Largest Source Directories By Lines
 
@@ -219,13 +217,13 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- | --- | --- | --- |
 | air-mentor-api/src/db/migrations/meta | 5 | 1.2 MiB | 44646 | backend:5 |
 | air-mentor-api/src/lib | 82 | 1.5 MiB | 37899 | backend:82 |
-| src | 64 | 1.7 MiB | 36848 | frontend:64 |
+| src | 63 | 1.6 MiB | 35572 | frontend:63 |
 | air-mentor-api/tests | 92 | 1.2 MiB | 31845 | unit-test:92 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27299 | backend-script:97 |
 | air-mentor-api/src/modules | 21 | 816.1 KiB | 20106 | backend:21 |
-| scripts | 77 | 841.5 KiB | 19617 | repo-script:77 |
+| scripts | 77 | 841.6 KiB | 19617 | repo-script:77 |
 | tests | 67 | 609.4 KiB | 17767 | unit-test:67 |
-| . | 23 | 330.0 KiB | 8184 | other:12, build-config:10, agent-config:1 |
+| . | 23 | 330.2 KiB | 8184 | other:12, build-config:10, agent-config:1 |
 | tests-e2e/specs | 36 | 363.9 KiB | 7581 | e2e-test:36 |
 | src/pages | 6 | 384.2 KiB | 7147 | frontend:6 |
 | pipeline/orchestrator | 20 | 183.8 KiB | 5163 | pipeline:20 |
@@ -241,7 +239,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | pipeline/scripts/build_overnight | 8 | 71.2 KiB | 1612 | pipeline:8 |
 | pipeline/agents/manifests | 100 | 47.7 KiB | 1364 | pipeline:100 |
 | tests-e2e/helpers | 6 | 47.7 KiB | 1322 | e2e-test:6 |
-| .windsurf | 5 | 44.9 KiB | 1021 | agent-config:5 |
+| .windsurf | 5 | 45.0 KiB | 1021 | agent-config:5 |
 
 ## High Fan-In Files
 
@@ -250,8 +248,8 @@ These files are imported by many tracked local files. Treat changes here as high
 | File | Importers | Role |
 | --- | --- | --- |
 | src/data.ts | 60 | frontend |
-| src/domain.ts | 46 | frontend |
 | src/api/types.ts | 45 | frontend |
+| src/domain.ts | 44 | frontend |
 | src/ui-primitives.tsx | 38 | frontend |
 | tests-e2e/helpers/login-as.ts | 38 | e2e-test |
 | tests-e2e/support/playwright-runtime.ts | 36 | e2e-test |

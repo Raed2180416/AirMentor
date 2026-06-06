@@ -2,7 +2,7 @@
   {
     "path": ".",
     "fileCount": 23,
-    "bytes": 337966,
+    "bytes": 338155,
     "lines": 8184,
     "roles": {
       "other": 12,
@@ -86,8 +86,8 @@
   {
     "path": ".github",
     "fileCount": 1,
-    "bytes": 2154,
-    "lines": 58,
+    "bytes": 2218,
+    "lines": 59,
     "roles": {
       "ci": 1
     },
@@ -145,20 +145,6 @@
     }
   },
   {
-    "path": ".superpowers/brainstorm/440080-1777556317/state",
-    "fileCount": 3,
-    "bytes": 416,
-    "lines": 0,
-    "roles": {
-      "other": 3
-    },
-    "extensions": {
-      "[no-ext]": 1,
-      ".log": 1,
-      ".pid": 1
-    }
-  },
-  {
     "path": ".vscode",
     "fileCount": 2,
     "bytes": 5718,
@@ -173,7 +159,7 @@
   {
     "path": ".windsurf",
     "fileCount": 5,
-    "bytes": 46021,
+    "bytes": 46084,
     "lines": 1021,
     "roles": {
       "agent-config": 5
@@ -674,7 +660,7 @@
   {
     "path": "scripts",
     "fileCount": 77,
-    "bytes": 861732,
+    "bytes": 861794,
     "lines": 19617,
     "roles": {
       "repo-script": 77
@@ -699,15 +685,15 @@
   },
   {
     "path": "src",
-    "fileCount": 64,
-    "bytes": 1750732,
-    "lines": 36848,
+    "fileCount": 63,
+    "bytes": 1692047,
+    "lines": 35572,
     "roles": {
-      "frontend": 64
+      "frontend": 63
     },
     "extensions": {
       ".tsx": 34,
-      ".ts": 28,
+      ".ts": 27,
       ".css": 2
     }
   },
@@ -721,18 +707,6 @@
     },
     "extensions": {
       ".ts": 2
-    }
-  },
-  {
-    "path": "src/assets",
-    "fileCount": 1,
-    "bytes": 4126,
-    "lines": 0,
-    "roles": {
-      "frontend": 1
-    },
-    "extensions": {
-      ".svg": 1
     }
   },
   {

@@ -10,7 +10,8 @@ repo-owned agent map and product direction:
 1. `docs/agent-map/AGENT_REPO_MAP_2026-06-06.md`
 2. `docs/agent-map/repo-map.json`
 3. `docs/PRODUCT_DIRECTION_AND_PRUNING_2026-06-06.md`
-4. `.github/copilot-instructions.md`
+4. `docs/CURRENT_PRODUCT_CLEANUP_DECISION_MATRIX_2026-06-06.md`
+5. `.github/copilot-instructions.md`
 
 The current product truth is: AirMentor is a deterministic academic
 decision-rehearsal platform built on synthetic data. It is not a validated
@@ -282,4 +283,3 @@ This environment exposes **170 symlinked skills** globally under `/home/raed/.ge
   - For ML/Data Science: `data-science`, `ml-ops`, `science-skills-common`.
   - For Code Quality: `clean-code`, `refactoring-patterns`, `code-review-mastery`.
   - For Diagnostics & Performance: `performance-engineering`, `observability`, `sentry`, `debugging-tools`.
-
