@@ -1,0 +1,15 @@
+[Unit]
+Description=AirMentor Live Repo Watcher
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/raed/Projects/air-mentor-ui
+ExecStart=/home/raed/Projects/air-mentor-ui/scripts/live-repo-watcher.sh
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/raed/Projects/air-mentor-ui/.audit/live-watcher.log
+StandardError=append:/home/raed/Projects/air-mentor-ui/.audit/live-watcher.log
+
+[Install]
+WantedBy=default.target
