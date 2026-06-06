@@ -148,14 +148,14 @@
     }
   },
   "totals": {
-    "trackedFiles": 926,
+    "trackedFiles": 937,
     "ignoredEntriesObserved": 32,
-    "bytes": 14940134,
-    "lines": 305202,
-    "nonEmptyLines": 284148,
-    "commentLines": 5817,
+    "bytes": 15083925,
+    "lines": 311068,
+    "nonEmptyLines": 288191,
+    "commentLines": 5974,
     "localDependencyEdges": 618,
-    "symbols": 23226,
+    "symbols": 23407,
     "apiRoutes": 190,
     "testCases": 1370,
     "filesWithTests": 194,
@@ -163,20 +163,20 @@
   },
   "counts": {
     "byExtension": {
-      ".md": 54,
+      ".md": 57,
       "[no-ext]": 15,
       ".json": 32,
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".sh": 46,
+      ".sh": 48,
       ".example": 1,
       ".ts": 384,
       ".toml": 3,
       ".txt": 7,
       ".py": 108,
       ".cjs": 1,
-      ".mjs": 48,
+      ".mjs": 52,
       ".js": 2,
       ".sql": 34,
       ".snap": 1,
@@ -185,13 +185,14 @@
       ".nix": 1,
       ".html": 1,
       ".svg": 1,
-      ".service": 1,
+      ".service": 2,
+      ".timer": 1,
       ".conf": 2,
       ".tsx": 67,
       ".css": 2
     },
     "byRole": {
-      "other": 31,
+      "other": 32,
       "build-config": 16,
       "agent-config": 16,
       "ci": 8,
@@ -199,10 +200,10 @@
       "backend-script": 97,
       "backend": 153,
       "unit-test": 161,
-      "documentation": 29,
+      "documentation": 31,
       "forge-audit": 22,
       "pipeline": 171,
-      "repo-script": 95,
+      "repo-script": 103,
       "frontend": 74,
       "e2e-test": 50
     },
@@ -225,18 +226,19 @@
       ".windsurf": 10,
       "air-mentor-api": 363,
       "CLAUDE.md": 1,
-      "docs": 29,
+      "docs": 31,
       "eslint.config.js": 1,
       "flake.lock": 1,
       "flake.nix": 1,
       "forge-audit": 22,
+      "HEARTBEAT.md": 1,
       "index.html": 1,
       "jsconfig.json": 1,
       "package-lock.json": 1,
       "package.json": 1,
       "pipeline": 171,
       "public": 1,
-      "scripts": 95,
+      "scripts": 103,
       "skills-lock.json": 1,
       "src": 74,
       "tests-e2e": 50,
@@ -679,15 +681,15 @@
       },
       {
         "key": "node:fs",
-        "value": 114
+        "value": 118
+      },
+      {
+        "key": "node:path",
+        "value": 99
       },
       {
         "key": "drizzle-orm",
         "value": 98
-      },
-      {
-        "key": "node:path",
-        "value": 95
       },
       {
         "key": "__future__",
@@ -702,12 +704,12 @@
         "value": 67
       },
       {
-        "key": "argparse",
-        "value": 35
+        "key": "node:url",
+        "value": 37
       },
       {
-        "key": "node:url",
-        "value": 33
+        "key": "argparse",
+        "value": 35
       },
       {
         "key": "typing",
@@ -738,6 +740,10 @@
         "value": 18
       },
       {
+        "key": "node:os",
+        "value": 18
+      },
+      {
         "key": "sklearn.linear_model",
         "value": 18
       },
@@ -746,11 +752,11 @@
         "value": 17
       },
       {
-        "key": "node:os",
-        "value": 17
+        "key": "node:assert",
+        "value": 16
       },
       {
-        "key": "node:assert",
+        "key": "node:crypto",
         "value": 16
       },
       {
@@ -762,8 +768,8 @@
         "value": 15
       },
       {
-        "key": "node:crypto",
-        "value": 15
+        "key": "node:child_process",
+        "value": 14
       },
       {
         "key": "react-dom",
@@ -775,10 +781,6 @@
       },
       {
         "key": "embedded-postgres",
-        "value": 12
-      },
-      {
-        "key": "node:child_process",
         "value": 12
       },
       {

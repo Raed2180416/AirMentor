@@ -10,13 +10,13 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 926 |
-| Tracked bytes | 14.2 MiB |
-| Tracked source/doc lines | 305202 |
-| Non-empty lines | 284148 |
-| Comment lines | 5817 |
+| Tracked files | 937 |
+| Tracked bytes | 14.4 MiB |
+| Tracked source/doc lines | 311068 |
+| Non-empty lines | 288191 |
+| Comment lines | 5974 |
 | Local dependency edges | 618 |
-| Symbols/blocks discovered | 23226 |
+| Symbols/blocks discovered | 23407 |
 | API route registrations found | 190 |
 | Test cases discovered | 1370 |
 | Tracked path anomalies | 0 |
@@ -135,12 +135,12 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | pipeline | 171 |
 | unit-test | 161 |
 | backend | 153 |
+| repo-script | 103 |
 | backend-script | 97 |
-| repo-script | 95 |
 | frontend | 74 |
 | e2e-test | 50 |
-| other | 31 |
-| documentation | 29 |
+| other | 32 |
+| documentation | 31 |
 | forge-audit | 22 |
 | agent-config | 16 |
 | build-config | 16 |
@@ -155,9 +155,9 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | .py | 108 |
 | .yaml | 107 |
 | .tsx | 67 |
-| .md | 54 |
-| .mjs | 48 |
-| .sh | 46 |
+| .md | 57 |
+| .mjs | 52 |
+| .sh | 48 |
 | .sql | 34 |
 | .json | 32 |
 | [no-ext] | 15 |
@@ -167,6 +167,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | .conf | 2 |
 | .css | 2 |
 | .js | 2 |
+| .service | 2 |
 | .bib | 1 |
 | .cjs | 1 |
 | .example | 1 |
@@ -174,9 +175,9 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | .kiro | 1 |
 | .lock | 1 |
 | .nix | 1 |
-| .service | 1 |
 | .snap | 1 |
 | .svg | 1 |
+| .timer | 1 |
 
 ## Top Directories
 
@@ -184,11 +185,11 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | air-mentor-api | 363 |
 | pipeline | 171 |
-| scripts | 95 |
+| scripts | 103 |
 | src | 74 |
 | tests | 67 |
 | tests-e2e | 50 |
-| docs | 29 |
+| docs | 31 |
 | forge-audit | 22 |
 | .windsurf | 10 |
 | .github | 8 |
@@ -210,8 +211,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | eslint.config.js | 1 |
 | flake.lock | 1 |
 | flake.nix | 1 |
+| HEARTBEAT.md | 1 |
 | index.html | 1 |
-| jsconfig.json | 1 |
 
 ## Largest Source Directories By Lines
 
@@ -222,16 +223,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | src | 63 | 1.6 MiB | 35572 | frontend:63 |
 | air-mentor-api/tests | 92 | 1.2 MiB | 31845 | unit-test:92 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27299 | backend-script:97 |
-| scripts | 94 | 916.0 KiB | 21876 | repo-script:94 |
+| scripts | 102 | 959.9 KiB | 23209 | repo-script:102 |
 | air-mentor-api/src/modules | 21 | 816.1 KiB | 20106 | backend:21 |
 | tests | 67 | 609.4 KiB | 17767 | unit-test:67 |
-| . | 23 | 312.7 KiB | 8200 | other:12, build-config:10, agent-config:1 |
+| docs | 18 | 325.0 KiB | 8759 | documentation:18 |
+| . | 24 | 315.5 KiB | 8295 | other:13, build-config:10, agent-config:1 |
 | tests-e2e/specs | 36 | 363.9 KiB | 7581 | e2e-test:36 |
 | src/pages | 6 | 384.2 KiB | 7147 | frontend:6 |
 | pipeline/orchestrator | 20 | 183.8 KiB | 5163 | pipeline:20 |
 | src/api | 2 | 166.3 KiB | 4722 | frontend:2 |
 | air-mentor-api | 14 | 154.1 KiB | 4714 | other:9, build-config:5 |
-| docs | 16 | 231.3 KiB | 4321 | documentation:16 |
 | air-mentor-api/src/db | 4 | 110.0 KiB | 2598 | backend:4 |
 | forge-audit/forge_audit/engine | 7 | 76.6 KiB | 2259 | forge-audit:7 |
 | air-mentor-api/src/db/seeds | 3 | 2.6 MiB | 2113 | backend:3 |

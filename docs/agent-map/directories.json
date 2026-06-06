@@ -1,17 +1,17 @@
 [
   {
     "path": ".",
-    "fileCount": 23,
-    "bytes": 320238,
-    "lines": 8200,
+    "fileCount": 24,
+    "bytes": 323123,
+    "lines": 8295,
     "roles": {
-      "other": 12,
+      "other": 13,
       "agent-config": 1,
       "build-config": 10
     },
     "extensions": {
       "[no-ext]": 8,
-      ".md": 1,
+      ".md": 2,
       ".js": 1,
       ".lock": 1,
       ".nix": 1,
@@ -400,14 +400,14 @@
   },
   {
     "path": "docs",
-    "fileCount": 16,
-    "bytes": 236836,
-    "lines": 4321,
+    "fileCount": 18,
+    "bytes": 332843,
+    "lines": 8759,
     "roles": {
-      "documentation": 16
+      "documentation": 18
     },
     "extensions": {
-      ".md": 15,
+      ".md": 17,
       ".bib": 1
     }
   },
@@ -659,18 +659,19 @@
   },
   {
     "path": "scripts",
-    "fileCount": 94,
-    "bytes": 937997,
-    "lines": 21876,
+    "fileCount": 102,
+    "bytes": 982896,
+    "lines": 23209,
     "roles": {
-      "repo-script": 94
+      "repo-script": 102
     },
     "extensions": {
-      ".mjs": 43,
+      ".mjs": 47,
+      ".service": 2,
+      ".timer": 1,
       ".ts": 10,
-      ".sh": 37,
+      ".sh": 39,
       ".md": 1,
-      ".service": 1,
       ".conf": 2
     }
   },
