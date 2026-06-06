@@ -2,6 +2,22 @@
 
 This file is shared across all IDEs (Windsurf, Antigravity, VS Code, Code OSS, Trae) to ensure consistent agent behavior.
 
+## 2026-06-06 Superseding Navigation Layer
+
+Before using the older branch-agnostic context below, read the current
+repo-owned agent map and product direction:
+
+1. `docs/agent-map/AGENT_REPO_MAP_2026-06-06.md`
+2. `docs/agent-map/repo-map.json`
+3. `docs/PRODUCT_DIRECTION_AND_PRUNING_2026-06-06.md`
+4. `.github/copilot-instructions.md`
+
+The current product truth is: AirMentor is a deterministic academic
+decision-rehearsal platform built on synthetic data. It is not a validated
+real-student prediction product and not a general-purpose SIS. Older wording in
+this file about live-student prediction or immediate demo timing is historical
+context unless the current docs above repeat it.
+
 ## Project Context: AirMentor
 
 **Project Identity:** University-facing academic risk monitoring and intervention platform with two modes: production-like role workflows for faculty (HOD, Mentor, Course Leader) and full demo/proof simulation capability.
@@ -266,5 +282,4 @@ This environment exposes **170 symlinked skills** globally under `/home/raed/.ge
   - For ML/Data Science: `data-science`, `ml-ops`, `science-skills-common`.
   - For Code Quality: `clean-code`, `refactoring-patterns`, `code-review-mastery`.
   - For Diagnostics & Performance: `performance-engineering`, `observability`, `sentry`, `debugging-tools`.
-
 

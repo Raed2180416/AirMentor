@@ -1,5 +1,9 @@
 # AIRMENTOR_CAVEMAN_POLICY_V1
 
+Read `docs/agent-map/AGENT_REPO_MAP_2026-06-06.md` and
+`.github/copilot-instructions.md` before broad source exploration. The generated
+agent map is the current repo-owned navigation layer.
+
 Use caveman mode (wenyan-ultra) by default for this repository.
 
 Rules:

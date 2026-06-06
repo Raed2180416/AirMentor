@@ -1,0 +1,872 @@
+[
+  {
+    "path": ".",
+    "fileCount": 23,
+    "bytes": 337966,
+    "lines": 8184,
+    "roles": {
+      "other": 12,
+      "agent-config": 1,
+      "build-config": 10
+    },
+    "extensions": {
+      "[no-ext]": 8,
+      ".md": 1,
+      ".js": 1,
+      ".lock": 1,
+      ".nix": 1,
+      ".html": 1,
+      ".json": 8,
+      ".ts": 2
+    }
+  },
+  {
+    "path": ".absolute-human",
+    "fileCount": 1,
+    "bytes": 3796,
+    "lines": 111,
+    "roles": {
+      "other": 1
+    },
+    "extensions": {
+      ".md": 1
+    }
+  },
+  {
+    "path": ".arctic",
+    "fileCount": 4,
+    "bytes": 599,
+    "lines": 24,
+    "roles": {
+      "other": 3,
+      "build-config": 1
+    },
+    "extensions": {
+      "[no-ext]": 1,
+      ".json": 2,
+      ".md": 1
+    }
+  },
+  {
+    "path": ".claude",
+    "fileCount": 2,
+    "bytes": 1643,
+    "lines": 52,
+    "roles": {
+      "agent-config": 2
+    },
+    "extensions": {
+      ".json": 2
+    }
+  },
+  {
+    "path": ".claude/rules",
+    "fileCount": 1,
+    "bytes": 357,
+    "lines": 12,
+    "roles": {
+      "agent-config": 1
+    },
+    "extensions": {
+      ".md": 1
+    }
+  },
+  {
+    "path": ".ctxo",
+    "fileCount": 1,
+    "bytes": 396,
+    "lines": 17,
+    "roles": {
+      "other": 1
+    },
+    "extensions": {
+      ".yaml": 1
+    }
+  },
+  {
+    "path": ".github",
+    "fileCount": 1,
+    "bytes": 2154,
+    "lines": 58,
+    "roles": {
+      "ci": 1
+    },
+    "extensions": {
+      ".md": 1
+    }
+  },
+  {
+    "path": ".github/instructions",
+    "fileCount": 1,
+    "bytes": 353,
+    "lines": 13,
+    "roles": {
+      "ci": 1
+    },
+    "extensions": {
+      ".md": 1
+    }
+  },
+  {
+    "path": ".github/prompts",
+    "fileCount": 1,
+    "bytes": 3419,
+    "lines": 91,
+    "roles": {
+      "ci": 1
+    },
+    "extensions": {
+      ".md": 1
+    }
+  },
+  {
+    "path": ".github/workflows",
+    "fileCount": 5,
+    "bytes": 15808,
+    "lines": 534,
+    "roles": {
+      "ci": 5
+    },
+    "extensions": {
+      ".yml": 5
+    }
+  },
+  {
+    "path": ".kiro/specs/teacher-login-failure",
+    "fileCount": 2,
+    "bytes": 3169,
+    "lines": 36,
+    "roles": {
+      "agent-config": 2
+    },
+    "extensions": {
+      ".kiro": 1,
+      ".md": 1
+    }
+  },
+  {
+    "path": ".superpowers/brainstorm/440080-1777556317/state",
+    "fileCount": 3,
+    "bytes": 416,
+    "lines": 0,
+    "roles": {
+      "other": 3
+    },
+    "extensions": {
+      "[no-ext]": 1,
+      ".log": 1,
+      ".pid": 1
+    }
+  },
+  {
+    "path": ".vscode",
+    "fileCount": 2,
+    "bytes": 5718,
+    "lines": 216,
+    "roles": {
+      "other": 2
+    },
+    "extensions": {
+      ".json": 2
+    }
+  },
+  {
+    "path": ".windsurf",
+    "fileCount": 5,
+    "bytes": 46021,
+    "lines": 1021,
+    "roles": {
+      "agent-config": 5
+    },
+    "extensions": {
+      ".json": 1,
+      ".md": 3,
+      ".sh": 1
+    }
+  },
+  {
+    "path": ".windsurf/skills",
+    "fileCount": 2,
+    "bytes": 143,
+    "lines": 0,
+    "roles": {
+      "agent-config": 2
+    },
+    "extensions": {
+      "[no-ext]": 2
+    }
+  },
+  {
+    "path": ".windsurf/workflows",
+    "fileCount": 2,
+    "bytes": 7179,
+    "lines": 183,
+    "roles": {
+      "agent-config": 2
+    },
+    "extensions": {
+      ".md": 2
+    }
+  },
+  {
+    "path": "air-mentor-api",
+    "fileCount": 14,
+    "bytes": 157814,
+    "lines": 4714,
+    "roles": {
+      "other": 9,
+      "build-config": 5
+    },
+    "extensions": {
+      ".example": 1,
+      "[no-ext]": 3,
+      ".ts": 2,
+      ".toml": 1,
+      ".json": 5,
+      ".md": 1,
+      ".txt": 1
+    }
+  },
+  {
+    "path": "air-mentor-api/docs/research",
+    "fileCount": 2,
+    "bytes": 35482,
+    "lines": 680,
+    "roles": {
+      "other": 2
+    },
+    "extensions": {
+      ".md": 2
+    }
+  },
+  {
+    "path": "air-mentor-api/model-contract",
+    "fileCount": 1,
+    "bytes": 838,
+    "lines": 18,
+    "roles": {
+      "model-contract": 1
+    },
+    "extensions": {
+      ".md": 1
+    }
+  },
+  {
+    "path": "air-mentor-api/model-contract/proof-risk-model",
+    "fileCount": 2,
+    "bytes": 53432,
+    "lines": 1660,
+    "roles": {
+      "model-contract": 2
+    },
+    "extensions": {
+      ".json": 2
+    }
+  },
+  {
+    "path": "air-mentor-api/scripts",
+    "fileCount": 97,
+    "bytes": 1165435,
+    "lines": 27299,
+    "roles": {
+      "backend-script": 97
+    },
+    "extensions": {
+      ".py": 44,
+      ".ts": 45,
+      ".cjs": 1,
+      ".mjs": 4,
+      ".sh": 2,
+      ".js": 1
+    }
+  },
+  {
+    "path": "air-mentor-api/src",
+    "fileCount": 4,
+    "bytes": 18755,
+    "lines": 513,
+    "roles": {
+      "backend": 4
+    },
+    "extensions": {
+      ".ts": 4
+    }
+  },
+  {
+    "path": "air-mentor-api/src/db",
+    "fileCount": 4,
+    "bytes": 112615,
+    "lines": 2598,
+    "roles": {
+      "backend": 4
+    },
+    "extensions": {
+      ".ts": 4
+    }
+  },
+  {
+    "path": "air-mentor-api/src/db/migrations",
+    "fileCount": 33,
+    "bytes": 68774,
+    "lines": 1851,
+    "roles": {
+      "backend": 33
+    },
+    "extensions": {
+      ".sql": 33
+    }
+  },
+  {
+    "path": "air-mentor-api/src/db/migrations/meta",
+    "fileCount": 5,
+    "bytes": 1282168,
+    "lines": 44646,
+    "roles": {
+      "backend": 5
+    },
+    "extensions": {
+      ".json": 5
+    }
+  },
+  {
+    "path": "air-mentor-api/src/db/seeds",
+    "fileCount": 3,
+    "bytes": 2705802,
+    "lines": 2113,
+    "roles": {
+      "backend": 3
+    },
+    "extensions": {
+      ".json": 3
+    }
+  },
+  {
+    "path": "air-mentor-api/src/lib",
+    "fileCount": 82,
+    "bytes": 1595192,
+    "lines": 37899,
+    "roles": {
+      "backend": 82
+    },
+    "extensions": {
+      ".ts": 82
+    }
+  },
+  {
+    "path": "air-mentor-api/src/modules",
+    "fileCount": 21,
+    "bytes": 835659,
+    "lines": 20106,
+    "roles": {
+      "backend": 21
+    },
+    "extensions": {
+      ".ts": 21
+    }
+  },
+  {
+    "path": "air-mentor-api/src/types",
+    "fileCount": 1,
+    "bytes": 547,
+    "lines": 32,
+    "roles": {
+      "backend": 1
+    },
+    "extensions": {
+      ".ts": 1
+    }
+  },
+  {
+    "path": "air-mentor-api/tests",
+    "fileCount": 92,
+    "bytes": 1282561,
+    "lines": 31845,
+    "roles": {
+      "unit-test": 92
+    },
+    "extensions": {
+      ".ts": 92
+    }
+  },
+  {
+    "path": "air-mentor-api/tests/__snapshots__",
+    "fileCount": 1,
+    "bytes": 6342,
+    "lines": 0,
+    "roles": {
+      "unit-test": 1
+    },
+    "extensions": {
+      ".snap": 1
+    }
+  },
+  {
+    "path": "air-mentor-api/tests/helpers",
+    "fileCount": 1,
+    "bytes": 8080,
+    "lines": 247,
+    "roles": {
+      "unit-test": 1
+    },
+    "extensions": {
+      ".ts": 1
+    }
+  },
+  {
+    "path": "docs",
+    "fileCount": 13,
+    "bytes": 195614,
+    "lines": 3482,
+    "roles": {
+      "documentation": 13
+    },
+    "extensions": {
+      ".md": 12,
+      ".bib": 1
+    }
+  },
+  {
+    "path": "docs/paper-evidence",
+    "fileCount": 9,
+    "bytes": 48916,
+    "lines": 790,
+    "roles": {
+      "documentation": 9
+    },
+    "extensions": {
+      ".md": 9
+    }
+  },
+  {
+    "path": "docs/readiness",
+    "fileCount": 4,
+    "bytes": 30394,
+    "lines": 418,
+    "roles": {
+      "documentation": 4
+    },
+    "extensions": {
+      ".md": 4
+    }
+  },
+  {
+    "path": "forge-audit",
+    "fileCount": 2,
+    "bytes": 2364,
+    "lines": 90,
+    "roles": {
+      "forge-audit": 2
+    },
+    "extensions": {
+      ".sh": 1,
+      ".toml": 1
+    }
+  },
+  {
+    "path": "forge-audit/forge_audit",
+    "fileCount": 3,
+    "bytes": 22711,
+    "lines": 570,
+    "roles": {
+      "forge-audit": 3
+    },
+    "extensions": {
+      ".py": 3
+    }
+  },
+  {
+    "path": "forge-audit/forge_audit.egg-info",
+    "fileCount": 6,
+    "bytes": 1187,
+    "lines": 0,
+    "roles": {
+      "forge-audit": 6
+    },
+    "extensions": {
+      ".txt": 5,
+      "[no-ext]": 1
+    }
+  },
+  {
+    "path": "forge-audit/forge_audit/engine",
+    "fileCount": 7,
+    "bytes": 78406,
+    "lines": 2259,
+    "roles": {
+      "forge-audit": 7
+    },
+    "extensions": {
+      ".py": 7
+    }
+  },
+  {
+    "path": "forge-audit/forge_audit/storage",
+    "fileCount": 3,
+    "bytes": 28135,
+    "lines": 810,
+    "roles": {
+      "forge-audit": 3
+    },
+    "extensions": {
+      ".py": 3
+    }
+  },
+  {
+    "path": "forge-audit/forge_audit/ui",
+    "fileCount": 1,
+    "bytes": 68,
+    "lines": 2,
+    "roles": {
+      "forge-audit": 1
+    },
+    "extensions": {
+      ".py": 1
+    }
+  },
+  {
+    "path": "pipeline",
+    "fileCount": 5,
+    "bytes": 9214,
+    "lines": 266,
+    "roles": {
+      "pipeline": 5
+    },
+    "extensions": {
+      ".py": 1,
+      ".toml": 1,
+      ".md": 2,
+      ".txt": 1
+    }
+  },
+  {
+    "path": "pipeline/agents",
+    "fileCount": 6,
+    "bytes": 36538,
+    "lines": 775,
+    "roles": {
+      "pipeline": 6
+    },
+    "extensions": {
+      ".yaml": 6
+    }
+  },
+  {
+    "path": "pipeline/agents/manifests",
+    "fileCount": 100,
+    "bytes": 48813,
+    "lines": 1364,
+    "roles": {
+      "pipeline": 100
+    },
+    "extensions": {
+      ".yaml": 100
+    }
+  },
+  {
+    "path": "pipeline/agents/prompts",
+    "fileCount": 3,
+    "bytes": 501,
+    "lines": 16,
+    "roles": {
+      "pipeline": 3
+    },
+    "extensions": {
+      ".md": 3
+    }
+  },
+  {
+    "path": "pipeline/db",
+    "fileCount": 1,
+    "bytes": 8230,
+    "lines": 188,
+    "roles": {
+      "pipeline": 1
+    },
+    "extensions": {
+      ".sql": 1
+    }
+  },
+  {
+    "path": "pipeline/docs",
+    "fileCount": 2,
+    "bytes": 13201,
+    "lines": 294,
+    "roles": {
+      "pipeline": 2
+    },
+    "extensions": {
+      ".md": 2
+    }
+  },
+  {
+    "path": "pipeline/orchestrator",
+    "fileCount": 20,
+    "bytes": 188190,
+    "lines": 5163,
+    "roles": {
+      "pipeline": 20
+    },
+    "extensions": {
+      ".py": 20
+    }
+  },
+  {
+    "path": "pipeline/scripts",
+    "fileCount": 7,
+    "bytes": 14852,
+    "lines": 473,
+    "roles": {
+      "pipeline": 7
+    },
+    "extensions": {
+      ".sh": 5,
+      ".py": 2
+    }
+  },
+  {
+    "path": "pipeline/scripts/build_overnight",
+    "fileCount": 8,
+    "bytes": 72930,
+    "lines": 1612,
+    "roles": {
+      "pipeline": 8
+    },
+    "extensions": {
+      ".py": 8
+    }
+  },
+  {
+    "path": "pipeline/tests",
+    "fileCount": 17,
+    "bytes": 73566,
+    "lines": 1890,
+    "roles": {
+      "pipeline": 17
+    },
+    "extensions": {
+      ".py": 17
+    }
+  },
+  {
+    "path": "pipeline/tui",
+    "fileCount": 2,
+    "bytes": 8824,
+    "lines": 235,
+    "roles": {
+      "pipeline": 2
+    },
+    "extensions": {
+      ".py": 2
+    }
+  },
+  {
+    "path": "public",
+    "fileCount": 1,
+    "bytes": 1497,
+    "lines": 0,
+    "roles": {
+      "other": 1
+    },
+    "extensions": {
+      ".svg": 1
+    }
+  },
+  {
+    "path": "scripts",
+    "fileCount": 77,
+    "bytes": 861732,
+    "lines": 19617,
+    "roles": {
+      "repo-script": 77
+    },
+    "extensions": {
+      ".mjs": 34,
+      ".ts": 10,
+      ".sh": 33
+    }
+  },
+  {
+    "path": "scripts/_archive",
+    "fileCount": 1,
+    "bytes": 6307,
+    "lines": 172,
+    "roles": {
+      "repo-script": 1
+    },
+    "extensions": {
+      ".mjs": 1
+    }
+  },
+  {
+    "path": "src",
+    "fileCount": 64,
+    "bytes": 1750732,
+    "lines": 36848,
+    "roles": {
+      "frontend": 64
+    },
+    "extensions": {
+      ".tsx": 34,
+      ".ts": 28,
+      ".css": 2
+    }
+  },
+  {
+    "path": "src/api",
+    "fileCount": 2,
+    "bytes": 170312,
+    "lines": 4722,
+    "roles": {
+      "frontend": 2
+    },
+    "extensions": {
+      ".ts": 2
+    }
+  },
+  {
+    "path": "src/assets",
+    "fileCount": 1,
+    "bytes": 4126,
+    "lines": 0,
+    "roles": {
+      "frontend": 1
+    },
+    "extensions": {
+      ".svg": 1
+    }
+  },
+  {
+    "path": "src/components",
+    "fileCount": 1,
+    "bytes": 1522,
+    "lines": 54,
+    "roles": {
+      "frontend": 1
+    },
+    "extensions": {
+      ".tsx": 1
+    }
+  },
+  {
+    "path": "src/hooks",
+    "fileCount": 2,
+    "bytes": 4572,
+    "lines": 139,
+    "roles": {
+      "frontend": 2
+    },
+    "extensions": {
+      ".ts": 2
+    }
+  },
+  {
+    "path": "src/pages",
+    "fileCount": 6,
+    "bytes": 393372,
+    "lines": 7147,
+    "roles": {
+      "frontend": 6
+    },
+    "extensions": {
+      ".tsx": 6
+    }
+  },
+  {
+    "path": "tests",
+    "fileCount": 67,
+    "bytes": 624039,
+    "lines": 17767,
+    "roles": {
+      "unit-test": 67
+    },
+    "extensions": {
+      ".ts": 40,
+      ".tsx": 26,
+      ".json": 1
+    }
+  },
+  {
+    "path": "tests-e2e",
+    "fileCount": 2,
+    "bytes": 6619,
+    "lines": 141,
+    "roles": {
+      "e2e-test": 2
+    },
+    "extensions": {
+      ".ts": 2
+    }
+  },
+  {
+    "path": "tests-e2e/audit-map/32-reports",
+    "fileCount": 1,
+    "bytes": 2978,
+    "lines": 64,
+    "roles": {
+      "e2e-test": 1
+    },
+    "extensions": {
+      ".md": 1
+    }
+  },
+  {
+    "path": "tests-e2e/fixtures",
+    "fileCount": 1,
+    "bytes": 8848,
+    "lines": 203,
+    "roles": {
+      "e2e-test": 1
+    },
+    "extensions": {
+      ".ts": 1
+    }
+  },
+  {
+    "path": "tests-e2e/helpers",
+    "fileCount": 6,
+    "bytes": 48826,
+    "lines": 1322,
+    "roles": {
+      "e2e-test": 6
+    },
+    "extensions": {
+      ".ts": 6
+    }
+  },
+  {
+    "path": "tests-e2e/scripts",
+    "fileCount": 3,
+    "bytes": 9598,
+    "lines": 258,
+    "roles": {
+      "e2e-test": 3
+    },
+    "extensions": {
+      ".ts": 3
+    }
+  },
+  {
+    "path": "tests-e2e/specs",
+    "fileCount": 36,
+    "bytes": 372591,
+    "lines": 7581,
+    "roles": {
+      "e2e-test": 36
+    },
+    "extensions": {
+      ".ts": 36
+    }
+  },
+  {
+    "path": "tests-e2e/support",
+    "fileCount": 1,
+    "bytes": 2354,
+    "lines": 56,
+    "roles": {
+      "e2e-test": 1
+    },
+    "extensions": {
+      ".ts": 1
+    }
+  }
+]

@@ -1,0 +1,37 @@
+{
+  "type": "LogicStampCompareModes",
+  "schemaVersion": "0.1",
+  "createdAt": "2026-06-06T10:33:05.569Z",
+  "elapsed": 17612,
+  "files": {
+    "total": 258,
+    "ts": 217,
+    "tsx": 41
+  },
+  "comparison": {
+    "headerNoStyleGPT4": 186791,
+    "headerNoStyleClaude": 199866,
+    "headerWithStyleGPT4": 202941,
+    "headerWithStyleClaude": 215923,
+    "sourceTokensGPT4": 1312917,
+    "sourceTokensClaude": 1421762,
+    "modeEstimates": {
+      "none": {
+        "gpt4": 112075,
+        "claude": 119920
+      },
+      "header": {
+        "gpt4": 186791,
+        "claude": 199866
+      },
+      "headerStyle": {
+        "gpt4": 202941,
+        "claude": 215923
+      },
+      "full": {
+        "gpt4": 1499708,
+        "claude": 1621628
+      }
+    }
+  }
+}
