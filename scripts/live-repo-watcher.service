@@ -1,5 +1,5 @@
 [Unit]
-Description=AirMentor Live Repo Watcher
+Description=AirMentor Live Repo Watcher — Auto-regenerates deterministic maps on file changes
 After=network.target
 
 [Service]

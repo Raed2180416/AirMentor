@@ -1,74 +1,134 @@
 #!/bin/bash
-# AirMentor Live Repo Watcher
-# Auto-regenerates agent maps and audits on file changes
-# Usage: ./scripts/live-repo-watcher.sh &
-# Or: nohup ./scripts/live-repo-watcher.sh > .audit/live-watcher.log 2>&1 &
+# AirMentor Live Repo Watcher — Auto-starting, self-healing, deterministic mapper
+# Usage: systemctl --user enable --now airmentor-live-watcher
+# Or manually: ./scripts/live-repo-watcher.sh &
 
-set -euo pipefail
+set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AUDIT_DIR="$REPO_ROOT/.audit"
 LOG_FILE="$AUDIT_DIR/live-watcher.log"
+STATUS_FILE="$AUDIT_DIR/watcher-status.json"
 DEBOUNCE_SECONDS=3
-MAX_MAP_GEN_TIME=120
+MAX_MAP_GEN_TIME=180
 
 mkdir -p "$AUDIT_DIR"
 
-echo "[$(date -Iseconds)] AirMentor Live Repo Watcher starting..." >> "$LOG_FILE"
-echo "[$(date -Iseconds)] Watching: $REPO_ROOT" >> "$LOG_FILE"
+log() {
+  echo "[$(date -Iseconds)] $1" >> "$LOG_FILE"
+}
 
-# Check dependencies
+update_status() {
+  cat > "$STATUS_FILE" <<EOF
+{"status":"$1","last_event":"$(date -Iseconds)","pid":$$,"repo":"$REPO_ROOT"}
+EOF
+}
+
+log "=== AirMentor Live Watcher starting (PID: $$) ==="
+update_status "starting"
+
+# Dependency check
 if ! command -v inotifywait >/dev/null 2>&1; then
-  echo "[$(date -Iseconds)] ERROR: inotifywait not found. Install inotify-tools." >> "$LOG_FILE"
+  log "FATAL: inotifywait not found. Install inotify-tools (pacman -S inotify-tools)."
+  update_status "fatal_no_inotify"
   exit 1
 fi
 
+# Prevent multiple instances
+PIDFILE="$AUDIT_DIR/watcher.pid"
+if [ -f "$PIDFILE" ]; then
+  OLD_PID=$(cat "$PIDFILE" 2>/dev/null)
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    log "Another watcher already running (PID: $OLD_PID). Exiting."
+    update_status "already_running"
+    exit 0
+  fi
+fi
+echo $$ > "$PIDFILE"
+
 LAST_RUN=0
 PENDING=false
+IN_PROGRESS=false
 
 trigger_regen() {
   local now=$(date +%s)
   if (( now - LAST_RUN < DEBOUNCE_SECONDS )); then
     PENDING=true
+    update_status "debouncing"
     return
   fi
-  
+  if [ "$IN_PROGRESS" = true ]; then
+    PENDING=true
+    update_status "queued"
+    return
+  fi
+
   LAST_RUN=$now
   PENDING=false
-  
-  echo "[$(date -Iseconds)] Change detected. Regenerating maps..." >> "$LOG_FILE"
-  
-  # 1. Regenerate agent map
+  IN_PROGRESS=true
+  update_status "regenerating"
+
+  log "Change detected. Regenerating deterministic maps..."
   cd "$REPO_ROOT"
-  if timeout $MAX_MAP_GEN_TIME npm run agent:map >> "$LOG_FILE" 2>&1; then
-    echo "[$(date -Iseconds)] Agent map regenerated OK" >> "$LOG_FILE"
+
+  # 1. Agent repo map (regex-based, fast)
+  if timeout $MAX_MAP_GEN_TIME node scripts/generate-agent-repo-map.mjs >> "$LOG_FILE" 2>&1; then
+    log "Agent map regenerated OK"
   else
-    echo "[$(date -Iseconds)] Agent map generation failed or timed out" >> "$LOG_FILE"
+    log "Agent map generation failed or timed out"
   fi
-  
-  # 2. Refresh LogicStamp context
-  if command -v stamp >/dev/null 2>&1; then
-    if timeout 60 stamp context >> "$LOG_FILE" 2>&1; then
-      echo "[$(date -Iseconds)] LogicStamp refreshed OK" >> "$LOG_FILE"
+
+  # 2. Deterministic codebase index (AST-based, slower)
+  if [ -f scripts/deterministic-codebase-indexer.mjs ]; then
+    if timeout $MAX_MAP_GEN_TIME node scripts/deterministic-codebase-indexer.mjs >> "$LOG_FILE" 2>&1; then
+      log "Deterministic index regenerated OK"
     else
-      echo "[$(date -Iseconds)] LogicStamp refresh failed or timed out" >> "$LOG_FILE"
+      log "Deterministic index failed or timed out"
     fi
   fi
-  
-  # 3. Update timestamp
+
+  # 3. LogicStamp refresh (if available)
+  if command -v stamp >/dev/null 2>&1; then
+    if timeout 90 stamp context >> "$LOG_FILE" 2>&1; then
+      log "LogicStamp refreshed OK"
+    else
+      log "LogicStamp refresh failed or timed out"
+    fi
+  fi
+
+  # 4. Update timestamp
   date -Iseconds > "$AUDIT_DIR/.last-regen"
-  
-  echo "[$(date -Iseconds)] Regeneration complete." >> "$LOG_FILE"
+  IN_PROGRESS=false
+  update_status "idle"
+  log "Regeneration complete."
+
+  # Process any pending trigger that arrived during regeneration
+  if [ "$PENDING" = true ]; then
+    log "Processing pending trigger..."
+    trigger_regen
+  fi
 }
 
-# Main watch loop
+# Cleanup on exit
+cleanup() {
+  rm -f "$PIDFILE"
+  update_status "stopped"
+  log "Watcher stopped."
+  exit 0
+}
+trap cleanup INT TERM EXIT
+
+update_status "watching"
+log "Watching: $REPO_ROOT (debounce: ${DEBOUNCE_SECONDS}s, max_gen: ${MAX_MAP_GEN_TIME}s)"
+
+# Main watch loop — use inotifywait -m for continuous monitoring
 inotifywait -m \
   -r "$REPO_ROOT" \
-  --exclude '(\.git|node_modules|\.logicstamp|\.ctxo|\.worktrees|dist|output|catboost_info|test-results|tmp|\.audit)' \
+  --exclude '(\.git|node_modules|\.logicstamp|\.ctxo|\.worktrees|dist|output|catboost_info|test-results|tmp|\.audit|\.venv)' \
   -e close_write -e move -e create -e delete \
   --format '%w%f %e' |
 while read -r filepath event; do
-  # Filter to relevant file types
+  # Only react to relevant file types
   case "$filepath" in
     *.ts|*.tsx|*.js|*.jsx|*.py|*.mjs|*.json|*.md|*.sql)
       trigger_regen
