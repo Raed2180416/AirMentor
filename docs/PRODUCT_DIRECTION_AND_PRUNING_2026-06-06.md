@@ -130,6 +130,63 @@ Do not build these next:
 - a broad clean-architecture rewrite;
 - another deployment-platform migration without an operational need.
 
+## Critical Verdict On The Latest Work
+
+### Shared checkpoint playback: product-defining
+
+The system-admin, course leader, mentor, HoD, and student surfaces now have the
+beginnings of one shared temporal truth. This is not demo polish. It is the
+mechanism that lets a review team inspect the same decision moment from
+different responsibilities. Continue this work until every role-specific card
+can identify its run, checkpoint, evidence timestamp, and authority source.
+
+### Teacher cards, calendar, and attendance: useful only as evidence controls
+
+These surfaces are worth keeping where an edit changes simulation evidence or
+explains workload and intervention capacity. They are not a mandate to build a
+complete faculty portal. Any calendar, request, profile, or timetable feature
+that cannot affect or explain a scenario should be frozen and eventually
+removed.
+
+### Risk-model robustness: enough for the current product claim
+
+The governed logistic serving contract, shadow challenger decision, feature
+schema checks, and preserved corpora are sufficient for a deterministic
+synthetic rehearsal product. More model-family tournaments will not solve the
+current commercial risk, which is whether program teams trust and use the
+decision workflow. Resume model research only when a pilot produces a concrete
+failure mode that the existing model cannot represent.
+
+### Student agent: potentially distracting
+
+The shell is useful when it retrieves stage-bound evidence and explains an
+already-computed state. It becomes strategically harmful if it creates a second,
+less-governed interpretation layer or consumes effort better spent on the human
+review workflow. Keep its answers bounded, deterministic, and visibly sourced.
+
+### Multi-program generality: not yet proven
+
+The current code still contains M&C-specific assumptions. Building a second
+branded demo before extracting one real program contract would duplicate those
+assumptions behind another facade. Generality should be demonstrated by making
+the existing scenario template-driven, not by adding another university name.
+
+## Sunset Triggers
+
+Archive or delete a feature when any trigger remains true for 90 days:
+
+- it is absent from the core rehearsal loop and no pilot workflow names it;
+- it duplicates information already available on a governed role surface;
+- it requires hardcoded institution data outside the program template;
+- it emits generated artifacts without a retention owner or expiry rule;
+- its test depends on a developer's ignored local directory;
+- it makes claims that cannot be supported with synthetic evidence;
+- maintaining it blocks parity, traceability, or evidence export work.
+
+Historical research code gets a narrower rule: preserve the reproducibility
+inputs and final governed result, then archive the orchestration and delete
+intermediate runs.
+
 ## Next Three Product Bets
 
 ### 1. One real runtime template contract
@@ -150,6 +207,23 @@ Produce a compact scenario dossier containing configuration, seed, feature
 contract, stage summaries, queue load, intervention assumptions, fairness
 checks, and caveats. This is the bridge from demo to a serious pilot
 conversation.
+
+## Recommended 90-Day Sequence
+
+1. Finish the program-template vertical slice and remove the first set of
+   hardcoded M&C identifiers.
+2. Add the decision/intervention audit trail to one course-leader and mentor
+   workflow, including before/after evidence and authority metadata.
+3. Generate one reviewable pilot dossier from that same workflow.
+4. Put the product in front of program leaders and measure whether they can
+   explain a checkpoint, challenge an assumption, and record a decision without
+   developer help.
+5. Only after that evidence, choose between deeper workflow support, a second
+   template, or targeted model research.
+
+Do not run these as parallel feature streams. They are one validation chain:
+configuration must produce a trustworthy review, and the review must produce a
+credible artifact.
 
 ## Architecture Direction
 

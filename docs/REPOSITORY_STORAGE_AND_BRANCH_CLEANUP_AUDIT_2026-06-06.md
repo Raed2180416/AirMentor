@@ -2,11 +2,11 @@
 
 Date: 2026-06-06
 
-## Executive decision
+## Executive outcome
 
-Do not delete all branches or run Git garbage collection yet.
+The preservation-first cleanup is complete.
 
-The correct sequence is:
+The executed sequence was:
 
 1. Preserve the small serving-model vault and selected research models.
 2. Commit the current dirty source state in logical commits.
@@ -17,7 +17,11 @@ The correct sequence is:
 7. Delete redundant local branches and prune stale worktrees.
 8. Garbage-collect only after the bundle and model vault verify.
 
-## Measured state
+GitHub and the local checkout now use only `main`. GitHub's default branch is
+`main`, the rewritten history is pushed, and the pre-cleanup ref graph remains
+recoverable from the verified all-refs bundle.
+
+## Measured pre-cleanup state
 
 | Area | Measured size | Finding |
 |---|---:|---|
@@ -33,6 +37,19 @@ The correct sequence is:
 | Node modules | 386 MiB | Reinstallable |
 
 There were no live PostgreSQL processes using the discovered embedded database directories. Every discovered `postmaster.pid` was stale at audit time.
+
+## Final active footprint
+
+| Area | Final size | Retention reason |
+|---|---:|---|
+| Active checkout after verification cleanup | 206 MiB | Source, compact Git history, configuration, and retained local runtime model |
+| `.git` directory | 176 MiB | One rewritten branch; object pack is 118.16 MiB |
+| Ignored local runtime-model output | 14 MiB | Convenience copy retained to avoid any retraining dependency |
+| Tracked governed serving files | 53 KiB | Fresh-clone seed and serving contract |
+| Fresh clone before dependency installation | 137 MiB | Independent remote verification baseline |
+
+The active project therefore dropped by more than 99.8%. Reinstalling
+JavaScript dependencies temporarily adds approximately 386 MiB.
 
 ## Preserve before deletion
 
@@ -112,9 +129,13 @@ This first pass can reclaim about 42 GiB without deleting trained models or sour
 
 `air-mentor-api/tmp_db` is generated, but treat it as archive-first because it may be the convenient local development database. Dump it or rename it out of the repository before deletion.
 
-## Untrack and purge from Git
+All listed generated directories were deleted after the corresponding archives
+verified. `tmp_db` was archived before deletion. Reinstallable `node_modules`
+may be removed again after verification without affecting source or models.
 
-The current commit still tracks:
+## Untracked and purged from Git
+
+The pre-cleanup commit tracked:
 
 | Path | Current tracked payload |
 |---|---:|
@@ -126,7 +147,8 @@ The current commit still tracks:
 | `repomix-src-output.xml` | 15 MiB |
 | `deep_cohort_analysis.json` | 4.8 MiB |
 
-These files should be removed from the Git index while remaining available in the external archive:
+These files were removed from the Git index and rewritten history while
+remaining available in the external archives.
 
 ```bash
 git rm -r --cached --ignore-unmatch \
@@ -139,19 +161,23 @@ git rm -r --cached --ignore-unmatch \
   deep_cohort_analysis.json
 ```
 
-Removing them from the latest commit is not enough to shrink `.git`. Use `git filter-repo` in a disposable clone after the preservation bundle is verified.
+`git-filter-repo` 2.47.0 processed all 472 commits using the archived 5,459-path
+purge manifest. After reflog expiry and garbage collection, the Git pack is
+118.16 MiB with no loose-object garbage. The manifest is preserved at:
 
-`git filter-repo` is not currently installed on this machine.
+`/home/raed/Archives/airmentor-git-bundle/2026-06-06/history-rewrite-paths.txt`
 
-## Branch verdict
+## Pre-cleanup branch verdict
 
 The GitHub repository has only one remote branch: `main`. GitHub already uses `main` as its default branch.
 
 The current branch descends from remote `main` and is 18 commits ahead, before counting the uncommitted working tree.
 
-### Safe local branch deletions after current work is committed
+### Redundant local branches
 
-Twenty-seven local branches are ancestors of the current branch. They add no unique commits and can be deleted after their stale worktrees are pruned.
+Twenty-seven local branches were ancestors of the current branch and added no
+unique commits. They and their stale worktree registrations were deleted after
+the preservation bundle verified.
 
 Large alias groups include:
 
@@ -181,36 +207,35 @@ Four Cascade snapshot branches have different commit IDs but the same tree:
 
 Together they retain one duplicate content set of approximately 9.0 GiB. Preserve one snapshot in the external Git bundle if desired, then delete all four refs.
 
-### Recommended main migration
+### Executed main migration
 
-Do not simply rename the dirty current branch.
-
-Recommended sequence:
+The dirty branch was not simply renamed. Its intended source state and the two
+unique divergent patches were consolidated, history was filtered, and the
+result was force-pushed with an exact lease against the audited remote SHA.
 
 ```bash
-# 1. Commit the current source, test, migration, and documentation work
-#    in logical commits. Do not include generated databases or output.
-
-# 2. Reconcile the two small divergent commits.
-git cherry-pick 09779865
-git cherry-pick 508cedf5
-
-# 3. Create preservation refs before branch surgery.
-git tag pre-consolidation-main-2026-06-06 main
-git tag pre-consolidation-cascade-2026-06-06 1d93af1f
-git tag pre-consolidation-current-2026-06-06 HEAD
-
-# 4. Create and verify an external bundle.
-git bundle create /external/path/AirMentor-pre-consolidation-2026-06-06.bundle --all
-git bundle verify /external/path/AirMentor-pre-consolidation-2026-06-06.bundle
-
-# 5. In a disposable clone, purge generated history with git-filter-repo.
-# 6. Point cleaned main at the reconciled current line.
-# 7. Push with an exact lease against the audited remote main.
 git push --force-with-lease=main:71dbed307484c7f641e8aa3328e9394e9e8d5c52 origin main
 ```
 
-After the cleaned `main` is pushed and verified, delete redundant local refs and expire old reflogs. Do not run aggressive garbage collection before the external bundle verifies.
+The verified pre-cleanup bundle is:
+
+`/home/raed/Archives/airmentor-git-bundle/2026-06-06/airmentor-all-refs-before-cleanup-2026-06-06.bundle`
+
+## Final verification
+
+- Remote and local branch inventory: `main` only.
+- Remote default branch: `main`.
+- Final runtime-preservation commit: `b64b3c103705ec333d8099f63d1c5efddb8f1f6e`.
+- Fresh clone `git fsck --full`: passed.
+- Fresh clone frontend production build: passed.
+- Fresh clone API TypeScript build: passed.
+- Fresh clone root suite: 65 files and 331 tests passed.
+- Fresh clone serving-model contract: 7 tests passed.
+- Academic checkpoint and cross-role parity: 15 tests passed.
+- Tracked runtime model hashes match the verified model-vault sources.
+
+The fresh clone did not use `AIRMENTOR_RISK_MODEL_BUNDLE_PATH` or any local
+ignored model output. It seeded from the tracked governed contract.
 
 ## Cleanup utility guard
 
@@ -232,10 +257,18 @@ git count-objects -vH
 git worktree prune --dry-run --verbose
 ```
 
-The cleanup is complete only when:
+The cleanup completion criteria were:
 
 - the model vault and corpus archive hashes verify;
 - the source build and targeted tests pass from the cleaned checkout;
 - GitHub `main` points to the intended cleaned commit;
 - a fresh clone can seed and run without local ignored artifacts;
-- the preservation bundle restores the old refs in a throwaway directory.
+- history no longer contains the purge manifest paths or `.env.tunnel`;
+- the current checkout and fresh clone pass repository hygiene checks.
+- the preservation bundle verifies and enumerates the old refs.
+
+All criteria passed. The separate dependency-security lane remains open:
+`npm audit` reports 14 advisories (7 moderate and 7 high), including direct
+dependencies `drizzle-orm`, `fastify`, `vite`, and `xlsx`. Several fixes require
+major-version review, and `xlsx` has no npm-provided fix, so those upgrades were
+not mixed into this storage and history operation.
