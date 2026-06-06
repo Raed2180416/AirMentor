@@ -240,6 +240,91 @@ Columns prefixed with `B` are the baseline model in that run; columns prefixed w
 | current-local-runtime-output | overallCourseRisk |  | false | 0.8493 | 0.6295 | 0.1141 | 0.3617 |  | 0.7119 | 0.3689 | 0.985 | 0.8921 | 0.7437 | 0.0946 | 0.3016 |  | 0.8149 | 0.4644 | 0.991 | localEceAt04 worsened: challenger=0.010421689831197067 baseline=0.003981795664182108; localEceAt085 worsened: challenger=0.024528814792107445 baseline=0.015966422096126087 |
 | current-local-runtime-output | seeRisk |  | false | 0.9008 | 0.7309 | 0.0916 | 0.2868 |  | 0.7598 | 0.4879 | 1.0021 | 0.9171 | 0.7886 | 0.08 | 0.2551 |  | 0.8466 | 0.5483 | 1.0054 | localEceAt04 worsened: challenger=0.008206521729933303 baseline=0.0072563072232503245; localEceAt085 worsened: challenger=0.035554439839831864 baseline=0.02348188319025568; overload worsened: challenger=1.0053914784288405 baseline=1.0021368084654645 |
 
+## Shadow Tabular Model Zoo Benchmarks
+
+This is the explicit answer to whether the archive includes the broader model experiments: yes for XGBoost, LightGBM, CatBoost, TabPFN, AutoGluon, PyTabKit, logistic, stage-specialist baselines, and calibration-weighted ensembles. These rows are shadow-only synthetic benchmarks and do not change the product serving contract.
+
+| Family | Matched files in archive/vault | Coverage note |
+| --- | --- | --- |
+| XGBoost | 58 | JSON model artifacts and prediction arrays across SOTA, full-policy, v2, v6, and diagnostic shadow runs. |
+| LightGBM | 59 | Text model artifacts, calibration sidecars, and prediction arrays across the same tournament lineage. |
+| CatBoost | 271 | CBM binaries, JSON sidecars, and repeated challenger promotion-gate runs. |
+| TabPFN | 10 | Shadow-only prediction arrays plus benchmark result JSON/Markdown; not a serving artifact. |
+| AutoGluon | 10 | Shadow-only prediction arrays and AutoGluon predictor directories/metadata; not a serving artifact. |
+| PyTabKit | 10 | Shadow-only benchmark participation recorded in benchmark result JSON/Markdown; model directories are not retained in the compact vault. |
+
+| Benchmark | Head | Model | Status | Selected by validation | Selected by early-warning | Heavy models allowed | Train rows | Val AUC | Test AUC | Test AP | Test Brier | Test ECE | Early-warning AUC | Late-detection AUC | Seconds |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| full-policy-benchmark-20260527/shadow-benchmark | attendanceRisk | autogluon | ok |  |  | true | 50000 | 0.998 | 0.9984 |  | 0.003 | 0.0025 |  |  | 419.3 |
+| full-policy-benchmark-20260527/shadow-benchmark | attendanceRisk | calibration_weighted_ensemble | ok |  |  | true |  | 0.998 | 0.9983 |  | 0.0028 | 0.0019 |  |  |  |
+| full-policy-benchmark-20260527/shadow-benchmark | attendanceRisk | catboost | ok |  |  | true | 220800 | 0.998 | 0.9982 |  | 0.0028 | 0.0025 |  |  | 1.5 |
+| full-policy-benchmark-20260527/shadow-benchmark | attendanceRisk | lightgbm | ok |  |  | true | 220800 | 0.9979 | 0.9983 |  | 0.003 | 0.0026 |  |  | 1.7 |
+| full-policy-benchmark-20260527/shadow-benchmark | attendanceRisk | logistic | ok | yes |  | true | 220800 | 0.9982 | 0.9984 |  | 0.008 | 0.0184 |  |  | 1 |
+| full-policy-benchmark-20260527/shadow-benchmark | attendanceRisk | pytabkit | ok |  |  | true | 50000 | 0.9981 | 0.9983 |  | 0.003 | 0.0016 |  |  | 73.3 |
+| full-policy-benchmark-20260527/shadow-benchmark | attendanceRisk | tabpfn | ok |  |  | true | 50000 | 0.9981 | 0.9984 |  | 0.003 | 0.0021 |  |  | 361 |
+| full-policy-benchmark-20260527/shadow-benchmark | attendanceRisk | xgboost | ok |  |  | true | 220800 | 0.9979 | 0.9982 |  | 0.0028 | 0.0025 |  |  | 1.3 |
+| full-policy-benchmark-20260527/shadow-benchmark | ceRisk | autogluon | ok |  |  | true | 50000 | 0.7603 | 0.6854 |  | 0.0978 | 0.0405 |  |  | 1189.8 |
+| full-policy-benchmark-20260527/shadow-benchmark | ceRisk | calibration_weighted_ensemble | ok |  |  | true |  | 0.7714 | 0.7003 |  | 0.0969 | 0.0532 |  |  |  |
+| full-policy-benchmark-20260527/shadow-benchmark | ceRisk | catboost | ok |  |  | true | 220800 | 0.7707 | 0.6989 |  | 0.1606 | 0.2421 |  |  | 1.4 |
+| full-policy-benchmark-20260527/shadow-benchmark | ceRisk | lightgbm | ok |  |  | true | 220800 | 0.7701 | 0.7 |  | 0.1568 | 0.2359 |  |  | 2.4 |
+| full-policy-benchmark-20260527/shadow-benchmark | ceRisk | logistic | ok |  |  | true | 220800 | 0.7511 | 0.6841 |  | 0.1849 | 0.2694 |  |  | 4.7 |
+| full-policy-benchmark-20260527/shadow-benchmark | ceRisk | pytabkit | ok | yes |  | true | 50000 | 0.7756 | 0.7056 |  | 0.0928 | 0.0103 |  |  | 112.3 |
+| full-policy-benchmark-20260527/shadow-benchmark | ceRisk | tabpfn | ok |  |  | true | 50000 | 0.768 | 0.6991 |  | 0.0943 | 0.0296 |  |  | 384.7 |
+| full-policy-benchmark-20260527/shadow-benchmark | ceRisk | xgboost | ok |  |  | true | 220800 | 0.7694 | 0.6975 |  | 0.1564 | 0.234 |  |  | 1.4 |
+| full-policy-benchmark-20260527/shadow-benchmark | downstreamCarryoverRisk | autogluon | ok |  |  | true | 50000 | 0.828 | 0.8089 |  | 0.1751 | 0.077 |  |  | 911.4 |
+| full-policy-benchmark-20260527/shadow-benchmark | downstreamCarryoverRisk | calibration_weighted_ensemble | ok |  |  | true |  | 0.856 | 0.8334 |  | 0.1578 | 0.0463 |  |  |  |
+| full-policy-benchmark-20260527/shadow-benchmark | downstreamCarryoverRisk | catboost | ok | yes |  | true | 220800 | 0.8595 | 0.8354 |  | 0.1573 | 0.0542 |  |  | 1.5 |
+| full-policy-benchmark-20260527/shadow-benchmark | downstreamCarryoverRisk | lightgbm | ok |  |  | true | 220800 | 0.8548 | 0.8323 |  | 0.1592 | 0.0539 |  |  | 1.5 |
+| full-policy-benchmark-20260527/shadow-benchmark | downstreamCarryoverRisk | logistic | ok |  |  | true | 220800 | 0.7828 | 0.7531 |  | 0.1934 | 0.0691 |  |  | 2 |
+| full-policy-benchmark-20260527/shadow-benchmark | downstreamCarryoverRisk | pytabkit | ok |  |  | true | 50000 | 0.8592 | 0.8368 |  | 0.1537 | 0.0128 |  |  | 62.1 |
+| full-policy-benchmark-20260527/shadow-benchmark | downstreamCarryoverRisk | tabpfn | ok |  |  | true | 50000 | 0.8349 | 0.8079 |  | 0.1768 | 0.0865 |  |  | 396.3 |
+| full-policy-benchmark-20260527/shadow-benchmark | downstreamCarryoverRisk | xgboost | ok |  |  | true | 220800 | 0.8527 | 0.8315 |  | 0.1596 | 0.0528 |  |  | 1.3 |
+| full-policy-benchmark-20260527/shadow-benchmark | overallCourseRisk | autogluon | ok |  |  | true | 50000 | 0.9019 | 0.9231 |  | 0.0848 | 0.0338 |  |  | 1004.9 |
+| full-policy-benchmark-20260527/shadow-benchmark | overallCourseRisk | calibration_weighted_ensemble | ok |  |  | true |  | 0.9119 | 0.9351 |  | 0.0791 | 0.0288 |  |  |  |
+| full-policy-benchmark-20260527/shadow-benchmark | overallCourseRisk | catboost | ok |  |  | true | 220800 | 0.9105 | 0.9345 |  | 0.0798 | 0.0346 |  |  | 6.2 |
+| full-policy-benchmark-20260527/shadow-benchmark | overallCourseRisk | lightgbm | ok | yes |  | true | 220800 | 0.9124 | 0.9343 |  | 0.0801 | 0.0339 |  |  | 10.8 |
+| full-policy-benchmark-20260527/shadow-benchmark | overallCourseRisk | logistic | ok |  |  | true | 220800 | 0.9101 | 0.9326 |  | 0.1016 | 0.0769 |  |  | 11.1 |
+| full-policy-benchmark-20260527/shadow-benchmark | overallCourseRisk | pytabkit | ok |  |  | true | 50000 | 0.9095 | 0.9303 |  | 0.0812 | 0.0181 |  |  | 116.3 |
+| full-policy-benchmark-20260527/shadow-benchmark | overallCourseRisk | tabpfn | ok |  |  | true | 50000 | 0.909 | 0.9297 |  | 0.0809 | 0.024 |  |  | 549.6 |
+| full-policy-benchmark-20260527/shadow-benchmark | overallCourseRisk | xgboost | ok |  |  | true | 220800 | 0.9106 | 0.934 |  | 0.0807 | 0.0334 |  |  | 3.4 |
+| full-policy-benchmark-20260527/shadow-benchmark | seeRisk | autogluon | ok |  |  | true | 50000 | 0.6761 | 0.6877 |  | 0.2054 | 0.0845 |  |  | 1469.4 |
+| full-policy-benchmark-20260527/shadow-benchmark | seeRisk | calibration_weighted_ensemble | ok |  |  | true |  | 0.7028 | 0.7232 |  | 0.1933 | 0.0636 |  |  |  |
+| full-policy-benchmark-20260527/shadow-benchmark | seeRisk | catboost | ok |  |  | true | 220800 | 0.7044 | 0.7238 |  | 0.1953 | 0.0779 |  |  | 1.6 |
+| full-policy-benchmark-20260527/shadow-benchmark | seeRisk | lightgbm | ok |  |  | true | 220800 | 0.6987 | 0.7193 |  | 0.1969 | 0.0783 |  |  | 2.2 |
+| full-policy-benchmark-20260527/shadow-benchmark | seeRisk | logistic | ok |  |  | true | 220800 | 0.7101 | 0.7237 |  | 0.198 | 0.0899 |  |  | 3.4 |
+| full-policy-benchmark-20260527/shadow-benchmark | seeRisk | pytabkit | ok | yes |  | true | 50000 | 0.7107 | 0.7239 |  | 0.1888 | 0.018 |  |  | 83.5 |
+| full-policy-benchmark-20260527/shadow-benchmark | seeRisk | tabpfn | ok |  |  | true | 50000 | 0.6876 | 0.7036 |  | 0.2011 | 0.0751 |  |  | 409.2 |
+| full-policy-benchmark-20260527/shadow-benchmark | seeRisk | xgboost | ok |  |  | true | 220800 | 0.698 | 0.7177 |  | 0.197 | 0.0761 |  |  | 1.3 |
+| ce-see-stage-diagnostic-shadow | attendanceRisk | calibration_weighted_ensemble | ok |  |  | false |  | 0.9979 | 0.9982 | 0.9471 | 0.0028 | 0.0026 |  |  |  |
+| ce-see-stage-diagnostic-shadow | attendanceRisk | catboost | ok |  |  | false | 220800 | 0.9979 | 0.9982 | 0.9455 | 0.0028 | 0.0025 |  |  | 3.9 |
+| ce-see-stage-diagnostic-shadow | attendanceRisk | lightgbm | ok |  |  | false | 220800 | 0.9979 | 0.9983 | 0.95 | 0.003 | 0.0026 |  |  | 1.5 |
+| ce-see-stage-diagnostic-shadow | attendanceRisk | logistic | ok | yes | yes | false | 220800 | 0.9982 | 0.9984 | 0.9595 | 0.008 | 0.0184 |  |  | 2.8 |
+| ce-see-stage-diagnostic-shadow | attendanceRisk | xgboost | ok |  |  | false | 220800 | 0.9979 | 0.9982 | 0.9456 | 0.0028 | 0.0025 |  |  | 1.4 |
+| ce-see-stage-diagnostic-shadow | ceRisk | calibration_weighted_ensemble | ok | yes |  | false |  | 0.7719 | 0.6995 | 0.4566 | 0.1567 | 0.2367 |  |  |  |
+| ce-see-stage-diagnostic-shadow | ceRisk | catboost | ok |  | yes | false | 220800 | 0.7716 | 0.6984 | 0.4526 | 0.1605 | 0.2427 |  |  | 3.2 |
+| ce-see-stage-diagnostic-shadow | ceRisk | lightgbm | ok |  |  | false | 220800 | 0.7701 | 0.7 | 0.4583 | 0.1568 | 0.2359 |  |  | 1.7 |
+| ce-see-stage-diagnostic-shadow | ceRisk | logistic | ok |  |  | false | 220800 | 0.7511 | 0.6841 | 0.4064 | 0.1849 | 0.2694 |  |  | 4.8 |
+| ce-see-stage-diagnostic-shadow | ceRisk | stage_specialist_hist_gradient_boosting | ok |  |  | false | 220800 | 0.7686 | 0.6987 | 0.4562 | 0.0933 | 0.0147 |  |  | 4.7 |
+| ce-see-stage-diagnostic-shadow | ceRisk | stage_specialist_logistic | ok |  |  | false | 220800 | 0.759 | 0.6851 | 0.4194 | 0.1803 | 0.265 |  |  | 8.1 |
+| ce-see-stage-diagnostic-shadow | ceRisk | xgboost | ok |  |  | false | 220800 | 0.7704 | 0.6972 | 0.4526 | 0.1559 | 0.2324 |  |  | 1.6 |
+| ce-see-stage-diagnostic-shadow | downstreamCarryoverRisk | calibration_weighted_ensemble | ok |  |  | false |  | 0.8568 | 0.835 | 0.7544 | 0.1575 | 0.053 |  |  |  |
+| ce-see-stage-diagnostic-shadow | downstreamCarryoverRisk | catboost | ok | yes | yes | false | 220800 | 0.8587 | 0.8367 | 0.7568 | 0.1565 | 0.0535 |  |  | 3.2 |
+| ce-see-stage-diagnostic-shadow | downstreamCarryoverRisk | lightgbm | ok |  |  | false | 220800 | 0.8548 | 0.8323 | 0.7508 | 0.1592 | 0.0539 |  |  | 1.9 |
+| ce-see-stage-diagnostic-shadow | downstreamCarryoverRisk | logistic | ok |  |  | false | 220800 | 0.7828 | 0.7531 | 0.644 | 0.1934 | 0.0691 |  |  | 3.4 |
+| ce-see-stage-diagnostic-shadow | downstreamCarryoverRisk | xgboost | ok |  |  | false | 220800 | 0.8538 | 0.8322 | 0.7492 | 0.159 | 0.0524 |  |  | 1.4 |
+| ce-see-stage-diagnostic-shadow | overallCourseRisk | calibration_weighted_ensemble | ok |  |  | false |  | 0.9119 | 0.935 | 0.923 | 0.0796 | 0.034 |  |  |  |
+| ce-see-stage-diagnostic-shadow | overallCourseRisk | catboost | ok |  |  | false | 220800 | 0.9108 | 0.9353 | 0.9212 | 0.0792 | 0.035 |  |  | 3.4 |
+| ce-see-stage-diagnostic-shadow | overallCourseRisk | lightgbm | ok | yes | yes | false | 220800 | 0.9124 | 0.9343 | 0.9225 | 0.0801 | 0.0339 |  |  | 1.4 |
+| ce-see-stage-diagnostic-shadow | overallCourseRisk | logistic | ok |  |  | false | 220800 | 0.9101 | 0.9326 | 0.9201 | 0.1016 | 0.0769 |  |  | 2 |
+| ce-see-stage-diagnostic-shadow | overallCourseRisk | xgboost | ok |  |  | false | 220800 | 0.9111 | 0.934 | 0.9224 | 0.0808 | 0.0336 |  |  | 1.2 |
+| ce-see-stage-diagnostic-shadow | seeRisk | calibration_weighted_ensemble | ok |  |  | false |  | 0.7026 | 0.7221 | 0.6052 | 0.1958 | 0.0778 |  |  |  |
+| ce-see-stage-diagnostic-shadow | seeRisk | catboost | ok |  |  | false | 220800 | 0.7069 | 0.724 | 0.607 | 0.1954 | 0.0799 |  |  | 6.1 |
+| ce-see-stage-diagnostic-shadow | seeRisk | lightgbm | ok |  |  | false | 220800 | 0.6987 | 0.7193 | 0.6023 | 0.1969 | 0.0783 |  |  | 1.6 |
+| ce-see-stage-diagnostic-shadow | seeRisk | logistic | ok |  |  | false | 220800 | 0.7101 | 0.7237 | 0.5956 | 0.198 | 0.0899 |  |  | 2.8 |
+| ce-see-stage-diagnostic-shadow | seeRisk | stage_specialist_hist_gradient_boosting | ok |  |  | false | 220800 | 0.7003 | 0.7172 | 0.5997 | 0.1904 | 0.0345 |  |  | 3.8 |
+| ce-see-stage-diagnostic-shadow | seeRisk | stage_specialist_logistic | ok | yes | yes | false | 220800 | 0.7134 | 0.7244 | 0.5988 | 0.1974 | 0.0896 |  |  | 8.4 |
+| ce-see-stage-diagnostic-shadow | seeRisk | xgboost | ok |  |  | false | 220800 | 0.6971 | 0.7171 | 0.6002 | 0.1972 | 0.0768 |  |  | 1.6 |
+
 ## CatBoost Challenger Head-To-Head History
 
 These are the repeated local CatBoost challenger runs from the early research sediment. The table reports the overall-course head because it is the clearest proxy for the product-facing risk card; the per-head JSON files remain in the archive.
@@ -294,7 +379,7 @@ These are the repeated local CatBoost challenger runs from the early research se
 
 2. `v2-training` and some early SOTA runs produced extremely high metrics on several heads. Those results are useful historically, but they are less credible as product evidence because near-perfect synthetic metrics are a warning sign for easy splits, overly aligned synthetic labels, or leakage-prone feature/label construction.
 
-3. The `sota-fixed`, `sota-ensemble`, and dated `sota-run-*` artifacts moved toward governed promotion gates: ranking, proper scoring, local calibration, overload, replayability, feature schema, and corpus admissibility.
+3. The `sota-fixed`, `sota-ensemble`, and dated `sota-run-*` artifacts moved toward governed promotion gates: ranking, proper scoring, local calibration, overload, replayability, feature schema, and corpus admissibility. The separate shadow-tabular runs also tried AutoGluon, TabPFN, PyTabKit, XGBoost, LightGBM, CatBoost, logistic, and weighted ensembles without changing serving.
 
 4. The later coverage report reframed the model around stage-aware operation: 30 proof checkpoints, role-visible playback, queue burden, policy diagnostics, CO evidence, and stage/semester variant comparisons.
 

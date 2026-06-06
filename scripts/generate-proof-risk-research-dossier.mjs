@@ -9,6 +9,16 @@ const outputPath = path.join(repoRoot, 'docs/PROOF_RISK_RESEARCH_DOSSIER_2026-06
 const evalReportPath = path.join(historicalRoot, 'pre-coverage33-20260601/evaluation-report.json')
 const contractBundlePath = path.join(repoRoot, 'air-mentor-api/model-contract/proof-risk-model/risk-model-bundle.json')
 const contractDecisionPath = path.join(repoRoot, 'air-mentor-api/model-contract/proof-risk-model/promotion-decision.json')
+const shadowBenchmarkFiles = [
+  {
+    label: 'full-policy-benchmark-20260527/shadow-benchmark',
+    file: path.join(historicalRoot, 'old-benchmark-runs/full-policy-benchmark-20260527/shadow-benchmark/benchmark-results.json'),
+  },
+  {
+    label: 'ce-see-stage-diagnostic-shadow',
+    file: path.join(historicalRoot, 'old-benchmark-runs/ce-see-stage-diagnostic-shadow/benchmark-results.json'),
+  },
+]
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'))
@@ -229,6 +239,69 @@ function headToHeadRows() {
         rel(file),
       ]
     })
+}
+
+function shadowBenchmarkRows() {
+  const rows = []
+  for (const benchmark of shadowBenchmarkFiles) {
+    if (!existsSync(benchmark.file)) continue
+    const json = readJson(benchmark.file)
+    const heads = json.heads ?? {}
+    for (const head of Object.keys(heads).sort()) {
+      const entry = heads[head]
+      const models = entry.models ?? {}
+      for (const model of Object.keys(models).sort()) {
+        const result = models[model]
+        const test = result.test ?? {}
+        const validation = result.validation ?? {}
+        rows.push([
+          benchmark.label,
+          head,
+          model,
+          result.status ?? '',
+          model === entry.selectedByValidationAuc ? 'yes' : '',
+          model === entry.selectedByEarlyWarningValidationAuc ? 'yes' : '',
+          json.allowHeavyModels === undefined ? '' : String(json.allowHeavyModels),
+          result.trainRows ?? '',
+          fmt(validation.rocAuc),
+          fmt(test.rocAuc),
+          fmt(test.averagePrecision ?? test.prAuc),
+          fmt(test.brier),
+          fmt(test.ece ?? test.expectedCalibrationError),
+          fmt(test.earlyWarningTestAuc ?? test.earlyWarningRocAuc),
+          fmt(test.lateDetectionTestAuc ?? test.lateOutcomeDetectionRocAuc),
+          fmt(result.elapsedSeconds, 1),
+        ])
+      }
+    }
+  }
+  return rows
+}
+
+function modelFamilyCoverageRows() {
+  const fileNames = []
+  const roots = [
+    path.join(historicalRoot, 'old-benchmark-runs'),
+    '/home/raed/Archives/airmentor-model-vault/2026-06-06',
+  ]
+  for (const root of roots) {
+    for (const file of walk(root, current => {
+      const name = path.basename(current).toLowerCase()
+      return ['xgboost', 'lightgbm', 'catboost', 'tabpfn', 'autogluon', 'pytabkit']
+        .some(term => name.includes(term))
+    })) {
+      fileNames.push(path.basename(file).toLowerCase())
+    }
+  }
+  const count = predicate => fileNames.filter(predicate).length
+  return [
+    ['XGBoost', count(name => name.includes('xgboost')), 'JSON model artifacts and prediction arrays across SOTA, full-policy, v2, v6, and diagnostic shadow runs.'],
+    ['LightGBM', count(name => name.includes('lightgbm')), 'Text model artifacts, calibration sidecars, and prediction arrays across the same tournament lineage.'],
+    ['CatBoost', count(name => name.includes('catboost')), 'CBM binaries, JSON sidecars, and repeated challenger promotion-gate runs.'],
+    ['TabPFN', count(name => name.includes('tabpfn')), 'Shadow-only prediction arrays plus benchmark result JSON/Markdown; not a serving artifact.'],
+    ['AutoGluon', count(name => name.includes('autogluon')), 'Shadow-only prediction arrays and AutoGluon predictor directories/metadata; not a serving artifact.'],
+    ['PyTabKit', count(name => name.includes('pytabkit')), 'Shadow-only benchmark participation recorded in benchmark result JSON/Markdown; model directories are not retained in the compact vault.'],
+  ]
 }
 
 function checkpointRows(report) {
@@ -577,6 +650,19 @@ function buildDocument() {
     headMetricRows(metricsRuns),
   ))
 
+  lines.push(section('Shadow Tabular Model Zoo Benchmarks'))
+  lines.push('This is the explicit answer to whether the archive includes the broader model experiments: yes for XGBoost, LightGBM, CatBoost, TabPFN, AutoGluon, PyTabKit, logistic, stage-specialist baselines, and calibration-weighted ensembles. These rows are shadow-only synthetic benchmarks and do not change the product serving contract.')
+  lines.push('')
+  lines.push(table(
+    ['Family', 'Matched files in archive/vault', 'Coverage note'],
+    modelFamilyCoverageRows(),
+  ))
+  lines.push('')
+  lines.push(table(
+    ['Benchmark', 'Head', 'Model', 'Status', 'Selected by validation', 'Selected by early-warning', 'Heavy models allowed', 'Train rows', 'Val AUC', 'Test AUC', 'Test AP', 'Test Brier', 'Test ECE', 'Early-warning AUC', 'Late-detection AUC', 'Seconds'],
+    shadowBenchmarkRows(),
+  ))
+
   lines.push(section('CatBoost Challenger Head-To-Head History'))
   lines.push('These are the repeated local CatBoost challenger runs from the early research sediment. The table reports the overall-course head because it is the clearest proxy for the product-facing risk card; the per-head JSON files remain in the archive.')
   lines.push('')
@@ -590,7 +676,7 @@ function buildDocument() {
   lines.push('')
   lines.push('2. `v2-training` and some early SOTA runs produced extremely high metrics on several heads. Those results are useful historically, but they are less credible as product evidence because near-perfect synthetic metrics are a warning sign for easy splits, overly aligned synthetic labels, or leakage-prone feature/label construction.')
   lines.push('')
-  lines.push('3. The `sota-fixed`, `sota-ensemble`, and dated `sota-run-*` artifacts moved toward governed promotion gates: ranking, proper scoring, local calibration, overload, replayability, feature schema, and corpus admissibility.')
+  lines.push('3. The `sota-fixed`, `sota-ensemble`, and dated `sota-run-*` artifacts moved toward governed promotion gates: ranking, proper scoring, local calibration, overload, replayability, feature schema, and corpus admissibility. The separate shadow-tabular runs also tried AutoGluon, TabPFN, PyTabKit, XGBoost, LightGBM, CatBoost, logistic, and weighted ensembles without changing serving.')
   lines.push('')
   lines.push('4. The later coverage report reframed the model around stage-aware operation: 30 proof checkpoints, role-visible playback, queue burden, policy diagnostics, CO evidence, and stage/semester variant comparisons.')
   lines.push('')
