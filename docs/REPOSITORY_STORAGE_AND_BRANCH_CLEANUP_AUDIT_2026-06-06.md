@@ -43,7 +43,7 @@ There were no live PostgreSQL processes using the discovered embedded database d
 | Area | Final size | Retention reason |
 |---|---:|---|
 | Active checkout after verification cleanup | 206 MiB | Source, compact Git history, configuration, and retained local runtime model |
-| `.git` directory | 176 MiB | One rewritten branch; object pack is 118.16 MiB |
+| `.git` directory | 175 MiB | One rewritten branch; object pack is 118.17 MiB |
 | Ignored local runtime-model output | 14 MiB | Convenience copy retained to avoid any retraining dependency |
 | Tracked governed serving files | 53 KiB | Fresh-clone seed and serving contract |
 | Fresh clone before dependency installation | 137 MiB | Independent remote verification baseline |
@@ -163,7 +163,7 @@ git rm -r --cached --ignore-unmatch \
 
 `git-filter-repo` 2.47.0 processed all 472 commits using the archived 5,459-path
 purge manifest. After reflog expiry and garbage collection, the Git pack is
-118.16 MiB with no loose-object garbage. The manifest is preserved at:
+118.17 MiB with no loose-object garbage. The manifest is preserved at:
 
 `/home/raed/Archives/airmentor-git-bundle/2026-06-06/history-rewrite-paths.txt`
 
