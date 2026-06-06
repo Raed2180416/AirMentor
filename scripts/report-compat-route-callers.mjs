@@ -10,7 +10,6 @@ const trackedRoots = [
   '.github',
   'air-mentor-api/src',
   'air-mentor-api/tests',
-  'audit-map',
   'scripts',
   'src',
   'tests',
