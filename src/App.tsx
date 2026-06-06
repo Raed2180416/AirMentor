@@ -3701,7 +3701,7 @@ function OperationalWorkspace({
         {selectedStudent && (() => {
           const matchingQueueItem = facultyProfile?.proofOperations.monitoringQueue.find(item => item.studentId === selectedStudent.id || item.studentId === selectedStudent.id.split('::').at(-1))
           const coreMetricsOverride = matchingQueueItem ? coreMetricsFromFacultyQueueItem(matchingQueueItem) : null
-          
+
           return (
             <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} historyByUsn={studentHistoryByUsn} role={role} meetings={academicMeetings} proofStageKey={academicBootstrap?.proofPlayback?.stageKey} coreMetricsOverride={coreMetricsOverride} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={handleOpenStudentEscalation} onOpenTaskComposer={(s, o, taskType) => {
               const resolvedOffering = o ?? allOfferings.find(item => getStudentsPatched(item).some(candidate => candidate.id === s.id))
