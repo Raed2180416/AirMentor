@@ -232,10 +232,16 @@ The verified pre-cleanup bundle is:
 - Fresh clone root suite: 65 files and 331 tests passed.
 - Fresh clone serving-model contract: 7 tests passed.
 - Academic checkpoint and cross-role parity: 15 tests passed.
+- Fresh clone shared-playback browser flow: passed across system-admin, course
+  leader, mentor, and HoD with zero console or page errors.
 - Tracked runtime model hashes match the verified model-vault sources.
 
 The fresh clone did not use `AIRMENTOR_RISK_MODEL_BUNDLE_PATH` or any local
 ignored model output. It seeded from the tracked governed contract.
+
+The compact browser evidence pack is preserved at:
+
+`/home/raed/Archives/airmentor-verification/2026-06-06/browser-proof`
 
 ## Cleanup utility guard
 
