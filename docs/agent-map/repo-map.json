@@ -148,14 +148,14 @@
     }
   },
   "totals": {
-    "trackedFiles": 905,
-    "ignoredEntriesObserved": 31,
-    "bytes": 14848463,
-    "lines": 302286,
-    "nonEmptyLines": 281751,
-    "commentLines": 5563,
+    "trackedFiles": 920,
+    "ignoredEntriesObserved": 32,
+    "bytes": 14898615,
+    "lines": 303929,
+    "nonEmptyLines": 283034,
+    "commentLines": 5674,
     "localDependencyEdges": 618,
-    "symbols": 22933,
+    "symbols": 23030,
     "apiRoutes": 190,
     "testCases": 1370,
     "filesWithTests": 194,
@@ -163,20 +163,20 @@
   },
   "counts": {
     "byExtension": {
-      ".md": 50,
+      ".md": 54,
       "[no-ext]": 15,
-      ".json": 31,
+      ".json": 32,
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".sh": 42,
+      ".sh": 46,
       ".example": 1,
       ".ts": 384,
       ".toml": 3,
       ".txt": 7,
       ".py": 108,
       ".cjs": 1,
-      ".mjs": 39,
+      ".mjs": 42,
       ".js": 2,
       ".sql": 34,
       ".snap": 1,
@@ -185,22 +185,24 @@
       ".nix": 1,
       ".html": 1,
       ".svg": 1,
+      ".service": 1,
+      ".conf": 2,
       ".tsx": 67,
       ".css": 2
     },
     "byRole": {
       "other": 31,
       "build-config": 16,
-      "agent-config": 15,
+      "agent-config": 16,
       "ci": 8,
       "model-contract": 3,
       "backend-script": 97,
       "backend": 153,
       "unit-test": 161,
-      "documentation": 26,
+      "documentation": 29,
       "forge-audit": 22,
       "pipeline": 171,
-      "repo-script": 78,
+      "repo-script": 89,
       "frontend": 74,
       "e2e-test": 50
     },
@@ -220,10 +222,10 @@
       ".kiro": 2,
       ".node-version": 1,
       ".vscode": 2,
-      ".windsurf": 9,
+      ".windsurf": 10,
       "air-mentor-api": 363,
       "CLAUDE.md": 1,
-      "docs": 26,
+      "docs": 29,
       "eslint.config.js": 1,
       "flake.lock": 1,
       "flake.nix": 1,
@@ -234,7 +236,7 @@
       "package.json": 1,
       "pipeline": 171,
       "public": 1,
-      "scripts": 78,
+      "scripts": 89,
       "skills-lock.json": 1,
       "src": 74,
       "tests-e2e": 50,
@@ -248,6 +250,7 @@
     },
     "ignoredByTopDirectory": {
       ".agents": 1,
+      ".audit": 1,
       ".devin": 1,
       ".env": 1,
       ".kiro": 1,
@@ -676,7 +679,7 @@
       },
       {
         "key": "node:fs",
-        "value": 105
+        "value": 108
       },
       {
         "key": "drizzle-orm",
@@ -684,7 +687,7 @@
       },
       {
         "key": "node:path",
-        "value": 89
+        "value": 90
       },
       {
         "key": "__future__",
@@ -712,7 +715,7 @@
       },
       {
         "key": "node:url",
-        "value": 26
+        "value": 27
       },
       {
         "key": "fastify",
@@ -767,11 +770,15 @@
         "value": 14
       },
       {
+        "key": "node:crypto",
+        "value": 13
+      },
+      {
         "key": "embedded-postgres",
         "value": 12
       },
       {
-        "key": "node:crypto",
+        "key": "node:child_process",
         "value": 12
       },
       {
@@ -784,10 +791,6 @@
       },
       {
         "key": "framer-motion",
-        "value": 11
-      },
-      {
-        "key": "node:child_process",
         "value": 11
       },
       {
@@ -1916,6 +1919,7 @@
   "anomalies": [],
   "ignoredExamples": [
     ".agents/",
+    ".audit/",
     ".devin/",
     ".env",
     ".kiro/skills/",

@@ -2,8 +2,8 @@
   {
     "path": ".",
     "fileCount": 23,
-    "bytes": 338155,
-    "lines": 8184,
+    "bytes": 320238,
+    "lines": 8200,
     "roles": {
       "other": 12,
       "agent-config": 1,
@@ -86,8 +86,8 @@
   {
     "path": ".github",
     "fileCount": 1,
-    "bytes": 2218,
-    "lines": 59,
+    "bytes": 4447,
+    "lines": 81,
     "roles": {
       "ci": 1
     },
@@ -147,8 +147,8 @@
   {
     "path": ".vscode",
     "fileCount": 2,
-    "bytes": 5718,
-    "lines": 216,
+    "bytes": 1604,
+    "lines": 63,
     "roles": {
       "other": 2
     },
@@ -158,14 +158,14 @@
   },
   {
     "path": ".windsurf",
-    "fileCount": 5,
-    "bytes": 46084,
-    "lines": 1021,
+    "fileCount": 6,
+    "bytes": 40132,
+    "lines": 954,
     "roles": {
-      "agent-config": 5
+      "agent-config": 6
     },
     "extensions": {
-      ".json": 1,
+      ".json": 2,
       ".md": 3,
       ".sh": 1
     }
@@ -400,14 +400,14 @@
   },
   {
     "path": "docs",
-    "fileCount": 13,
-    "bytes": 195614,
-    "lines": 3482,
+    "fileCount": 16,
+    "bytes": 236836,
+    "lines": 4321,
     "roles": {
-      "documentation": 13
+      "documentation": 16
     },
     "extensions": {
-      ".md": 12,
+      ".md": 15,
       ".bib": 1
     }
   },
@@ -659,16 +659,19 @@
   },
   {
     "path": "scripts",
-    "fileCount": 77,
-    "bytes": 861794,
-    "lines": 19617,
+    "fileCount": 88,
+    "bytes": 896478,
+    "lines": 20603,
     "roles": {
-      "repo-script": 77
+      "repo-script": 88
     },
     "extensions": {
-      ".mjs": 34,
+      ".mjs": 37,
       ".ts": 10,
-      ".sh": 33
+      ".sh": 37,
+      ".md": 1,
+      ".service": 1,
+      ".conf": 2
     }
   },
   {
