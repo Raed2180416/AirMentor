@@ -46,12 +46,13 @@ Board policy: gitignored local working state.
   - SH-000: Setup board, gitignore `.absolute-human/`, commit baseline (baseline: `65ef458`)
 
 ### Wave 2 — Config foundation
-- **Status:** pending
+- **Status:** in-progress
 - **Tasks:**
   - SH-001: Add path aliases to tsconfig + vite configs
   - SH-005: Add `architecture:check` to CI (done, commit `a142e8d`)
   - SH-006: Add ESLint import boundary rules
-  - SH-007: Install and configure `knip`
+  - SH-007: Install and configure `knip` (done, commit `b927652`)
+  - SH-008: Run `knip` baseline (done; report generated but not committed — large generated artifact)
 
 ### Wave 3 — Lint auto-fix
 - **Status:** pending

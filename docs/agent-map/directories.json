@@ -2,8 +2,8 @@
   {
     "path": ".",
     "fileCount": 25,
-    "bytes": 339345,
-    "lines": 9284,
+    "bytes": 340366,
+    "lines": 9314,
     "roles": {
       "other": 14,
       "agent-config": 1,
@@ -23,8 +23,8 @@
   {
     "path": ".absolute-human",
     "fileCount": 1,
-    "bytes": 3504,
-    "lines": 113,
+    "bytes": 3637,
+    "lines": 114,
     "roles": {
       "other": 1
     },
