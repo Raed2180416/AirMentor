@@ -41,15 +41,15 @@ Board policy: gitignored local working state.
 ## Task graph and waves — Phase 0
 
 ### Wave 1 — Setup
-- **Status:** pending
+- **Status:** done
 - **Tasks:**
-  - SH-000: Setup board, gitignore `.absolute-human/`, commit baseline
+  - SH-000: Setup board, gitignore `.absolute-human/`, commit baseline (baseline: `65ef458`)
 
 ### Wave 2 — Config foundation
 - **Status:** pending
 - **Tasks:**
   - SH-001: Add path aliases to tsconfig + vite configs
-  - SH-005: Add `architecture:check` to CI
+  - SH-005: Add `architecture:check` to CI (done, commit `a142e8d`)
   - SH-006: Add ESLint import boundary rules
   - SH-007: Install and configure `knip`
 

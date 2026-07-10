@@ -10,10 +10,10 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 964 |
-| Tracked bytes | 14.4 MiB |
-| Tracked source/doc lines | 313293 |
-| Non-empty lines | 290230 |
+| Tracked files | 965 |
+| Tracked bytes | 14.5 MiB |
+| Tracked source/doc lines | 314279 |
+| Non-empty lines | 291215 |
 | Comment lines | 6001 |
 | Local dependency edges | 761 |
 | Symbols/blocks discovered | 23615 |
@@ -71,7 +71,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Proof risk contract bundle | air-mentor-api/model-contract/proof-risk-model/risk-model-bundle.json | 1628 | 0 | 0 | Tracked serving model contract. |
 | Proof risk promotion decision | air-mentor-api/model-contract/proof-risk-model/promotion-decision.json | 32 | 0 | 0 | Governed shadow-vs-serving decision. |
 | E2E config | tests-e2e/playwright.config.ts | 126 | 1 | 18 | Browser proof harness configuration. |
-| Root package scripts | package.json | 85 | 0 | 0 | Primary command registry. |
+| Root package scripts | package.json | 86 | 0 | 0 | Primary command registry. |
 | API package scripts | air-mentor-api/package.json | 48 | 0 | 0 | Backend command registry. |
 
 ## Package Scripts
@@ -143,7 +143,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | backend-script | 97 |
 | e2e-test | 50 |
 | documentation | 34 |
-| other | 33 |
+| other | 34 |
 | forge-audit | 22 |
 | build-config | 16 |
 | ci | 8 |
@@ -162,7 +162,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | .md | 55 |
 | .sh | 48 |
 | .sql | 34 |
-| .json | 31 |
+| .json | 32 |
 | [no-ext] | 14 |
 | .txt | 7 |
 | .yml | 5 |
@@ -229,8 +229,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | scripts | 108 | 995.7 KiB | 24024 | repo-script:108 |
 | air-mentor-api/src/modules | 21 | 816.1 KiB | 20106 | backend:21 |
 | tests | 68 | 613.2 KiB | 17898 | unit-test:68 |
+| . | 25 | 331.4 KiB | 9284 | other:14, build-config:10, agent-config:1 |
 | docs | 20 | 329.2 KiB | 8885 | documentation:20 |
-| . | 24 | 299.5 KiB | 8298 | other:13, build-config:10, agent-config:1 |
 | tests-e2e/specs | 36 | 363.9 KiB | 7581 | e2e-test:36 |
 | src/pages | 6 | 384.2 KiB | 7147 | frontend:6 |
 | pipeline/orchestrator | 20 | 183.8 KiB | 5163 | pipeline:20 |

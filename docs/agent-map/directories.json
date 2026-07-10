@@ -1,11 +1,11 @@
 [
   {
     "path": ".",
-    "fileCount": 24,
-    "bytes": 306684,
-    "lines": 8298,
+    "fileCount": 25,
+    "bytes": 339345,
+    "lines": 9284,
     "roles": {
-      "other": 13,
+      "other": 14,
       "agent-config": 1,
       "build-config": 10
     },
@@ -16,14 +16,14 @@
       ".lock": 1,
       ".nix": 1,
       ".html": 1,
-      ".json": 8,
+      ".json": 9,
       ".ts": 2
     }
   },
   {
     "path": ".absolute-human",
     "fileCount": 1,
-    "bytes": 3479,
+    "bytes": 3504,
     "lines": 113,
     "roles": {
       "other": 1

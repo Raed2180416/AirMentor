@@ -18,6 +18,7 @@ air-mentor-api/dist/
 
 # Runtime/test outputs
 tmp/
+.tmp-test-postgres/
 air-mentor-api/tmp/
 air-mentor-api/tmp_db/
 air-mentor-api/.eval-db-*/
