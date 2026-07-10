@@ -149,18 +149,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 947,
+    "trackedFiles": 948,
     "ignoredEntriesObserved": 41,
-    "bytes": 15091073,
-    "lines": 311721,
-    "nonEmptyLines": 288923,
-    "commentLines": 5998,
-    "localDependencyEdges": 705,
-    "symbols": 23572,
+    "bytes": 15098493,
+    "lines": 311888,
+    "nonEmptyLines": 289086,
+    "commentLines": 6014,
+    "localDependencyEdges": 710,
+    "symbols": 23582,
     "apiRoutes": 190,
     "testCases": 1370,
     "filesWithTests": 194,
-    "atoms": 81130,
+    "atoms": 81141,
     "anomalies": 0
   },
   "counts": {
@@ -190,7 +190,7 @@
       ".service": 3,
       ".timer": 1,
       ".conf": 2,
-      ".tsx": 76,
+      ".tsx": 77,
       ".css": 2
     },
     "byRole": {
@@ -206,7 +206,7 @@
       "forge-audit": 22,
       "pipeline": 171,
       "repo-script": 108,
-      "frontend": 87,
+      "frontend": 88,
       "e2e-test": 50
     },
     "byTopDirectory": {
@@ -243,7 +243,7 @@
       "public": 1,
       "scripts": 108,
       "skills-lock.json": 1,
-      "src": 87,
+      "src": 88,
       "tests-e2e": 50,
       "tests": 67,
       "tsconfig.app.json": 1,
@@ -276,7 +276,12 @@
     "highFanIn": [
       {
         "path": "src/data.ts",
-        "importers": 72,
+        "importers": 73,
+        "role": "frontend"
+      },
+      {
+        "path": "src/api/types.ts",
+        "importers": 52,
         "role": "frontend"
       },
       {
@@ -285,13 +290,8 @@
         "role": "frontend"
       },
       {
-        "path": "src/api/types.ts",
-        "importers": 51,
-        "role": "frontend"
-      },
-      {
         "path": "src/ui-primitives.tsx",
-        "importers": 45,
+        "importers": 46,
         "role": "frontend"
       },
       {
@@ -385,13 +385,13 @@
         "role": "frontend"
       },
       {
-        "path": "src/system-admin-live-app.tsx",
+        "path": "src/admin/live-app-model.ts",
         "importers": 7,
         "role": "frontend"
       },
       {
-        "path": "src/admin/live-app-model.ts",
-        "importers": 6,
+        "path": "src/system-admin-live-app.tsx",
+        "importers": 7,
         "role": "frontend"
       },
       {
@@ -478,7 +478,7 @@
     "highFanOut": [
       {
         "path": "src/system-admin-live-app.tsx",
-        "localImports": 36,
+        "localImports": 37,
         "role": "frontend"
       },
       {
@@ -700,7 +700,7 @@
       },
       {
         "key": "react",
-        "value": 75
+        "value": 76
       },
       {
         "key": "pathlib",
@@ -755,6 +755,10 @@
         "value": 17
       },
       {
+        "key": "framer-motion",
+        "value": 16
+      },
+      {
         "key": "node:assert",
         "value": 16
       },
@@ -768,10 +772,6 @@
       },
       {
         "key": "datetime",
-        "value": 15
-      },
-      {
-        "key": "framer-motion",
         "value": 15
       },
       {
@@ -854,9 +854,9 @@
       "name": "Frontend live admin shell",
       "file": "src/system-admin-live-app.tsx",
       "role": "frontend",
-      "lines": 5911,
-      "localImports": 36,
-      "symbols": 629,
+      "lines": 5647,
+      "localImports": 37,
+      "symbols": 628,
       "note": "Live System Admin surface and proof playback/admin control entry."
     },
     {
@@ -1572,7 +1572,7 @@
     {
       "file": "src/system-admin-live-app.tsx",
       "role": "frontend",
-      "lines": 5911,
+      "lines": 5647,
       "components": [
         "SystemAdminLiveApp"
       ],
@@ -1922,6 +1922,15 @@
       "hooks": []
     },
     {
+      "file": "src/admin/sections/entity-editor-modals.tsx",
+      "role": "frontend",
+      "lines": 431,
+      "components": [
+        "EntityEditorModals"
+      ],
+      "hooks": []
+    },
+    {
       "file": "src/admin/sections/faculty-members-section.tsx",
       "role": "frontend",
       "lines": 674,
@@ -1972,15 +1981,6 @@
       "lines": 230,
       "components": [
         "ProofSimulationControls"
-      ],
-      "hooks": []
-    },
-    {
-      "file": "src/system-admin-hierarchy-workspace-shell.tsx",
-      "role": "frontend",
-      "lines": 143,
-      "components": [
-        "SystemAdminHierarchyWorkspaceShell"
       ],
       "hooks": []
     }

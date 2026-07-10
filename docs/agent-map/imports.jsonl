@@ -104,6 +104,10 @@
 {"from":"src/admin/live-app-model.ts","to":"src/system-admin-overview-helpers.ts","specifier":"../system-admin-overview-helpers","line":32,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/admin/live-app-model.ts","to":"src/proof-provenance.ts","specifier":"../proof-provenance","line":35,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/admin/live-app-model.ts","to":"src/proof-pilot.ts","specifier":"../proof-pilot","line":36,"kind":"import","fromRole":"frontend","toRole":"frontend"}
+{"from":"src/admin/sections/entity-editor-modals.tsx","to":"src/data.ts","specifier":"../../data","line":3,"kind":"import","fromRole":"frontend","toRole":"frontend"}
+{"from":"src/admin/sections/entity-editor-modals.tsx","to":"src/ui-primitives.tsx","specifier":"../../ui-primitives","line":4,"kind":"import","fromRole":"frontend","toRole":"frontend"}
+{"from":"src/admin/sections/entity-editor-modals.tsx","to":"src/admin/live-app-model.ts","specifier":"../live-app-model","line":12,"kind":"import","fromRole":"frontend","toRole":"frontend"}
+{"from":"src/admin/sections/entity-editor-modals.tsx","to":"src/api/types.ts","specifier":"../../api/types","line":22,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/admin/sections/faculty-members-section.tsx","to":"src/data.ts","specifier":"../../data","line":3,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/admin/sections/faculty-members-section.tsx","to":"src/ui-primitives.tsx","specifier":"../../ui-primitives","line":4,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/admin/sections/faculty-members-section.tsx","to":"src/admin/live-app-model.ts","specifier":"../live-app-model","line":17,"kind":"import","fromRole":"frontend","toRole":"frontend"}
@@ -380,10 +384,11 @@
 {"from":"src/system-admin-live-app.tsx","to":"src/admin/sections/overview-section.tsx","specifier":"./admin/sections/overview-section","line":202,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/system-admin-live-app.tsx","to":"src/admin/sections/students-section.tsx","specifier":"./admin/sections/students-section","line":203,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/system-admin-live-app.tsx","to":"src/admin/sections/faculty-members-section.tsx","specifier":"./admin/sections/faculty-members-section","line":204,"kind":"import","fromRole":"frontend","toRole":"frontend"}
-{"from":"src/system-admin-live-app.tsx","to":"src/admin/live-app-model.ts","specifier":"./admin/live-app-model","line":213,"kind":"re-export","fromRole":"frontend","toRole":"frontend"}
-{"from":"src/system-admin-live-app.tsx","to":"src/admin/live-app-chrome.tsx","specifier":"./admin/live-app-chrome","line":214,"kind":"re-export","fromRole":"frontend","toRole":"frontend"}
-{"from":"src/system-admin-live-app.tsx","to":"src/admin/live-app-model.ts","specifier":"./admin/live-app-model","line":216,"kind":"import","fromRole":"frontend","toRole":"frontend"}
-{"from":"src/system-admin-live-app.tsx","to":"src/admin/live-app-chrome.tsx","specifier":"./admin/live-app-chrome","line":316,"kind":"import","fromRole":"frontend","toRole":"frontend"}
+{"from":"src/system-admin-live-app.tsx","to":"src/admin/sections/entity-editor-modals.tsx","specifier":"./admin/sections/entity-editor-modals","line":205,"kind":"import","fromRole":"frontend","toRole":"frontend"}
+{"from":"src/system-admin-live-app.tsx","to":"src/admin/live-app-model.ts","specifier":"./admin/live-app-model","line":214,"kind":"re-export","fromRole":"frontend","toRole":"frontend"}
+{"from":"src/system-admin-live-app.tsx","to":"src/admin/live-app-chrome.tsx","specifier":"./admin/live-app-chrome","line":215,"kind":"re-export","fromRole":"frontend","toRole":"frontend"}
+{"from":"src/system-admin-live-app.tsx","to":"src/admin/live-app-model.ts","specifier":"./admin/live-app-model","line":217,"kind":"import","fromRole":"frontend","toRole":"frontend"}
+{"from":"src/system-admin-live-app.tsx","to":"src/admin/live-app-chrome.tsx","specifier":"./admin/live-app-chrome","line":317,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/system-admin-live-data.ts","to":"src/api/types.ts","specifier":"./api/types","line":1,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/system-admin-overview-helpers.ts","to":"src/api/types.ts","specifier":"./api/types","line":1,"kind":"import","fromRole":"frontend","toRole":"frontend"}
 {"from":"src/system-admin-overview-helpers.ts","to":"src/system-admin-live-data.ts","specifier":"./system-admin-live-data","line":2,"kind":"import","fromRole":"frontend","toRole":"frontend"}

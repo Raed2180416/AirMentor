@@ -10,16 +10,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 947 |
+| Tracked files | 948 |
 | Tracked bytes | 14.4 MiB |
-| Tracked source/doc lines | 311721 |
-| Non-empty lines | 288923 |
-| Comment lines | 5998 |
-| Local dependency edges | 705 |
-| Symbols/blocks discovered | 23572 |
+| Tracked source/doc lines | 311888 |
+| Non-empty lines | 289086 |
+| Comment lines | 6014 |
+| Local dependency edges | 710 |
+| Symbols/blocks discovered | 23582 |
 | API route registrations found | 190 |
 | Test cases discovered | 1370 |
-| Atomic references (exports/env/sql/calls/hooks) | 81130 |
+| Atomic references (exports/env/sql/calls/hooks) | 81141 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -59,7 +59,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Name | File | Lines | Local imports | Symbols | Note |
 | --- | --- | --- | --- | --- | --- |
 | Frontend app shell | src/App.tsx | 748 | 24 | 83 | Main academic/demo frontend shell and route switchboard. |
-| Frontend live admin shell | src/system-admin-live-app.tsx | 5911 | 36 | 629 | Live System Admin surface and proof playback/admin control entry. |
+| Frontend live admin shell | src/system-admin-live-app.tsx | 5647 | 37 | 628 | Live System Admin surface and proof playback/admin control entry. |
 | Frontend API client | src/api/client.ts | 1792 | 0 | 74 | Browser-to-backend contract wrapper. High risk for runtime parity. |
 | Frontend domain model | src/domain.ts | 505 | 0 | 74 | Shared frontend domain types/helpers imported across UI surfaces. |
 | Backend server entry | air-mentor-api/src/index.ts | 60 | 0 | 8 | API process entrypoint. |
@@ -139,7 +139,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | backend | 153 |
 | repo-script | 108 |
 | backend-script | 97 |
-| frontend | 87 |
+| frontend | 88 |
 | e2e-test | 50 |
 | other | 33 |
 | documentation | 31 |
@@ -156,7 +156,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | .ts | 388 |
 | .py | 108 |
 | .yaml | 107 |
-| .tsx | 76 |
+| .tsx | 77 |
 | .mjs | 55 |
 | .md | 53 |
 | .sh | 48 |
@@ -188,7 +188,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | air-mentor-api | 363 |
 | pipeline | 171 |
 | scripts | 108 |
-| src | 87 |
+| src | 88 |
 | tests | 67 |
 | tests-e2e | 50 |
 | docs | 31 |
@@ -223,7 +223,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | air-mentor-api/src/db/migrations/meta | 5 | 1.2 MiB | 44646 | backend:5 |
 | air-mentor-api/src/lib | 82 | 1.5 MiB | 37899 | backend:82 |
 | air-mentor-api/tests | 92 | 1.2 MiB | 31845 | unit-test:92 |
-| src | 63 | 1.3 MiB | 29294 | frontend:63 |
+| src | 63 | 1.3 MiB | 29030 | frontend:63 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27299 | backend-script:97 |
 | scripts | 107 | 990.7 KiB | 23898 | repo-script:107 |
 | air-mentor-api/src/modules | 21 | 816.1 KiB | 20106 | backend:21 |
@@ -239,12 +239,12 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | air-mentor-api/src/db | 4 | 110.0 KiB | 2598 | backend:4 |
 | forge-audit/forge_audit/engine | 7 | 76.6 KiB | 2259 | forge-audit:7 |
 | air-mentor-api/src/db/seeds | 3 | 2.6 MiB | 2113 | backend:3 |
+| src/admin/sections | 4 | 132.3 KiB | 1897 | frontend:4 |
 | pipeline/tests | 17 | 71.8 KiB | 1890 | pipeline:17 |
 | air-mentor-api/src/db/migrations | 33 | 67.2 KiB | 1851 | backend:33 |
 | src/admin | 2 | 70.3 KiB | 1848 | frontend:2 |
 | air-mentor-api/model-contract/proof-risk-model | 2 | 52.2 KiB | 1660 | model-contract:2 |
 | pipeline/scripts/build_overnight | 8 | 71.2 KiB | 1612 | pipeline:8 |
-| src/admin/sections | 3 | 99.3 KiB | 1466 | frontend:3 |
 
 ## High Fan-In Files
 
@@ -252,10 +252,10 @@ These files are imported by many tracked local files. Treat changes here as high
 
 | File | Importers | Role |
 | --- | --- | --- |
-| src/data.ts | 72 | frontend |
+| src/data.ts | 73 | frontend |
+| src/api/types.ts | 52 | frontend |
 | src/domain.ts | 52 | frontend |
-| src/api/types.ts | 51 | frontend |
-| src/ui-primitives.tsx | 45 | frontend |
+| src/ui-primitives.tsx | 46 | frontend |
 | tests-e2e/helpers/login-as.ts | 38 | e2e-test |
 | tests-e2e/support/playwright-runtime.ts | 36 | e2e-test |
 | tests-e2e/fixtures/seeded-run-fixture.ts | 33 | e2e-test |
@@ -274,8 +274,8 @@ These files are imported by many tracked local files. Treat changes here as high
 | tests-e2e/helpers/proof-playback.ts | 8 | e2e-test |
 | scripts/proof-risk-semester-walk.mjs | 7 | repo-script |
 | src/action-code-humaniser.ts | 7 | frontend |
+| src/admin/live-app-model.ts | 7 | frontend |
 | src/system-admin-live-app.tsx | 7 | frontend |
-| src/admin/live-app-model.ts | 6 | frontend |
 | src/pages/workflow-pages.tsx | 6 | frontend |
 | air-mentor-api/src/db/seeds/msruas-mnc-curriculum.json | 5 | backend |
 | src/admin/live-app-chrome.tsx | 5 | frontend |
@@ -289,7 +289,7 @@ These files import many local files. They are useful entry points for understand
 
 | File | Local imports | Role |
 | --- | --- | --- |
-| src/system-admin-live-app.tsx | 36 | frontend |
+| src/system-admin-live-app.tsx | 37 | frontend |
 | src/App.tsx | 24 | frontend |
 | src/app/operational-workspace.tsx | 23 | frontend |
 | src/academic-workspace-route-surface.tsx | 17 | frontend |
