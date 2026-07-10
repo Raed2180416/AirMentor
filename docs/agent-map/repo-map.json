@@ -153,12 +153,12 @@
   "totals": {
     "trackedFiles": 965,
     "ignoredEntriesObserved": 45,
-    "bytes": 15180230,
+    "bytes": 15180258,
     "lines": 314354,
     "nonEmptyLines": 291290,
     "commentLines": 6001,
     "localDependencyEdges": 761,
-    "symbols": 23615,
+    "symbols": 23616,
     "apiRoutes": 190,
     "testCases": 1374,
     "filesWithTests": 195,
@@ -925,7 +925,7 @@
       "role": "backend",
       "lines": 1380,
       "localImports": 0,
-      "symbols": 169,
+      "symbols": 170,
       "note": "Observed evidence recomputation, risk rows, playback rebuild, and checkpoint projection updates."
     },
     {

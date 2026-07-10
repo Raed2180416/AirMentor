@@ -23,7 +23,7 @@
   {
     "path": ".absolute-human",
     "fileCount": 1,
-    "bytes": 3662,
+    "bytes": 3684,
     "lines": 114,
     "roles": {
       "other": 1
@@ -315,7 +315,7 @@
   {
     "path": "air-mentor-api/src/lib",
     "fileCount": 82,
-    "bytes": 1595192,
+    "bytes": 1595194,
     "lines": 37899,
     "roles": {
       "backend": 82
@@ -689,7 +689,7 @@
   {
     "path": "src",
     "fileCount": 63,
-    "bytes": 1324683,
+    "bytes": 1324687,
     "lines": 28880,
     "roles": {
       "frontend": 63

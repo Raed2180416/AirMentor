@@ -46,16 +46,16 @@ Board policy: gitignored local working state.
   - SH-000: Setup board, gitignore `.absolute-human/`, commit baseline (baseline: `65ef458`)
 
 ### Wave 2 — Config foundation
-- **Status:** in-progress
+- **Status:** done
 - **Tasks:**
-  - SH-001: Add path aliases to tsconfig + vite configs
+  - SH-001: Add path aliases to tsconfig + vite configs (done, commit `e46ca90`)
   - SH-005: Add `architecture:check` to CI (done, commit `a142e8d`)
   - SH-006: Add ESLint import boundary rules (done, commit `2db7a7d`)
   - SH-007: Install and configure `knip` (done, commit `b927652`)
   - SH-008: Run `knip` baseline (done; report generated but not committed — large generated artifact)
 
 ### Wave 3 — Lint auto-fix
-- **Status:** pending
+- **Status:** in-progress
 - **Tasks:**
   - SH-002: Auto-fix lint in `src/`
   - SH-003: Auto-fix lint in `air-mentor-api/src/`

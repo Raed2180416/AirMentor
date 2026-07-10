@@ -16,7 +16,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Non-empty lines | 291290 |
 | Comment lines | 6001 |
 | Local dependency edges | 761 |
-| Symbols/blocks discovered | 23615 |
+| Symbols/blocks discovered | 23616 |
 | API route registrations found | 190 |
 | Test cases discovered | 1374 |
 | Atomic references (exports/env/sql/calls/hooks) | 81267 |
@@ -66,7 +66,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Backend app factory | air-mentor-api/src/app.ts | 222 | 0 | 20 | Fastify app composition, CORS/session/security hooks, and module registration. |
 | Backend DB schema | air-mentor-api/src/db/schema.ts | 1540 | 0 | 103 | Database schema source of truth. |
 | Backend seeded server | air-mentor-api/scripts/start-seeded-server.ts | 153 | 0 | 24 | Deterministic demo backend launcher. |
-| Proof runtime service | air-mentor-api/src/lib/proof-control-plane-runtime-service.ts | 1380 | 0 | 169 | Observed evidence recomputation, risk rows, playback rebuild, and checkpoint projection updates. |
+| Proof runtime service | air-mentor-api/src/lib/proof-control-plane-runtime-service.ts | 1380 | 0 | 170 | Observed evidence recomputation, risk rows, playback rebuild, and checkpoint projection updates. |
 | Proof risk model | air-mentor-api/src/lib/proof-risk-model.ts | 3191 | 0 | 481 | Runtime proof-risk scoring/model contract logic. |
 | Proof risk contract bundle | air-mentor-api/model-contract/proof-risk-model/risk-model-bundle.json | 1628 | 0 | 0 | Tracked serving model contract. |
 | Proof risk promotion decision | air-mentor-api/model-contract/proof-risk-model/promotion-decision.json | 32 | 0 | 0 | Governed shadow-vs-serving decision. |

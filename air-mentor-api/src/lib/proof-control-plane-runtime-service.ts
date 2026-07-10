@@ -77,7 +77,7 @@ export function applyPolicyAndRebound(
   let tt2 = rawTt2
   let quiz = rawQuiz
   let asgn = rawAsgn
-  let see = rawSee
+  const see = rawSee
 
   if (tt2 != null && see != null && see > tt2 && tt1 > tt2) {
     tt2 += (see - tt2) * 0.5

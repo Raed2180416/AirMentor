@@ -338,8 +338,8 @@ function CurriculumGraphContent({ batchId, themeMode, apiClient }: { batchId: st
 
   // Compute what to render based on expanded states
   useEffect(() => {
-    let newRfNodes: Node[] = [];
-    let newRfEdges: Edge[] = [];
+    const newRfNodes: Node[] = [];
+    const newRfEdges: Edge[] = [];
     
     const bySem = new Map<number, ApiGraphNode[]>();
     for (let i = 1; i <= 8; i++) bySem.set(i, []);
