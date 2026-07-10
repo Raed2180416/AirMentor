@@ -10,16 +10,17 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 937 |
+| Tracked files | 948 |
 | Tracked bytes | 14.4 MiB |
-| Tracked source/doc lines | 311068 |
-| Non-empty lines | 288191 |
-| Comment lines | 5974 |
-| Local dependency edges | 618 |
-| Symbols/blocks discovered | 23407 |
+| Tracked source/doc lines | 310913 |
+| Non-empty lines | 288142 |
+| Comment lines | 5993 |
+| Local dependency edges | 665 |
+| Symbols/blocks discovered | 23528 |
 | API route registrations found | 190 |
 | Test cases discovered | 1370 |
-| Tracked path anomalies | 0 |
+| Atomic references (exports/env/sql/calls/hooks) | 81042 |
+| Tracked path anomalies | 9 |
 
 ## Agent Read Order
 
@@ -41,6 +42,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | `imports.jsonl` | One row per resolved local dependency edge with source line and from/to roles. |
 | `routes.jsonl` | One row per discovered API route registration with method, route, file, and line. |
 | `tests.jsonl` | One row per discovered `describe`/`it`/`test` case with file and line. |
+| `atoms.jsonl` | One row per atomic reference: exports, env vars, SQL tables, JSX component calls, hook calls. |
 | `directories.json` | Directory-level file counts, bytes, line counts, roles, and extensions. |
 
 ## Tooling Findings
@@ -56,7 +58,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Name | File | Lines | Local imports | Symbols | Note |
 | --- | --- | --- | --- | --- | --- |
-| Frontend app shell | src/App.tsx | 4474 | 28 | 570 | Main academic/demo frontend shell and route switchboard. |
+| Frontend app shell | src/App.tsx | 748 | 24 | 83 | Main academic/demo frontend shell and route switchboard. |
 | Frontend live admin shell | src/system-admin-live-app.tsx | 8463 | 29 | 816 | Live System Admin surface and proof playback/admin control entry. |
 | Frontend API client | src/api/client.ts | 1792 | 0 | 74 | Browser-to-backend contract wrapper. High risk for runtime parity. |
 | Frontend domain model | src/domain.ts | 505 | 0 | 74 | Shared frontend domain types/helpers imported across UI surfaces. |
@@ -135,32 +137,32 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | pipeline | 171 |
 | unit-test | 161 |
 | backend | 153 |
-| repo-script | 103 |
+| repo-script | 106 |
 | backend-script | 97 |
-| frontend | 74 |
+| frontend | 82 |
 | e2e-test | 50 |
 | other | 32 |
 | documentation | 31 |
 | forge-audit | 22 |
-| agent-config | 16 |
 | build-config | 16 |
 | ci | 8 |
+| agent-config | 7 |
 | model-contract | 3 |
 
 ## Extension Inventory
 
 | Extension | Files |
 | --- | --- |
-| .ts | 384 |
+| .ts | 387 |
 | .py | 108 |
 | .yaml | 107 |
-| .tsx | 67 |
-| .md | 57 |
-| .mjs | 52 |
-| .sh | 48 |
+| .tsx | 72 |
+| .mjs | 55 |
+| .md | 53 |
+| .sh | 47 |
 | .sql | 34 |
-| .json | 32 |
-| [no-ext] | 15 |
+| .json | 30 |
+| [no-ext] | 13 |
 | .txt | 7 |
 | .yml | 5 |
 | .toml | 3 |
@@ -185,13 +187,12 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | air-mentor-api | 363 |
 | pipeline | 171 |
-| scripts | 103 |
-| src | 74 |
+| scripts | 106 |
+| src | 82 |
 | tests | 67 |
 | tests-e2e | 50 |
 | docs | 31 |
 | forge-audit | 22 |
-| .windsurf | 10 |
 | .github | 8 |
 | .arctic | 4 |
 | .claude | 3 |
@@ -207,6 +208,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | .gitignore | 1 |
 | .hintrc | 1 |
 | .node-version | 1 |
+| .windsurf | 1 |
 | CLAUDE.md | 1 |
 | eslint.config.js | 1 |
 | flake.lock | 1 |
@@ -220,19 +222,20 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- | --- | --- | --- |
 | air-mentor-api/src/db/migrations/meta | 5 | 1.2 MiB | 44646 | backend:5 |
 | air-mentor-api/src/lib | 82 | 1.5 MiB | 37899 | backend:82 |
-| src | 63 | 1.6 MiB | 35572 | frontend:63 |
+| src | 63 | 1.4 MiB | 31846 | frontend:63 |
 | air-mentor-api/tests | 92 | 1.2 MiB | 31845 | unit-test:92 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27299 | backend-script:97 |
-| scripts | 102 | 959.9 KiB | 23209 | repo-script:102 |
+| scripts | 105 | 989.1 KiB | 23852 | repo-script:105 |
 | air-mentor-api/src/modules | 21 | 816.1 KiB | 20106 | backend:21 |
 | tests | 67 | 609.4 KiB | 17767 | unit-test:67 |
-| docs | 18 | 325.0 KiB | 8759 | documentation:18 |
-| . | 24 | 315.5 KiB | 8295 | other:13, build-config:10, agent-config:1 |
+| docs | 18 | 326.4 KiB | 8822 | documentation:18 |
+| . | 24 | 299.4 KiB | 8297 | other:13, build-config:10, agent-config:1 |
 | tests-e2e/specs | 36 | 363.9 KiB | 7581 | e2e-test:36 |
 | src/pages | 6 | 384.2 KiB | 7147 | frontend:6 |
 | pipeline/orchestrator | 20 | 183.8 KiB | 5163 | pipeline:20 |
 | src/api | 2 | 166.3 KiB | 4722 | frontend:2 |
 | air-mentor-api | 14 | 154.1 KiB | 4714 | other:9, build-config:5 |
+| src/app | 8 | 186.6 KiB | 3852 | frontend:8 |
 | air-mentor-api/src/db | 4 | 110.0 KiB | 2598 | backend:4 |
 | forge-audit/forge_audit/engine | 7 | 76.6 KiB | 2259 | forge-audit:7 |
 | air-mentor-api/src/db/seeds | 3 | 2.6 MiB | 2113 | backend:3 |
@@ -242,7 +245,6 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | pipeline/scripts/build_overnight | 8 | 71.2 KiB | 1612 | pipeline:8 |
 | pipeline/agents/manifests | 100 | 47.7 KiB | 1364 | pipeline:100 |
 | tests-e2e/helpers | 6 | 47.7 KiB | 1322 | e2e-test:6 |
-| .windsurf | 6 | 39.2 KiB | 954 | agent-config:6 |
 
 ## High Fan-In Files
 
@@ -250,23 +252,23 @@ These files are imported by many tracked local files. Treat changes here as high
 
 | File | Importers | Role |
 | --- | --- | --- |
-| src/data.ts | 60 | frontend |
-| src/api/types.ts | 45 | frontend |
-| src/domain.ts | 44 | frontend |
-| src/ui-primitives.tsx | 38 | frontend |
+| src/data.ts | 67 | frontend |
+| src/domain.ts | 51 | frontend |
+| src/api/types.ts | 48 | frontend |
+| src/ui-primitives.tsx | 41 | frontend |
 | tests-e2e/helpers/login-as.ts | 38 | e2e-test |
 | tests-e2e/support/playwright-runtime.ts | 36 | e2e-test |
 | tests-e2e/fixtures/seeded-run-fixture.ts | 33 | e2e-test |
 | tests-e2e/helpers/api-url.ts | 28 | e2e-test |
 | tests-e2e/helpers/proof-run-api.ts | 20 | e2e-test |
 | src/system-admin-ui.tsx | 18 | frontend |
+| src/selectors.ts | 12 | frontend |
 | src/system-admin-live-data.ts | 11 | frontend |
-| src/selectors.ts | 10 | frontend |
+| src/calendar-utils.ts | 10 | frontend |
 | scripts/system-admin-live-auth.mjs | 9 | repo-script |
 | src/api/client.ts | 9 | frontend |
-| src/calendar-utils.ts | 8 | frontend |
+| src/repositories.ts | 9 | frontend |
 | src/proof-surface-shell.tsx | 8 | frontend |
-| src/repositories.ts | 8 | frontend |
 | tests-e2e/helpers/proof-playback.ts | 8 | e2e-test |
 | scripts/proof-risk-semester-walk.mjs | 7 | repo-script |
 | src/action-code-humaniser.ts | 7 | frontend |
@@ -288,7 +290,8 @@ These files import many local files. They are useful entry points for understand
 | File | Local imports | Role |
 | --- | --- | --- |
 | src/system-admin-live-app.tsx | 29 | frontend |
-| src/App.tsx | 28 | frontend |
+| src/App.tsx | 24 | frontend |
+| src/app/operational-workspace.tsx | 23 | frontend |
 | src/academic-workspace-route-surface.tsx | 17 | frontend |
 | src/system-admin-faculties-workspace.tsx | 15 | frontend |
 | src/academic-faculty-profile-page.tsx | 11 | frontend |
@@ -299,6 +302,8 @@ These files import many local files. They are useful entry points for understand
 | src/academic-route-pages.tsx | 8 | frontend |
 | src/system-admin-faculty-calendar-workspace.tsx | 8 | frontend |
 | tests/system-admin-faculties-workspace.test.tsx | 8 | unit-test |
+| src/app/student-drawer.tsx | 7 | frontend |
+| src/app/task-composer-modal.tsx | 7 | frontend |
 | src/repositories.ts | 7 | frontend |
 | src/system-admin-app.tsx | 7 | frontend |
 | src/system-admin-curriculum-graph.tsx | 7 | frontend |
@@ -314,9 +319,6 @@ These files import many local files. They are useful entry points for understand
 | src/academic-workspace-topbar.tsx | 5 | frontend |
 | src/curriculum-graph-workspace.tsx | 5 | frontend |
 | src/pages/course-pages.tsx | 5 | frontend |
-| src/portal-entry.tsx | 5 | frontend |
-| src/system-admin-history-workspace.tsx | 5 | frontend |
-| tests-e2e/specs/demo-reality-realism-hardening.spec.ts | 5 | e2e-test |
 
 ## API Route Registrations
 
@@ -407,7 +409,17 @@ This regex-based list is a navigation aid, not a formal OpenAPI contract. It rec
 
 ## Tracked Path Anomalies
 
-No tracked path anomalies detected by the current heuristic.
+| Path | Reason |
+| --- | --- |
+| .windsurf/AGENT_OPTIMIZATION_CONFIG.json | Tracked file missing in working tree; skipped from mapping. |
+| .windsurf/autostart.json | Tracked file missing in working tree; skipped from mapping. |
+| .windsurf/PROJECT_CONTEXT.md | Tracked file missing in working tree; skipped from mapping. |
+| .windsurf/README_SKILLS_SETUP.md | Tracked file missing in working tree; skipped from mapping. |
+| .windsurf/skills/agentic-eval | Tracked file missing in working tree; skipped from mapping. |
+| .windsurf/skills/skill-creator | Tracked file missing in working tree; skipped from mapping. |
+| .windsurf/verify_agent_optimization.sh | Tracked file missing in working tree; skipped from mapping. |
+| .windsurf/workflows/airmentor-subagent-architecture.md | Tracked file missing in working tree; skipped from mapping. |
+| .windsurf/workflows/review.md | Tracked file missing in working tree; skipped from mapping. |
 
 ## Regeneration
 

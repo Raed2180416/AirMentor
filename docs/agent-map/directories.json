@@ -2,8 +2,8 @@
   {
     "path": ".",
     "fileCount": 24,
-    "bytes": 323123,
-    "lines": 8295,
+    "bytes": 306559,
+    "lines": 8297,
     "roles": {
       "other": 13,
       "agent-config": 1,
@@ -86,8 +86,8 @@
   {
     "path": ".github",
     "fileCount": 1,
-    "bytes": 4447,
-    "lines": 81,
+    "bytes": 4643,
+    "lines": 83,
     "roles": {
       "ci": 1
     },
@@ -158,40 +158,14 @@
   },
   {
     "path": ".windsurf",
-    "fileCount": 6,
-    "bytes": 40132,
-    "lines": 954,
+    "fileCount": 1,
+    "bytes": 5479,
+    "lines": 146,
     "roles": {
-      "agent-config": 6
+      "agent-config": 1
     },
     "extensions": {
-      ".json": 2,
-      ".md": 3,
-      ".sh": 1
-    }
-  },
-  {
-    "path": ".windsurf/skills",
-    "fileCount": 2,
-    "bytes": 143,
-    "lines": 0,
-    "roles": {
-      "agent-config": 2
-    },
-    "extensions": {
-      "[no-ext]": 2
-    }
-  },
-  {
-    "path": ".windsurf/workflows",
-    "fileCount": 2,
-    "bytes": 7179,
-    "lines": 183,
-    "roles": {
-      "agent-config": 2
-    },
-    "extensions": {
-      ".md": 2
+      ".md": 1
     }
   },
   {
@@ -401,8 +375,8 @@
   {
     "path": "docs",
     "fileCount": 18,
-    "bytes": 332843,
-    "lines": 8759,
+    "bytes": 334261,
+    "lines": 8822,
     "roles": {
       "documentation": 18
     },
@@ -659,14 +633,14 @@
   },
   {
     "path": "scripts",
-    "fileCount": 102,
-    "bytes": 982896,
-    "lines": 23209,
+    "fileCount": 105,
+    "bytes": 1012831,
+    "lines": 23852,
     "roles": {
-      "repo-script": 102
+      "repo-script": 105
     },
     "extensions": {
-      ".mjs": 47,
+      ".mjs": 50,
       ".service": 2,
       ".timer": 1,
       ".ts": 10,
@@ -690,8 +664,8 @@
   {
     "path": "src",
     "fileCount": 63,
-    "bytes": 1692047,
-    "lines": 35572,
+    "bytes": 1504988,
+    "lines": 31846,
     "roles": {
       "frontend": 63
     },
@@ -711,6 +685,19 @@
     },
     "extensions": {
       ".ts": 2
+    }
+  },
+  {
+    "path": "src/app",
+    "fileCount": 8,
+    "bytes": 191114,
+    "lines": 3852,
+    "roles": {
+      "frontend": 8
+    },
+    "extensions": {
+      ".tsx": 5,
+      ".ts": 3
     }
   },
   {
@@ -752,7 +739,7 @@
   {
     "path": "tests",
     "fileCount": 67,
-    "bytes": 624039,
+    "bytes": 624061,
     "lines": 17767,
     "roles": {
       "unit-test": 67

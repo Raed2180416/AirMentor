@@ -12,6 +12,7 @@
     "imports": "docs/agent-map/imports.jsonl",
     "routes": "docs/agent-map/routes.jsonl",
     "tests": "docs/agent-map/tests.jsonl",
+    "atoms": "docs/agent-map/atoms.jsonl",
     "directories": "docs/agent-map/directories.json",
     "markdown": "docs/agent-map/AGENT_REPO_MAP_2026-06-06.md",
     "strategy": "docs/agent-map/CODEBASE_MAPPING_STRATEGY_2026-06-06.md"
@@ -148,35 +149,36 @@
     }
   },
   "totals": {
-    "trackedFiles": 937,
-    "ignoredEntriesObserved": 32,
-    "bytes": 15083925,
-    "lines": 311068,
-    "nonEmptyLines": 288191,
-    "commentLines": 5974,
-    "localDependencyEdges": 618,
-    "symbols": 23407,
+    "trackedFiles": 948,
+    "ignoredEntriesObserved": 39,
+    "bytes": 15061012,
+    "lines": 310913,
+    "nonEmptyLines": 288142,
+    "commentLines": 5993,
+    "localDependencyEdges": 665,
+    "symbols": 23528,
     "apiRoutes": 190,
     "testCases": 1370,
     "filesWithTests": 194,
-    "anomalies": 0
+    "atoms": 81042,
+    "anomalies": 9
   },
   "counts": {
     "byExtension": {
-      ".md": 57,
-      "[no-ext]": 15,
-      ".json": 32,
+      ".md": 53,
+      "[no-ext]": 13,
+      ".json": 30,
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".sh": 48,
       ".example": 1,
-      ".ts": 384,
+      ".ts": 387,
       ".toml": 3,
       ".txt": 7,
       ".py": 108,
       ".cjs": 1,
-      ".mjs": 52,
+      ".mjs": 55,
+      ".sh": 47,
       ".js": 2,
       ".sql": 34,
       ".snap": 1,
@@ -188,13 +190,13 @@
       ".service": 2,
       ".timer": 1,
       ".conf": 2,
-      ".tsx": 67,
+      ".tsx": 72,
       ".css": 2
     },
     "byRole": {
       "other": 32,
       "build-config": 16,
-      "agent-config": 16,
+      "agent-config": 7,
       "ci": 8,
       "model-contract": 3,
       "backend-script": 97,
@@ -203,8 +205,8 @@
       "documentation": 31,
       "forge-audit": 22,
       "pipeline": 171,
-      "repo-script": 103,
-      "frontend": 74,
+      "repo-script": 106,
+      "frontend": 82,
       "e2e-test": 50
     },
     "byTopDirectory": {
@@ -223,7 +225,7 @@
       ".kiro": 2,
       ".node-version": 1,
       ".vscode": 2,
-      ".windsurf": 10,
+      ".windsurf": 1,
       "air-mentor-api": 363,
       "CLAUDE.md": 1,
       "docs": 31,
@@ -238,9 +240,9 @@
       "package.json": 1,
       "pipeline": 171,
       "public": 1,
-      "scripts": 103,
+      "scripts": 106,
       "skills-lock.json": 1,
-      "src": 74,
+      "src": 82,
       "tests-e2e": 50,
       "tests": 67,
       "tsconfig.app.json": 1,
@@ -255,15 +257,15 @@
       ".audit": 1,
       ".devin": 1,
       ".env": 1,
+      ".kilo": 7,
       ".kiro": 1,
       ".mcp.json": 1,
       ".vscode": 1,
-      ".windsurf": 1,
       "air-mentor-api": 9,
       "context_main.json": 1,
       "context.json": 1,
       "scripts": 1,
-      "src": 5,
+      "src": 6,
       "tests-e2e": 5,
       "tests": 1,
       "tmp": 1
@@ -273,22 +275,22 @@
     "highFanIn": [
       {
         "path": "src/data.ts",
-        "importers": 60,
-        "role": "frontend"
-      },
-      {
-        "path": "src/api/types.ts",
-        "importers": 45,
+        "importers": 67,
         "role": "frontend"
       },
       {
         "path": "src/domain.ts",
-        "importers": 44,
+        "importers": 51,
+        "role": "frontend"
+      },
+      {
+        "path": "src/api/types.ts",
+        "importers": 48,
         "role": "frontend"
       },
       {
         "path": "src/ui-primitives.tsx",
-        "importers": 38,
+        "importers": 41,
         "role": "frontend"
       },
       {
@@ -322,12 +324,17 @@
         "role": "frontend"
       },
       {
+        "path": "src/selectors.ts",
+        "importers": 12,
+        "role": "frontend"
+      },
+      {
         "path": "src/system-admin-live-data.ts",
         "importers": 11,
         "role": "frontend"
       },
       {
-        "path": "src/selectors.ts",
+        "path": "src/calendar-utils.ts",
         "importers": 10,
         "role": "frontend"
       },
@@ -342,17 +349,12 @@
         "role": "frontend"
       },
       {
-        "path": "src/calendar-utils.ts",
-        "importers": 8,
+        "path": "src/repositories.ts",
+        "importers": 9,
         "role": "frontend"
       },
       {
         "path": "src/proof-surface-shell.tsx",
-        "importers": 8,
-        "role": "frontend"
-      },
-      {
-        "path": "src/repositories.ts",
         "importers": 8,
         "role": "frontend"
       },
@@ -427,6 +429,21 @@
         "role": "repo-script"
       },
       {
+        "path": "src/academic-session-shell.tsx",
+        "importers": 4,
+        "role": "frontend"
+      },
+      {
+        "path": "src/app/workspace-helpers.ts",
+        "importers": 4,
+        "role": "frontend"
+      },
+      {
+        "path": "src/app/workspace-types.ts",
+        "importers": 4,
+        "role": "frontend"
+      },
+      {
         "path": "src/proof-simulation-controls.tsx",
         "importers": 4,
         "role": "frontend"
@@ -438,11 +455,6 @@
       },
       {
         "path": "src/academic-faculty-profile-page.tsx",
-        "importers": 3,
-        "role": "frontend"
-      },
-      {
-        "path": "src/academic-session-shell.tsx",
         "importers": 3,
         "role": "frontend"
       },
@@ -460,16 +472,6 @@
         "path": "src/components/reevaluating-risk-loader.tsx",
         "importers": 3,
         "role": "frontend"
-      },
-      {
-        "path": "src/pages/calendar-pages.tsx",
-        "importers": 3,
-        "role": "frontend"
-      },
-      {
-        "path": "src/pages/student-shell.tsx",
-        "importers": 3,
-        "role": "frontend"
       }
     ],
     "highFanOut": [
@@ -480,7 +482,12 @@
       },
       {
         "path": "src/App.tsx",
-        "localImports": 28,
+        "localImports": 24,
+        "role": "frontend"
+      },
+      {
+        "path": "src/app/operational-workspace.tsx",
+        "localImports": 23,
         "role": "frontend"
       },
       {
@@ -532,6 +539,16 @@
         "path": "tests/system-admin-faculties-workspace.test.tsx",
         "localImports": 8,
         "role": "unit-test"
+      },
+      {
+        "path": "src/app/student-drawer.tsx",
+        "localImports": 7,
+        "role": "frontend"
+      },
+      {
+        "path": "src/app/task-composer-modal.tsx",
+        "localImports": 7,
+        "role": "frontend"
       },
       {
         "path": "src/repositories.ts",
@@ -657,21 +674,6 @@
         "path": "tests-e2e/specs/shared-proof-playback-sync.spec.ts",
         "localImports": 5,
         "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/teacher-mentor-proof-surface.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/validate-120-trajectories.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests/academic-route-pages.test.tsx",
-        "localImports": 5,
-        "role": "unit-test"
       }
     ],
     "topExternalImports": [
@@ -681,11 +683,11 @@
       },
       {
         "key": "node:fs",
-        "value": 118
+        "value": 121
       },
       {
         "key": "node:path",
-        "value": 99
+        "value": 102
       },
       {
         "key": "drizzle-orm",
@@ -701,11 +703,11 @@
       },
       {
         "key": "react",
-        "value": 67
+        "value": 72
       },
       {
         "key": "node:url",
-        "value": 37
+        "value": 40
       },
       {
         "key": "argparse",
@@ -717,7 +719,7 @@
       },
       {
         "key": "lucide-react",
-        "value": 28
+        "value": 31
       },
       {
         "key": "fastify",
@@ -768,6 +770,10 @@
         "value": 15
       },
       {
+        "key": "framer-motion",
+        "value": 14
+      },
+      {
         "key": "node:child_process",
         "value": 14
       },
@@ -790,10 +796,6 @@
       {
         "key": "pg",
         "value": 12
-      },
-      {
-        "key": "framer-motion",
-        "value": 11
       },
       {
         "key": "path",
@@ -842,9 +844,9 @@
       "name": "Frontend app shell",
       "file": "src/App.tsx",
       "role": "frontend",
-      "lines": 4474,
-      "localImports": 28,
-      "symbols": 570,
+      "lines": 748,
+      "localImports": 24,
+      "symbols": 83,
       "note": "Main academic/demo frontend shell and route switchboard."
     },
     {
@@ -1296,31 +1298,6 @@
       "hooks": []
     },
     {
-      "file": "src/App.tsx",
-      "role": "frontend",
-      "lines": 4474,
-      "components": [
-        "ActionQueue",
-        "App",
-        "OperationalApp",
-        "OperationalWorkspace",
-        "PortalRouterApp",
-        "RequiredNoteModal",
-        "StudentDrawer",
-        "TaskComposerModal"
-      ],
-      "hooks": [
-        "useApiConnectionTarget",
-        "useAppSelectors",
-        "useBackendHealthMonitor",
-        "useCallback",
-        "useEffect",
-        "useMemo",
-        "useRef",
-        "useState"
-      ]
-    },
-    {
       "file": "src/system-admin-live-app.tsx",
       "role": "frontend",
       "lines": 8463,
@@ -1500,6 +1477,24 @@
       ]
     },
     {
+      "file": "src/App.tsx",
+      "role": "frontend",
+      "lines": 748,
+      "components": [
+        "App",
+        "OperationalApp",
+        "PortalRouterApp"
+      ],
+      "hooks": [
+        "useApiConnectionTarget",
+        "useBackendHealthMonitor",
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
       "file": "src/pages/workflow-pages.tsx",
       "role": "frontend",
       "lines": 928,
@@ -1583,6 +1578,21 @@
       ]
     },
     {
+      "file": "src/app/operational-workspace.tsx",
+      "role": "frontend",
+      "lines": 2667,
+      "components": [
+        "OperationalWorkspace"
+      ],
+      "hooks": [
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useRef",
+        "useState"
+      ]
+    },
+    {
       "file": "src/proof-surface-shell.tsx",
       "role": "frontend",
       "lines": 396,
@@ -1608,6 +1618,20 @@
       "hooks": [
         "useCallback",
         "useEffect",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "src/app/task-composer-modal.tsx",
+      "role": "frontend",
+      "lines": 298,
+      "components": [
+        "TaskComposerModal"
+      ],
+      "hooks": [
+        "useAppSelectors",
+        "useCallback",
         "useMemo",
         "useState"
       ]
@@ -1738,6 +1762,19 @@
       ]
     },
     {
+      "file": "src/app/student-drawer.tsx",
+      "role": "frontend",
+      "lines": 337,
+      "components": [
+        "StudentDrawer"
+      ],
+      "hooks": [
+        "useAppSelectors",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
       "file": "tests/api-connection.test.tsx",
       "role": "unit-test",
       "lines": 119,
@@ -1780,6 +1817,28 @@
       "lines": 165,
       "components": [
         "AcademicWorkspaceTopbar"
+      ],
+      "hooks": [
+        "useState"
+      ]
+    },
+    {
+      "file": "src/app/action-queue.tsx",
+      "role": "frontend",
+      "lines": 250,
+      "components": [
+        "ActionQueue"
+      ],
+      "hooks": [
+        "useState"
+      ]
+    },
+    {
+      "file": "src/app/required-note-modal.tsx",
+      "role": "frontend",
+      "lines": 43,
+      "components": [
+        "RequiredNoteModal"
       ],
       "hooks": [
         "useState"
@@ -1918,16 +1977,221 @@
       "hooks": []
     }
   ],
-  "anomalies": [],
+  "topAtoms": [
+    {
+      "key": "toBe",
+      "value": 2410
+    },
+    {
+      "key": "eq",
+      "value": 1253
+    },
+    {
+      "key": "where",
+      "value": 1228
+    },
+    {
+      "key": "get",
+      "value": 1047
+    },
+    {
+      "key": "it",
+      "value": 1045
+    },
+    {
+      "key": "async",
+      "value": 857
+    },
+    {
+      "key": "notNull",
+      "value": 833
+    },
+    {
+      "key": "stringify",
+      "value": 791
+    },
+    {
+      "key": "set",
+      "value": 673
+    },
+    {
+      "key": "inject",
+      "value": 636
+    },
+    {
+      "key": "string",
+      "value": 611
+    },
+    {
+      "key": "toContain",
+      "value": 547
+    },
+    {
+      "key": "has",
+      "value": 474
+    },
+    {
+      "key": "toBeTruthy",
+      "value": 442
+    },
+    {
+      "key": "round",
+      "value": 424
+    },
+    {
+      "key": "toEqual",
+      "value": 378
+    },
+    {
+      "key": "fn",
+      "value": 366
+    },
+    {
+      "key": "first",
+      "value": 350
+    },
+    {
+      "key": "object",
+      "value": 310
+    },
+    {
+      "key": "loginAs",
+      "value": 291
+    },
+    {
+      "key": "toMatchObject",
+      "value": 273
+    },
+    {
+      "key": "insert",
+      "value": 268
+    },
+    {
+      "key": "parse",
+      "value": 266
+    },
+    {
+      "key": "toBeGreaterThan",
+      "value": 258
+    },
+    {
+      "key": "optional",
+      "value": 248
+    },
+    {
+      "key": "toBeNull",
+      "value": 226
+    },
+    {
+      "key": "isArray",
+      "value": 222
+    },
+    {
+      "key": "getByRole",
+      "value": 219
+    },
+    {
+      "key": "waitForTimeout",
+      "value": 216
+    },
+    {
+      "key": "all",
+      "value": 213
+    },
+    {
+      "key": "num",
+      "value": 202
+    },
+    {
+      "key": "createTestApp",
+      "value": 192
+    },
+    {
+      "key": "fromEntries",
+      "value": 192
+    },
+    {
+      "key": "expectVisible",
+      "value": 187
+    },
+    {
+      "key": "number",
+      "value": 186
+    },
+    {
+      "key": "toISOString",
+      "value": 179
+    },
+    {
+      "key": "useCallback",
+      "value": 178
+    },
+    {
+      "key": "getByText",
+      "value": 153
+    },
+    {
+      "key": "and",
+      "value": 147
+    },
+    {
+      "key": "auth",
+      "value": 146
+    }
+  ],
+  "anomalies": [
+    {
+      "file": ".windsurf/AGENT_OPTIMIZATION_CONFIG.json",
+      "reason": "Tracked file missing in working tree; skipped from mapping."
+    },
+    {
+      "file": ".windsurf/autostart.json",
+      "reason": "Tracked file missing in working tree; skipped from mapping."
+    },
+    {
+      "file": ".windsurf/PROJECT_CONTEXT.md",
+      "reason": "Tracked file missing in working tree; skipped from mapping."
+    },
+    {
+      "file": ".windsurf/README_SKILLS_SETUP.md",
+      "reason": "Tracked file missing in working tree; skipped from mapping."
+    },
+    {
+      "file": ".windsurf/skills/agentic-eval",
+      "reason": "Tracked file missing in working tree; skipped from mapping."
+    },
+    {
+      "file": ".windsurf/skills/skill-creator",
+      "reason": "Tracked file missing in working tree; skipped from mapping."
+    },
+    {
+      "file": ".windsurf/verify_agent_optimization.sh",
+      "reason": "Tracked file missing in working tree; skipped from mapping."
+    },
+    {
+      "file": ".windsurf/workflows/airmentor-subagent-architecture.md",
+      "reason": "Tracked file missing in working tree; skipped from mapping."
+    },
+    {
+      "file": ".windsurf/workflows/review.md",
+      "reason": "Tracked file missing in working tree; skipped from mapping."
+    }
+  ],
   "ignoredExamples": [
     ".agents/",
     ".audit/",
     ".devin/",
     ".env",
+    ".kilo/",
+    ".kilo/.gitignore",
+    ".kilo/agent-manager.json",
+    ".kilo/node_modules/",
+    ".kilo/package-lock.json",
+    ".kilo/package.json",
+    ".kilo/worktrees/",
     ".kiro/skills/",
     ".mcp.json",
     ".vscode/mcp.json",
-    ".windsurf/mcp.json",
     "air-mentor-api/.env",
     "air-mentor-api/context.json",
     "air-mentor-api/scripts/context.json",
@@ -1941,6 +2205,7 @@
     "context.json",
     "scripts/context.json",
     "src/api/context.json",
+    "src/app/context.json",
     "src/components/context.json",
     "src/context.json",
     "src/hooks/context.json",
