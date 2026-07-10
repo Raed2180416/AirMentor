@@ -1,23 +1,17 @@
-import { AirMentorApiError } from '../api/client'
 import type {
   ApiAcademicFaculty,
   ApiAuditEvent,
   ApiBatchProvisioningRequest,
   ApiBatch,
   ApiBranch,
-  ApiCurriculumFeatureConfigBundle,
-  ApiCurriculumFeatureConfigPayload,
   ApiDepartment,
   ApiFacultyRecord,
   ApiFacultyAppointment,
   ApiPolicyPayload,
   ApiResolvedBatchPolicy,
-  ApiRoleCode,
   ApiScopeType,
   ApiRoleGrant,
   ApiSimulationStageCheckpointSummary,
-  ApiStageEvidenceKind,
-  ApiStagePolicyPayload,
 } from '../api/types'
 import { T } from '../data'
 import {
@@ -27,16 +21,93 @@ import {
   type LiveAdminDataset,
   type LiveAdminRoute,
   type LiveAdminSearchScope,
-  type RegistryFilterState,
 } from '../system-admin-live-data'
-import {
-  type HierarchyScopeInput,
-} from '../system-admin-overview-helpers'
 import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
 import {
   isCanonicalProofBatchId,
   scopeTargetsCanonicalProofHierarchy,
 } from '../proof-pilot'
+import {
+  requirePositiveInteger,
+  requireRange,
+  requireText,
+} from './live-app-validation'
+import {
+  parseAdminSectionScopeId,
+  routeToHash,
+} from './live-app-routes-and-scopes'
+import { parseCurriculumFeatureLines } from './live-app-curriculum-feature-model'
+
+export {
+  toErrorMessage,
+  requireText,
+  requirePositiveInteger,
+  requireNonNegativeInteger,
+  requirePositiveEvenInteger,
+  requireDate,
+  requireRange,
+} from './live-app-validation'
+export {
+  formatClockLabel,
+  readStringField,
+  readNumberField,
+  readBooleanField,
+  readRecordField,
+  formatSplitSummary,
+  formatKeyedCounts,
+  formatHeadSupportSummary,
+  formatDiagnosticSummary,
+  summarizeAuditEvent,
+} from './live-app-diagnostic-formatters'
+export {
+  parseAdminRoute,
+  routeToHash,
+  toRegistrySearchScope,
+  normalizeHierarchyScope,
+  normalizeAdminSectionCode,
+  buildAdminSectionScopeId,
+  parseAdminSectionScopeId,
+  buildAdminActiveScopeChain,
+  fadeColor,
+} from './live-app-routes-and-scopes'
+export type { ActiveAdminScope } from './live-app-routes-and-scopes'
+export {
+  defaultCurriculumFeatureForm,
+  hydrateCurriculumFeatureForm,
+  parseCurriculumFeatureLines,
+  buildCurriculumFeaturePayload,
+  validateCurriculumFeaturePrerequisites,
+} from './live-app-curriculum-feature-model'
+export type { CurriculumFeatureFormState } from './live-app-curriculum-feature-model'
+export {
+  defaultEntityEditorState,
+  defaultStudentForm,
+  defaultEnrollmentForm,
+  defaultMentorAssignmentForm,
+  defaultFacultyForm,
+  defaultAppointmentForm,
+  defaultRoleGrantForm,
+  defaultOwnershipForm,
+} from './live-app-editor-forms'
+export type {
+  StructureFormState,
+  EntityEditorState,
+  StudentFormState,
+  EnrollmentFormState,
+  MentorAssignmentFormState,
+  FacultyFormState,
+  AppointmentFormState,
+  RoleGrantFormState,
+  OwnershipFormState,
+} from './live-app-editor-forms'
+export {
+  DEFAULT_STAGE_POLICY,
+  STAGE_EVIDENCE_OPTIONS,
+  defaultStagePolicyForm,
+  hydrateStagePolicyForm,
+  buildStagePolicyPayload,
+} from './live-app-stage-policy-model'
+export type { StagePolicyFormState } from './live-app-stage-policy-model'
 
 export const EMPTY_FACULTY_RECORDS: ApiFacultyRecord[] = []
 
@@ -84,98 +155,6 @@ export type PolicyFormState = {
   mediumRiskCgpaBelow: string
   highRiskBacklogCount: string
   mediumRiskBacklogCount: string
-}
-
-export type StructureFormState = {
-  academicFaculty: { code: string; name: string; overview: string }
-  department: { code: string; name: string }
-  branch: { code: string; name: string; programLevel: string; semesterCount: string }
-  batch: { admissionYear: string; batchLabel: string; currentSemester: string; sectionLabels: string }
-  term: { academicYearLabel: string; semesterNumber: string; startDate: string; endDate: string }
-  curriculum: { semesterNumber: string; courseCode: string; title: string; credits: string }
-}
-
-export type CurriculumFeatureFormState = {
-  assessmentProfile: string
-  outcomesText: string
-  prerequisitesText: string
-  bridgeModulesText: string
-  tt1TopicsText: string
-  tt2TopicsText: string
-  seeTopicsText: string
-  workbookTopicsText: string
-}
-
-export type EntityEditorState = {
-  academicFaculty: StructureFormState['academicFaculty']
-  department: StructureFormState['department']
-  branch: StructureFormState['branch']
-  batch: StructureFormState['batch']
-  term: StructureFormState['term'] & { termId: string }
-  curriculum: StructureFormState['curriculum'] & { curriculumCourseId: string }
-}
-
-export type StudentFormState = {
-  usn: string
-  rollNumber: string
-  name: string
-  email: string
-  phone: string
-  admissionDate: string
-}
-
-export type EnrollmentFormState = {
-  enrollmentId: string
-  branchId: string
-  termId: string
-  sectionCode: string
-  rosterOrder: string
-  academicStatus: string
-  startDate: string
-  endDate: string
-}
-
-export type MentorAssignmentFormState = {
-  assignmentId: string
-  facultyId: string
-  effectiveFrom: string
-  effectiveTo: string
-  source: string
-}
-
-export type FacultyFormState = {
-  username: string
-  password: string
-  email: string
-  phone: string
-  employeeCode: string
-  displayName: string
-  designation: string
-  joinedOn: string
-}
-
-export type AppointmentFormState = {
-  appointmentId: string
-  departmentId: string
-  branchId: string
-  isPrimary: boolean
-  startDate: string
-  endDate: string
-}
-
-export type RoleGrantFormState = {
-  grantId: string
-  roleCode: ApiRoleCode
-  scopeType: string
-  scopeId: string
-  startDate: string
-  endDate: string
-}
-
-export type OwnershipFormState = {
-  ownershipId: string
-  offeringId: string
-  facultyId: string
 }
 
 export function upsertLiveAdminItem<T>(items: T[], nextItem: T, matches: (item: T) => boolean) {
@@ -237,20 +216,6 @@ export function upsertBatchRecord(data: LiveAdminDataset, nextBatch: ApiBatch): 
   }
 }
 
-export type StagePolicyFormState = {
-  stages: Array<{
-    key: ApiStagePolicyPayload['stages'][number]['key']
-    label: string
-    description: string
-    semesterDayOffset: string
-    requiredEvidence: ApiStageEvidenceKind[]
-    requireQueueClearance: boolean
-    requireTaskClearance: boolean
-    advancementMode: ApiStagePolicyPayload['stages'][number]['advancementMode']
-    color: string
-  }>
-}
-
 export type BatchProvisioningFormState = {
   termId: string
   sectionLabels: string
@@ -294,12 +259,6 @@ export type AdminWorkspaceSnapshot = {
 }
 
 // HierarchyScopeInput is now imported from './system-admin-overview-helpers'
-
-export type ActiveAdminScope = {
-  scopeType: ApiScopeType
-  scopeId: string
-  label: string
-}
 
 export const EMPTY_DATA: LiveAdminDataset = {
   institution: null, academicFaculties: [], departments: [], branches: [], batches: [], terms: [],
@@ -387,43 +346,6 @@ export function resolveFacultyCredentialStatus(faculty: ApiFacultyRecord | null 
   }
 }
 
-export function parseAdminRoute(hash: string): LiveAdminRoute {
-  const cleaned = hash.replace(/^#\/admin/, '').replace(/^\/+/, '')
-  if (!cleaned) return { section: 'overview' }
-  const parts = cleaned.split('/').filter(Boolean)
-  if (parts[0] === 'overview') return { section: 'overview' }
-  if (parts[0] === 'proof-dashboard') return { section: 'proof-dashboard' }
-  if (parts[0] === 'students') return { section: 'students', studentId: parts[1] }
-  if (parts[0] === 'faculty-members') return { section: 'faculty-members', facultyMemberId: parts[1] }
-  if (parts[0] === 'requests') return { section: 'requests', requestId: parts[1] }
-  if (parts[0] === 'history') return { section: 'history' }
-  if (parts[0] === 'faculties') {
-    return {
-      section: 'faculties',
-      academicFacultyId: parts[1],
-      departmentId: parts[2] === 'departments' ? parts[3] : undefined,
-      branchId: parts[4] === 'branches' ? parts[5] : undefined,
-      batchId: parts[6] === 'batches' ? parts[7] : undefined,
-    }
-  }
-  return { section: 'overview' }
-}
-
-export function routeToHash(route: LiveAdminRoute) {
-  if (route.section === 'overview') return '#/admin/overview'
-  if (route.section === 'proof-dashboard') return '#/admin/proof-dashboard'
-  if (route.section === 'students') return route.studentId ? `#/admin/students/${route.studentId}` : '#/admin/students'
-  if (route.section === 'faculty-members') return route.facultyMemberId ? `#/admin/faculty-members/${route.facultyMemberId}` : '#/admin/faculty-members'
-  if (route.section === 'requests') return route.requestId ? `#/admin/requests/${route.requestId}` : '#/admin/requests'
-  if (route.section === 'history') return '#/admin/history'
-  const segments = ['#/admin/faculties']
-  if (route.academicFacultyId) segments.push(route.academicFacultyId)
-  if (route.departmentId) segments.push('departments', route.departmentId)
-  if (route.branchId) segments.push('branches', route.branchId)
-  if (route.batchId) segments.push('batches', route.batchId)
-  return segments.join('/')
-}
-
 export function defaultPolicyForm(): PolicyFormState {
   return {
     oMin: '90', aPlusMin: '80', aMin: '70', bPlusMin: '60', bMin: '55', cMin: '50', pMin: '40',
@@ -452,252 +374,6 @@ export function defaultPolicyForm(): PolicyFormState {
     mediumRiskCgpaBelow: '7.5',
     highRiskBacklogCount: '2',
     mediumRiskBacklogCount: '1',
-  }
-}
-
-export function defaultEntityEditorState(currentSemester = '1'): EntityEditorState {
-  return {
-    academicFaculty: { code: '', name: '', overview: '' },
-    department: { code: '', name: '' },
-    branch: { code: '', name: '', programLevel: 'UG', semesterCount: '8' },
-    batch: { admissionYear: '2022', batchLabel: '2022', currentSemester, sectionLabels: 'A, B' },
-    term: { termId: '', academicYearLabel: '2026-27', semesterNumber: currentSemester, startDate: '2026-08-01', endDate: '2026-12-15' },
-    curriculum: { curriculumCourseId: '', semesterNumber: currentSemester, courseCode: '', title: '', credits: '4' },
-  }
-}
-
-export function defaultStudentForm(): StudentFormState {
-  return {
-    usn: '',
-    rollNumber: '',
-    name: '',
-    email: '',
-    phone: '',
-    admissionDate: new Date().toISOString().slice(0, 10),
-  }
-}
-
-export function defaultCurriculumFeatureForm(): CurriculumFeatureFormState {
-  return {
-    assessmentProfile: 'admin-authored',
-    outcomesText: '',
-    prerequisitesText: '',
-    bridgeModulesText: '',
-    tt1TopicsText: '',
-    tt2TopicsText: '',
-    seeTopicsText: '',
-    workbookTopicsText: '',
-  }
-}
-
-export function hydrateCurriculumFeatureForm(item: ApiCurriculumFeatureConfigBundle['items'][number] | null): CurriculumFeatureFormState {
-  if (!item) return defaultCurriculumFeatureForm()
-  return {
-    assessmentProfile: item.assessmentProfile || 'admin-authored',
-    outcomesText: item.outcomes.map(outcome => `${outcome.id} | ${outcome.bloom} | ${outcome.desc}`).join('\n'),
-    prerequisitesText: item.prerequisites.map(prerequisite => `${prerequisite.sourceCourseCode} | ${prerequisite.edgeKind} | ${prerequisite.rationale}`).join('\n'),
-    bridgeModulesText: item.bridgeModules.join('\n'),
-    tt1TopicsText: item.topicPartitions.tt1.join('\n'),
-    tt2TopicsText: item.topicPartitions.tt2.join('\n'),
-    seeTopicsText: item.topicPartitions.see.join('\n'),
-    workbookTopicsText: item.topicPartitions.workbook.join('\n'),
-  }
-}
-
-export function parseCurriculumFeatureLines(value: string) {
-  return value
-    .split('\n')
-    .map(item => item.trim())
-    .filter(Boolean)
-}
-
-export function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState): ApiCurriculumFeatureConfigPayload {
-  const outcomes = parseCurriculumFeatureLines(form.outcomesText).map((line, index) => {
-    const [id, bloom, ...descParts] = line.split('|').map(part => part.trim())
-    if (!id || !bloom || descParts.length === 0) {
-      throw new Error(`Outcome line ${index + 1} must use "COx | Bloom | Description".`)
-    }
-    return {
-      id,
-      bloom,
-      desc: descParts.join(' | '),
-    }
-  })
-  const prerequisites = parseCurriculumFeatureLines(form.prerequisitesText).map((line, index) => {
-    const [sourceCourseCode, rawKind, ...rationaleParts] = line.split('|').map(part => part.trim())
-    const normalizedKind = (rawKind ?? '').toLowerCase()
-    const edgeKind: 'explicit' | 'added' | null = normalizedKind === 'explicit'
-      ? 'explicit'
-      : normalizedKind === 'added'
-        ? 'added'
-        : null
-    const rationale = rationaleParts.join(' | ').trim()
-    if (!sourceCourseCode || !edgeKind || !rationale) {
-      throw new Error(`Prerequisite line ${index + 1} must use "COURSE_CODE | explicit|added | Rationale".`)
-    }
-    return {
-      sourceCourseCode,
-      edgeKind,
-      rationale,
-    }
-  })
-  if (outcomes.length === 0) {
-    throw new Error('At least one course outcome is required.')
-  }
-  return {
-    assessmentProfile: requireText('Assessment profile', form.assessmentProfile),
-    outcomes,
-    prerequisites,
-    bridgeModules: parseCurriculumFeatureLines(form.bridgeModulesText),
-    topicPartitions: {
-      tt1: parseCurriculumFeatureLines(form.tt1TopicsText),
-      tt2: parseCurriculumFeatureLines(form.tt2TopicsText),
-      see: parseCurriculumFeatureLines(form.seeTopicsText),
-      workbook: parseCurriculumFeatureLines(form.workbookTopicsText),
-    },
-  }
-}
-
-export function validateCurriculumFeaturePrerequisites(
-  targetCourse: ApiCurriculumFeatureConfigBundle['items'][number],
-  prerequisites: ApiCurriculumFeatureConfigPayload['prerequisites'],
-  items: ApiCurriculumFeatureConfigBundle['items'],
-) {
-  const targetSemesterNumber = Number(targetCourse.semesterNumber ?? 0)
-  if (!Number.isFinite(targetSemesterNumber) || targetSemesterNumber <= 0) return
-
-  const courseByCode = new Map(
-    items.map(item => [item.courseCode.trim().toLowerCase(), item] as const),
-  )
-
-  for (const prerequisite of prerequisites) {
-    const sourceCourse = courseByCode.get(prerequisite.sourceCourseCode.trim().toLowerCase())
-    if (!sourceCourse) continue
-    const sourceSemesterNumber = Number(sourceCourse.semesterNumber ?? 0)
-    if (!Number.isFinite(sourceSemesterNumber) || sourceSemesterNumber <= 0) continue
-    if (prerequisite.edgeKind === 'explicit' && sourceSemesterNumber >= targetSemesterNumber) {
-      throw new Error(`Prerequisite edges require an earlier semester. Found semester ${sourceSemesterNumber} -> ${targetSemesterNumber}.`)
-    }
-  }
-}
-
-export const DEFAULT_STAGE_POLICY: ApiStagePolicyPayload = {
-  stages: [
-    {
-      key: 'pre-tt1',
-      label: 'Pre TT1',
-      description: 'Opening stage before TT1 closes. Scheme setup, attendance updates, and class execution stay open here.',
-      order: 1,
-      semesterDayOffset: 0,
-      requiredEvidence: ['attendance'],
-      requireQueueClearance: true,
-      requireTaskClearance: true,
-      advancementMode: 'admin-confirmed',
-      color: '#2D8AF0',
-    },
-    {
-      key: 'post-tt1',
-      label: 'Post TT1',
-      description: 'First checkpoint after TT1 evidence is present and locked.',
-      order: 2,
-      semesterDayOffset: 35,
-      requiredEvidence: ['tt1'],
-      requireQueueClearance: true,
-      requireTaskClearance: true,
-      advancementMode: 'admin-confirmed',
-      color: '#F59E0B',
-    },
-    {
-      key: 'post-tt2',
-      label: 'Post TT2',
-      description: 'Checkpoint after TT2 evidence is present and locked.',
-      order: 3,
-      semesterDayOffset: 77,
-      requiredEvidence: ['tt2'],
-      requireQueueClearance: true,
-      requireTaskClearance: true,
-      advancementMode: 'admin-confirmed',
-      color: '#8B5CF6',
-    },
-    {
-      key: 'post-assignments',
-      label: 'Post Assignments',
-      description: 'Checkpoint after assignment evidence is present and locked. Assignment work may be entered earlier but cannot skip TT2.',
-      order: 4,
-      semesterDayOffset: 98,
-      requiredEvidence: ['assignment'],
-      requireQueueClearance: true,
-      requireTaskClearance: true,
-      advancementMode: 'admin-confirmed',
-      color: '#F97316',
-    },
-    {
-      key: 'post-see',
-      label: 'Post SEE',
-      description: 'Checkpoint after SEE evidence is present and locked. This is the end-of-semester progression gate.',
-      order: 5,
-      semesterDayOffset: 119,
-      requiredEvidence: ['finals'],
-      requireQueueClearance: true,
-      requireTaskClearance: true,
-      advancementMode: 'admin-confirmed',
-      color: '#EF4444',
-    },
-  ],
-}
-
-export const STAGE_EVIDENCE_OPTIONS: ApiStageEvidenceKind[] = ['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'finals', 'transcript']
-
-export function defaultStagePolicyForm(): StagePolicyFormState {
-  return {
-    stages: DEFAULT_STAGE_POLICY.stages.map(stage => ({
-      key: stage.key,
-      label: stage.label,
-      description: stage.description,
-      semesterDayOffset: String(stage.semesterDayOffset),
-      requiredEvidence: [...stage.requiredEvidence],
-      requireQueueClearance: stage.requireQueueClearance,
-      requireTaskClearance: stage.requireTaskClearance,
-      advancementMode: stage.advancementMode,
-      color: stage.color,
-    })),
-  }
-}
-
-export function hydrateStagePolicyForm(policy: ApiStagePolicyPayload | null | undefined): StagePolicyFormState {
-  const source = policy?.stages?.length ? policy : DEFAULT_STAGE_POLICY
-  return {
-    stages: DEFAULT_STAGE_POLICY.stages.map(defaultStage => {
-      const stage = source.stages.find(item => item.key === defaultStage.key) ?? defaultStage
-      return {
-        key: stage.key,
-        label: stage.label,
-        description: stage.description,
-        semesterDayOffset: String(stage.semesterDayOffset),
-        requiredEvidence: [...stage.requiredEvidence],
-        requireQueueClearance: stage.requireQueueClearance,
-        requireTaskClearance: stage.requireTaskClearance,
-        advancementMode: stage.advancementMode,
-        color: stage.color,
-      }
-    }),
-  }
-}
-
-export function buildStagePolicyPayload(form: StagePolicyFormState): ApiStagePolicyPayload {
-  return {
-    stages: form.stages.map((stage, index) => ({
-      key: stage.key,
-      label: requireText(`${stage.key} label`, stage.label),
-      description: requireText(`${stage.key} description`, stage.description),
-      order: index + 1,
-      semesterDayOffset: requireNonNegativeInteger(`${stage.key} semester day offset`, stage.semesterDayOffset),
-      requiredEvidence: [...stage.requiredEvidence],
-      requireQueueClearance: stage.requireQueueClearance,
-      requireTaskClearance: stage.requireTaskClearance,
-      advancementMode: stage.advancementMode,
-      color: requireText(`${stage.key} color`, stage.color),
-    })),
   }
 }
 
@@ -748,182 +424,7 @@ export function mergePolicyPayload(base: ApiResolvedBatchPolicy['effectivePolicy
   }
 }
 
-export function defaultEnrollmentForm(): EnrollmentFormState {
-  return {
-    enrollmentId: '',
-    branchId: '',
-    termId: '',
-    sectionCode: 'A',
-    rosterOrder: '0',
-    academicStatus: 'regular',
-    startDate: new Date().toISOString().slice(0, 10),
-    endDate: '',
-  }
-}
-
-export function defaultMentorAssignmentForm(): MentorAssignmentFormState {
-  return {
-    assignmentId: '',
-    facultyId: '',
-    effectiveFrom: new Date().toISOString().slice(0, 10),
-    effectiveTo: '',
-    source: 'sysadmin-manual',
-  }
-}
-
-export function defaultFacultyForm(): FacultyFormState {
-  return {
-    username: '',
-    password: '',
-    email: '',
-    phone: '',
-    employeeCode: '',
-    displayName: '',
-    designation: '',
-    joinedOn: '',
-  }
-}
-
-export function toRegistrySearchScope(filter: RegistryFilterState): LiveAdminSearchScope | null {
-  return {
-    academicFacultyId: filter.academicFacultyId || undefined,
-    departmentId: filter.departmentId || undefined,
-    branchId: filter.branchId || undefined,
-    batchId: filter.batchId || undefined,
-    sectionCode: filter.sectionCode || undefined,
-  }
-}
-
-export function normalizeHierarchyScope(scope: HierarchyScopeInput | null): LiveAdminSearchScope | null {
-  if (!scope) return null
-  return {
-    academicFacultyId: scope.academicFacultyId || undefined,
-    departmentId: scope.departmentId || undefined,
-    branchId: scope.branchId || undefined,
-    batchId: scope.batchId || undefined,
-    sectionCode: scope.sectionCode || undefined,
-  }
-}
-
-export function normalizeAdminSectionCode(sectionCode: string) {
-  return sectionCode.trim().toUpperCase()
-}
-
-export function buildAdminSectionScopeId(batchId: string, sectionCode: string) {
-  const normalizedBatchId = batchId.trim()
-  const normalizedSectionCode = normalizeAdminSectionCode(sectionCode)
-  if (!normalizedBatchId || !normalizedSectionCode) {
-    throw new Error('Section scope ids require both a batch id and a section code.')
-  }
-  return `${normalizedBatchId}::${normalizedSectionCode}`
-}
-
-export function parseAdminSectionScopeId(scopeId: string) {
-  const [batchId, sectionCode, ...remainder] = scopeId.split('::')
-  if (remainder.length > 0) return null
-  const normalizedBatchId = batchId?.trim() ?? ''
-  const normalizedSectionCode = normalizeAdminSectionCode(sectionCode ?? '')
-  if (!normalizedBatchId || !normalizedSectionCode) return null
-  return {
-    batchId: normalizedBatchId,
-    sectionCode: normalizedSectionCode,
-  }
-}
-
-export function buildAdminActiveScopeChain(input: {
-  institution: LiveAdminDataset['institution']
-  academicFaculty: ApiAcademicFaculty | null
-  department: ApiDepartment | null
-  branch: ApiBranch | null
-  batch: ApiBatch | null
-  sectionCode: string | null
-}) {
-  const chain: ActiveAdminScope[] = []
-  if (input.institution) {
-    chain.push({
-      scopeType: 'institution',
-      scopeId: input.institution.institutionId,
-      label: input.institution.name,
-    })
-  }
-  if (input.academicFaculty) {
-    chain.push({
-      scopeType: 'academic-faculty',
-      scopeId: input.academicFaculty.academicFacultyId,
-      label: input.academicFaculty.name,
-    })
-  }
-  if (input.department) {
-    chain.push({
-      scopeType: 'department',
-      scopeId: input.department.departmentId,
-      label: input.department.name,
-    })
-  }
-  if (input.branch) {
-    chain.push({
-      scopeType: 'branch',
-      scopeId: input.branch.branchId,
-      label: input.branch.name,
-    })
-  }
-  if (input.batch) {
-    chain.push({
-      scopeType: 'batch',
-      scopeId: input.batch.batchId,
-      label: `Batch ${input.batch.batchLabel}`,
-    })
-  }
-  if (input.batch && input.sectionCode) {
-    chain.push({
-      scopeType: 'section',
-      scopeId: buildAdminSectionScopeId(input.batch.batchId, input.sectionCode),
-      label: `Section ${normalizeAdminSectionCode(input.sectionCode)}`,
-    })
-  }
-  return chain
-}
-
 // describeRegistryScope is now imported from './system-admin-overview-helpers'
-
-export function fadeColor(hexColor: string, alpha: string) {
-  const trimmed = hexColor.trim()
-  if (!trimmed.startsWith('#')) return trimmed
-  const normalized = trimmed.length === 4
-    ? `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`
-    : trimmed
-  return `${normalized}${alpha}`
-}
-
-export function defaultAppointmentForm(): AppointmentFormState {
-  return {
-    appointmentId: '',
-    departmentId: '',
-    branchId: '',
-    isPrimary: false,
-    startDate: new Date().toISOString().slice(0, 10),
-    endDate: '',
-  }
-}
-
-export function defaultRoleGrantForm(): RoleGrantFormState {
-  return {
-    grantId: '',
-    roleCode: 'MENTOR',
-    scopeType: 'department',
-    scopeId: '',
-    startDate: new Date().toISOString().slice(0, 10),
-    endDate: '',
-  }
-}
-
-export function defaultOwnershipForm(): OwnershipFormState {
-  return {
-    ownershipId: '',
-    offeringId: '',
-    facultyId: '',
-  }
-}
 
 export function hydratePolicyForm(policy: ApiResolvedBatchPolicy['effectivePolicy']): PolicyFormState {
   const lookup = Object.fromEntries(policy.gradeBands.map(item => [item.grade, item.minimumMark])) as Record<string, number>
@@ -1040,62 +541,6 @@ export function buildPolicyPayload(form: PolicyFormState): ApiResolvedBatchPolic
   }
 }
 
-export function toErrorMessage(error: unknown) {
-  if (error instanceof AirMentorApiError) {
-    const details = error.details
-    if (details && typeof details === 'object') {
-      const fieldErrors = 'fieldErrors' in details && details.fieldErrors && typeof details.fieldErrors === 'object'
-        ? Object.entries(details.fieldErrors as Record<string, unknown>)
-            .flatMap(([field, messages]) => Array.isArray(messages) ? messages.map(message => `${field}: ${String(message)}`) : [])
-        : []
-      const formErrors = 'formErrors' in details && Array.isArray(details.formErrors)
-        ? details.formErrors.map(message => String(message))
-        : []
-      const combined = [...fieldErrors, ...formErrors].filter(Boolean)
-      if (combined.length > 0) return `${error.message}. ${combined.join(' · ')}`
-    }
-    return error.message
-  }
-  if (error instanceof Error) return error.message
-  return 'The request could not be completed.'
-}
-
-export function requireText(label: string, value: string) {
-  const trimmed = value.trim()
-  if (!trimmed) throw new Error(`${label} is required.`)
-  return trimmed
-}
-
-export function requirePositiveInteger(label: string, value: string) {
-  const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${label} must be a positive whole number.`)
-  return parsed
-}
-
-export function requireNonNegativeInteger(label: string, value: string) {
-  const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${label} must be a non-negative whole number.`)
-  return parsed
-}
-
-export function requirePositiveEvenInteger(label: string, value: string) {
-  const parsed = requirePositiveInteger(label, value)
-  if (parsed % 2 !== 0) throw new Error(`${label} must be an even whole number.`)
-  return parsed
-}
-
-export function requireDate(label: string, value: string) {
-  const trimmed = value.trim()
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) throw new Error(`${label} must use YYYY-MM-DD format.`)
-  return trimmed
-}
-
-export function requireRange(label: string, value: string, minimum: number, maximum: number) {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) throw new Error(`${label} must be between ${minimum} and ${maximum}.`)
-  return parsed
-}
-
 export function buildValidatedPolicyPayload(form: PolicyFormState): ApiResolvedBatchPolicy['effectivePolicy'] {
   const oMin = requireRange('O grade minimum', form.oMin, 0, 100)
   const aPlusMin = requireRange('A+ minimum', form.aPlusMin, 0, 100)
@@ -1199,98 +644,7 @@ export function buildValidatedPolicyPayload(form: PolicyFormState): ApiResolvedB
   })
 }
 
-export function formatClockLabel(now: Date) {
-  return now.toLocaleString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-export function readStringField(source: Record<string, unknown> | null | undefined, key: string) {
-  const value = source?.[key]
-  return typeof value === 'string' ? value : null
-}
-
-export function readNumberField(source: Record<string, unknown> | null | undefined, key: string) {
-  const value = source?.[key]
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-export function readBooleanField(source: Record<string, unknown> | null | undefined, key: string) {
-  const value = source?.[key]
-  return typeof value === 'boolean' ? value : null
-}
-
-export function readRecordField(source: Record<string, unknown> | null | undefined, key: string) {
-  const value = source?.[key]
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
-}
-
-export function formatSplitSummary(summary: Record<string, unknown> | null | undefined) {
-  if (!summary) return 'Unavailable'
-  const train = readNumberField(summary, 'train')
-  const validation = readNumberField(summary, 'validation')
-  const test = readNumberField(summary, 'test')
-  return [
-    train != null ? `train ${train}` : null,
-    validation != null ? `validation ${validation}` : null,
-    test != null ? `test ${test}` : null,
-  ].filter((value): value is string => !!value).join(' · ') || 'Unavailable'
-}
-
-export function formatKeyedCounts(summary: Record<string, unknown> | null | undefined) {
-  if (!summary) return 'Unavailable'
-  const entries = Object.entries(summary)
-    .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key} ${value}`)
-  return entries.length > 0 ? entries.join(' · ') : 'Unavailable'
-}
-
-export function formatHeadSupportSummary(summary: Record<string, unknown> | null | undefined) {
-  if (!summary) return 'Unavailable'
-  const entries = Object.entries(summary)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([headKey, value]) => {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) return headKey
-      const record = value as Record<string, unknown>
-      const counts = [
-        readNumberField(record, 'trainSupport') ?? readNumberField(record, 'train'),
-        readNumberField(record, 'validationSupport') ?? readNumberField(record, 'validation'),
-        readNumberField(record, 'testSupport') ?? readNumberField(record, 'test'),
-      ].filter((item): item is number => typeof item === 'number')
-      if (counts.length === 0) return headKey
-      return `${headKey} ${counts.join('/')}`
-    })
-  return entries.length > 0 ? entries.join(' · ') : 'Unavailable'
-}
-
-export function formatDiagnosticSummary(summary: Record<string, unknown> | null | undefined) {
-  if (!summary) return 'Unavailable'
-  const entries = Object.entries(summary)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => {
-      if (value == null) return null
-      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return `${key} ${String(value)}`
-      if (Array.isArray(value)) return `${key} ${value.length} items`
-      if (typeof value === 'object') {
-        const nestedKeys = Object.keys(value as Record<string, unknown>).slice(0, 3)
-        return `${key} ${nestedKeys.join('/') || 'object'}`
-      }
-      return null
-    })
-    .filter((value): value is string => !!value)
-  return entries.length > 0 ? entries.join(' · ') : 'Unavailable'
-}
-
 // isLeaderLikeOwnership and isCurrentRoleGrant are now imported from './system-admin-overview-helpers'
-
-export function summarizeAuditEvent(event: ApiAuditEvent) {
-  const action = event.action.replace(/[_-]+/g, ' ')
-  return action.charAt(0).toUpperCase() + action.slice(1)
-}
 
 export function getAuditEventRoute(event: ApiAuditEvent): LiveAdminRoute | null {
   if (event.entityType === 'Student' || event.entityType === 'StudentEnrollment' || event.entityType === 'MentorAssignment') {

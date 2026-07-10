@@ -1,10 +1,12 @@
-import type { FormEvent } from 'react'
-import { Plus } from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
+import type { Dispatch, FormEvent, SetStateAction } from 'react'
+import { ChevronLeft, Plus } from 'lucide-react'
 import { T, mono, sora } from '../../data'
 import {
   Btn,
   Card,
   Chip,
+  ModalWorkspace,
 } from '../../ui-primitives'
 import {
   EmptyState,
@@ -15,6 +17,8 @@ import {
   SectionHeading,
   SelectInput,
   TextInput,
+  formatDate,
+  formatDateTime,
 } from '../../system-admin-ui'
 import {
   ADMIN_SECTION_TONES,
@@ -27,17 +31,15 @@ import {
   defaultAppointmentForm,
   defaultOwnershipForm,
   defaultRoleGrantForm,
-  deriveCurrentYearLabel,
   fadeColor,
-  formatDate,
-  formatDateTime,
   formatFacultyAppointmentLabel,
   formatFacultyGrantScopeLabel,
-  hydrateRegistryFilter,
-  isCurrentRoleGrant,
-  isLightTheme,
   summarizeAuditEvent,
 } from '../live-app-model'
+import { isCurrentRoleGrant } from '../../system-admin-overview-helpers'
+import { isLightTheme } from '../../theme'
+import type { ThemeMode } from '../../domain'
+import { SystemAdminFacultyCalendarWorkspace } from '../../system-admin-faculty-calendar-workspace'
 import {
   AdminDetailTabPanel,
   AdminDetailTabs,
@@ -47,44 +49,44 @@ import type {
   ApiAdminFacultyCalendar,
   ApiAdminFacultyPasswordSetupResponse,
   ApiAuditEvent,
+  ApiBatch,
   ApiFacultyAppointment,
+  ApiFacultyCredentialStatus,
+  ApiFacultyRecord,
   ApiOfferingOwnership,
   ApiRoleGrant,
 } from '../../api/types'
-import type { LiveAdminDataset, LiveAdminRoute, RegistryFilterState } from '../../system-admin-live-data'
-import { resolveDepartment } from '../../system-admin-live-data'
+import type { LiveAdminDataset, LiveAdminRoute, RegistryFilterState, UniversityScopeState } from '../../system-admin-live-data'
+import { resolveDepartment, deriveCurrentYearLabel, hydrateRegistryFilter, getPrimaryAppointmentDepartmentId } from '../../system-admin-live-data'
 
 type FacultyMembersSectionProps = {
-  data: LiveAdminDataset
   route: LiveAdminRoute
-  themeMode: string
+  themeMode: ThemeMode
   now: Date
   password: string
   registryPageColumns: string
   registryFilterColumns: string
   registryIsSingleColumn: boolean
-  registryScope: RegistryFilterState
-  navigate: (route: Partial<LiveAdminRoute> & { section: string }) => void
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  facultyRegistryItems: any[]
+  registryScope: UniversityScopeState | null
+  navigate: (route: LiveAdminRoute) => void
+  facultyRegistryItems: ApiFacultyRecord[]
   facultyRegistrySearch: string
   setFacultyRegistrySearch: (value: string) => void
   effectiveFacultyRegistryFilter: RegistryFilterState
   setFacultyRegistryFilter: (value: RegistryFilterState | ((prev: RegistryFilterState) => RegistryFilterState)) => void
   facultyFilterDepartments: Array<{ departmentId: string; name: string }>
   facultyFilterBranches: Array<{ branchId: string; name: string }>
-  facultyFilterBatches: Array<{ batchId: string; batchLabel: string; currentSemester: string }>
+  facultyFilterBatches: ApiBatch[]
   facultyFilterSections: string[]
   visibleAcademicFaculties: Array<{ academicFacultyId: string; name: string }>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  selectedFacultyMember: any | null
+  selectedFacultyMember: ApiFacultyRecord | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   selectedFacultyAssignments: any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   selectedFacultyOwnerships: any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   selectedFacultyCalendarOfferings: any[]
-  selectedFacultyCredentialStatus: string
+  selectedFacultyCredentialStatus: ApiFacultyCredentialStatus
   selectedFacultyProofBanner: string | null
   facultyCalendar: ApiAdminFacultyCalendar | null
   facultyCalendarLoading: boolean
@@ -99,7 +101,7 @@ type FacultyMembersSectionProps = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   availableOwnershipOfferings: any[]
   facultyDetailTab: FacultyDetailTab
-  setFacultyDetailTab: (tab: string) => void
+  setFacultyDetailTab: Dispatch<SetStateAction<FacultyDetailTab>>
   facultyForm: FacultyFormState
   setFacultyForm: (value: FacultyFormState | ((prev: FacultyFormState) => FacultyFormState)) => void
   appointmentForm: AppointmentFormState
@@ -120,14 +122,13 @@ type FacultyMembersSectionProps = {
   handleArchiveRoleGrant: (grant: ApiRoleGrant) => void
   handleSaveOwnership: (event: FormEvent<HTMLFormElement>) => void
   handleArchiveOwnership: (ownership: ApiOfferingOwnership) => void
-  handleSaveFacultyCalendar: (payload: Pick<ApiAdminFacultyCalendar, 'template' | 'workspace'>) => void
+  handleSaveFacultyCalendar: (payload: Pick<ApiAdminFacultyCalendar, 'template' | 'workspace'>) => Promise<void>
   handleOpenFullRegistry: (section: 'students' | 'faculty-members') => void
   setEditingEntity: (value: EditingEntity | null) => void
   resetFacultyEditors: () => void
   startEditingAppointment: (appointment: ApiFacultyAppointment) => void
   startEditingRoleGrant: (grant: ApiRoleGrant) => void
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  operatorData: any
+  operatorData: LiveAdminDataset
 }
 
 export function FacultyMembersSection(props: FacultyMembersSectionProps) {

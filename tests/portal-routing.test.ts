@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ACTIVE_DEMO_WORKSPACE_POINTER_STORAGE_KEY } from '../src/demo-workspace-pointer'
+import { parseAdminRoute } from '../src/admin/live-app-model'
 import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, navigateToPortal, parsePortalRoute, resolvePortalRoute } from '../src/portal-routing'
 
 describe('portal routing', () => {
@@ -13,9 +14,7 @@ describe('portal routing', () => {
     expect(parsePortalRoute('#/unknown')).toBe('home')
   })
 
-  it('parses admin routes into structured LiveAdminRoutes', async () => {
-    // import late since it's a UI component to avoid unnecessary dom setup for routing tests elsewhere
-    const { parseAdminRoute } = await import('../src/system-admin-live-app')
+  it('parses admin routes into structured LiveAdminRoutes', () => {
     expect(parseAdminRoute('#/admin/requests/request_001')).toEqual({
       section: 'requests',
       requestId: 'request_001',

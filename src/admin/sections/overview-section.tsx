@@ -4,6 +4,7 @@ import { Card } from '../../ui-primitives'
 import { HeroBadge } from '../../system-admin-ui'
 import { ADMIN_SECTION_TONES } from '../live-app-model'
 import { OverviewSupportCard, SectionLaunchCard } from '../live-app-chrome'
+import type { LiveAdminRoute } from '../../system-admin-live-data'
 
 type OverviewSectionProps = {
   viewportWidth: number
@@ -32,7 +33,7 @@ type OverviewSectionProps = {
   overviewFacultyCaption: string
   overviewVisibleMentorGapCount: number
   overviewCounts: { ownershipCount: number }
-  navigate: (route: { section: string }) => void
+  navigate: (route: LiveAdminRoute) => void
 }
 
 export function OverviewSection({

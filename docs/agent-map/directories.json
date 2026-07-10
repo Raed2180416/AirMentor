@@ -2,8 +2,8 @@
   {
     "path": ".",
     "fileCount": 24,
-    "bytes": 306559,
-    "lines": 8297,
+    "bytes": 306684,
+    "lines": 8298,
     "roles": {
       "other": 13,
       "agent-config": 1,
@@ -23,8 +23,8 @@
   {
     "path": ".absolute-human",
     "fileCount": 1,
-    "bytes": 3796,
-    "lines": 111,
+    "bytes": 3460,
+    "lines": 113,
     "roles": {
       "other": 1
     },
@@ -386,14 +386,15 @@
   },
   {
     "path": "docs",
-    "fileCount": 18,
-    "bytes": 334261,
-    "lines": 8822,
+    "fileCount": 20,
+    "bytes": 337075,
+    "lines": 8885,
     "roles": {
-      "documentation": 18
+      "documentation": 20
     },
     "extensions": {
-      ".md": 17,
+      ".md": 18,
+      ".json": 1,
       ".bib": 1
     }
   },
@@ -407,6 +408,18 @@
     },
     "extensions": {
       ".md": 9
+    }
+  },
+  {
+    "path": "docs/plans",
+    "fileCount": 1,
+    "bytes": 29983,
+    "lines": 778,
+    "roles": {
+      "documentation": 1
+    },
+    "extensions": {
+      ".md": 1
     }
   },
   {
@@ -645,14 +658,14 @@
   },
   {
     "path": "scripts",
-    "fileCount": 107,
-    "bytes": 1014443,
-    "lines": 23898,
+    "fileCount": 108,
+    "bytes": 1019608,
+    "lines": 24024,
     "roles": {
-      "repo-script": 107
+      "repo-script": 108
     },
     "extensions": {
-      ".mjs": 50,
+      ".mjs": 51,
       ".service": 3,
       ".timer": 1,
       ".ts": 10,
@@ -676,8 +689,8 @@
   {
     "path": "src",
     "fileCount": 63,
-    "bytes": 1331220,
-    "lines": 28972,
+    "bytes": 1324683,
+    "lines": 28880,
     "roles": {
       "frontend": 63
     },
@@ -689,27 +702,28 @@
   },
   {
     "path": "src/admin",
-    "fileCount": 2,
-    "bytes": 71994,
-    "lines": 1848,
+    "fileCount": 9,
+    "bytes": 83615,
+    "lines": 2129,
     "roles": {
-      "frontend": 2
+      "frontend": 9
     },
     "extensions": {
-      ".tsx": 1,
-      ".ts": 1
+      ".tsx": 2,
+      ".ts": 7
     }
   },
   {
     "path": "src/admin/sections",
-    "fileCount": 4,
-    "bytes": 135712,
-    "lines": 1903,
+    "fileCount": 8,
+    "bytes": 135827,
+    "lines": 2040,
     "roles": {
-      "frontend": 4
+      "frontend": 8
     },
     "extensions": {
-      ".tsx": 4
+      ".ts": 1,
+      ".tsx": 7
     }
   },
   {
@@ -775,15 +789,15 @@
   },
   {
     "path": "tests",
-    "fileCount": 67,
-    "bytes": 624061,
-    "lines": 17767,
+    "fileCount": 68,
+    "bytes": 627955,
+    "lines": 17898,
     "roles": {
-      "unit-test": 67
+      "unit-test": 68
     },
     "extensions": {
       ".ts": 40,
-      ".tsx": 26,
+      ".tsx": 27,
       ".json": 1
     }
   },

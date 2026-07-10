@@ -81,6 +81,9 @@ course-leader-faculty-profile-*.png
 .vscode/mcp.json
 .windsurf/mcp.json
 
+# AI-native development boards
+.absolute-human/
+
 # Local scratch files
 *.sqlite
 *.sqlite3

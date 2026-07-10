@@ -307,19 +307,25 @@ export function OverviewSupportCard({
   value,
   helper,
   tone = T.accent,
+  onClick,
 }: {
   title: string
   value: string
   helper: string
   tone?: string
+  onClick?: () => void
 }) {
   return (
-    <Card style={{
-      padding: 18,
-      borderRadius: 18,
-      border: `1px solid ${withAlpha(tone, '14')}`,
-      background: `linear-gradient(180deg, ${withAlpha(tone, '08')}, ${T.surface})`,
-    }}>
+    <Card
+      onClick={onClick}
+      style={{
+        padding: 18,
+        borderRadius: 18,
+        border: `1px solid ${withAlpha(tone, '14')}`,
+        background: `linear-gradient(180deg, ${withAlpha(tone, '08')}, ${T.surface})`,
+        cursor: onClick ? 'pointer' : undefined,
+      }}
+    >
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{title}</div>
       <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text, lineHeight: 1 }}>{value}</div>
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.muted, lineHeight: 1.8 }}>{helper}</div>

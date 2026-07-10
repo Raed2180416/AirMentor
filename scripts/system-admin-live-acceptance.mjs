@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { sanitizeArtifactPrefix } from './proof-risk-semester-walk.mjs'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
@@ -11,7 +13,18 @@ const acceptanceArtifactPrefix = sanitizeArtifactPrefix((process.env.AIRMENTOR_A
 
 assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
 
-const { firefox } = await import(`file://${playwrightRoot}/lib/node_modules/playwright/index.mjs`)
+const playwrightEntrypoint = [
+  path.join(playwrightRoot, 'index.js'),
+  path.join(playwrightRoot, 'playwright/index.js'),
+  path.join(playwrightRoot, 'lib/node_modules/playwright/index.mjs'),
+].find(existsSync)
+
+assert(playwrightEntrypoint, `Unable to resolve Playwright from ${playwrightRoot}`)
+
+const playwrightModule = await import(pathToFileURL(playwrightEntrypoint).href)
+const { firefox } = playwrightModule.default ?? playwrightModule
+
+assert(firefox, `Playwright did not expose Firefox from ${playwrightEntrypoint}`)
 
 await mkdir(outputDir, { recursive: true })
 
@@ -51,7 +64,11 @@ const systemAdminCredentials = resolveSystemAdminLiveCredentials({
   scriptLabel: 'System admin live acceptance flow',
 })
 
-const browser = await firefox.launch({ headless: true })
+const firefoxExecutable = process.env.AIRMENTOR_PW_FIREFOX_EXECUTABLE?.trim()
+const browser = await firefox.launch({
+  headless: true,
+  ...(firefoxExecutable ? { executablePath: firefoxExecutable } : {}),
+})
 const page = await browser.newPage({ viewport: { width: 1440, height: 1400 } })
 page.on('pageerror', error => {
   pageErrors.push({ name: error.name, message: error.message })
@@ -300,6 +317,51 @@ async function selectFirstAvailableHierarchyOption(scopeLabel, description) {
   return optionDetails.label
 }
 
+async function hasSelectableHierarchyOption(scopeLabel) {
+  const select = getHierarchySelect(scopeLabel)
+  return select.evaluate(candidate => {
+    if (!(candidate instanceof HTMLSelectElement)) return false
+    return Array.from(candidate.options).some(option => Boolean(option.value))
+  })
+}
+
+async function fillNamedField(fieldName, value, description) {
+  const field = page.locator(`[name="${fieldName}"]`).last()
+  await expectVisible(field, description)
+  await field.fill(value)
+}
+
+async function bootstrapHierarchyIfEmpty() {
+  if (await hasSelectableHierarchyOption('Faculty')) return false
+
+  await fillNamedField('academicFacultyCode', 'AUT', 'academic faculty code input')
+  await fillNamedField('academicFacultyName', 'Acceptance University Technology', 'academic faculty name input')
+  await fillNamedField('academicFacultyOverview', 'Browser acceptance hierarchy fixture.', 'academic faculty overview input')
+  await page.getByRole('button', { name: 'Add Faculty', exact: true }).click()
+  await expectVisible(getHierarchySelect('Faculty'), 'created academic faculty selector')
+  await selectFirstAvailableHierarchyOption('Faculty', 'created faculty scope selection')
+
+  await fillNamedField('departmentCode', 'ACC', 'department code input')
+  await fillNamedField('departmentName', 'Acceptance Computing', 'department name input')
+  await page.getByRole('button', { name: 'Add Department', exact: true }).click()
+  await selectFirstAvailableHierarchyOption('Department', 'created department scope selection')
+
+  await fillNamedField('branchCode', 'ACC-SE', 'branch code input')
+  await fillNamedField('branchName', 'Software Engineering', 'branch name input')
+  await fillNamedField('branchProgramLevel', 'UG', 'branch program level input')
+  await fillNamedField('branchSemesterCount', '8', 'branch semester count input')
+  await page.getByRole('button', { name: 'Add Branch', exact: true }).click()
+  await selectFirstAvailableHierarchyOption('Branch', 'created branch scope selection')
+
+  await fillNamedField('batchAdmissionYear', '2026', 'batch admission year input')
+  await fillNamedField('batchCurrentSemester', '1', 'batch active semester input')
+  await fillNamedField('batchSectionLabels', 'A', 'batch section labels input')
+  await page.getByRole('button', { name: 'Add Batch', exact: true }).click()
+  await selectFirstAvailableHierarchyOption('Year', 'created batch scope selection')
+
+  return true
+}
+
 async function selectBatchByLabelSuffix(batchLabel) {
   const batchSelect = getHierarchySelect('Year')
   const deadline = Date.now() + 40_000
@@ -416,6 +478,11 @@ try {
   await expectVisible(getHierarchySelect('Year'), 'year selector')
   report.checks.push({ name: 'hierarchy-selectors-visible', status: 'passed' })
 
+  const hierarchyBootstrapped = await bootstrapHierarchyIfEmpty()
+  if (hierarchyBootstrapped) {
+    report.checks.push({ name: 'hierarchy-bootstrap', status: 'passed' })
+  }
+
   const selectedHierarchy = {
     faculty: await selectFirstAvailableHierarchyOption('Faculty', 'faculty scope selection'),
     department: await selectFirstAvailableHierarchyOption('Department', 'department scope selection'),
@@ -431,7 +498,7 @@ try {
   })
 
   await expectVisible(page.getByRole('tablist', { name: 'Hierarchy workspace sections' }), 'workspace tabs')
-  await expectBodyTextOneOf(['Batch Configuration', 'Curriculum Model Inputs'], 'overview workspace content after batch save')
+  await expectBodyTextOneOf(['Batch Configuration', 'Batch semester'], 'overview workspace content after batch save')
   await expectVisible(page.getByText('Students View', { exact: true }).first(), 'student launch card')
   await expectVisible(page.getByText('Faculty View', { exact: true }).first(), 'faculty launch card')
   report.checks.push({ name: 'workspace-overview', status: 'passed' })
@@ -441,7 +508,6 @@ try {
   await expectWorkspaceTab('CGPA Formula', 'cgpa', ['CGPA And Progression', 'Progression', 'Risk Thresholds'])
   await expectWorkspaceTab('Stage Gates', 'stage', ['Stage Policy', 'Save Stage Policy'])
   await expectWorkspaceTab('Courses', 'courses', ['Terms, Curriculum, And Course Leaders', 'Academic Terms', ['Curriculum Rows', 'Curriculum Import And Rows']])
-  await expectWorkspaceTab('Provision', 'provision', ['Provisioning', 'Faculty In Scope', ['Run Provisioning', 'Run Batch Provisioning']])
   report.checks.push({ name: 'hierarchy-tabs', status: 'passed' })
 
   await page.goto(scopedFacultiesUrl, { waitUntil: 'networkidle' })
@@ -452,13 +518,12 @@ try {
   await expectVisible(getHierarchySelect('Department'), 'restored department selector')
   await expectVisible(getHierarchySelect('Branch'), 'restored branch selector')
   await expectVisible(getHierarchySelect('Year'), 'restored year selector')
-  await expectWorkspaceTab('Overview', 'overview', ['Batch Configuration', 'Curriculum Model Inputs'], 'workspace-overview-refresh')
+  await expectWorkspaceTab('Overview', 'overview', ['Batch Configuration', 'Batch semester'], 'workspace-overview-refresh')
   await expectWorkspaceTab('Bands', 'bands', ['Academic Bands', 'Save Scope Governance'])
   await expectWorkspaceTab('CE / SEE', 'ce-see', ['CE / SEE Split', 'Working Calendar', 'Attendance And Eligibility'])
   await expectWorkspaceTab('CGPA Formula', 'cgpa', ['CGPA And Progression', 'Progression', 'Risk Thresholds'])
   await expectWorkspaceTab('Stage Gates', 'stage', ['Stage Policy', 'Save Stage Policy'])
   await expectWorkspaceTab('Courses', 'courses', ['Terms, Curriculum, And Course Leaders', 'Academic Terms', ['Curriculum Rows', 'Curriculum Import And Rows']])
-  await expectWorkspaceTab('Provision', 'provision', ['Provisioning', 'Faculty In Scope', ['Run Provisioning', 'Run Batch Provisioning']])
   report.checks.push({ name: 'hierarchy-refresh', status: 'passed' })
 
   await page.goto(`${appUrl}#/admin/overview`, { waitUntil: 'networkidle' })

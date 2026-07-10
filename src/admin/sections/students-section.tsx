@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react'
+import type { Dispatch, FormEvent, SetStateAction } from 'react'
 import { Plus } from 'lucide-react'
 import { T, mono, sora } from '../../data'
 import {
@@ -15,6 +15,8 @@ import {
   SectionHeading,
   SelectInput,
   TextInput,
+  formatDate,
+  formatDateTime,
 } from '../../system-admin-ui'
 import {
   ADMIN_SECTION_TONES,
@@ -25,11 +27,7 @@ import {
   type EditingEntity,
   defaultEnrollmentForm,
   defaultMentorAssignmentForm,
-  deriveCurrentYearLabel,
   fadeColor,
-  formatDate,
-  formatDateTime,
-  hydrateRegistryFilter,
   summarizeAuditEvent,
 } from '../live-app-model'
 import {
@@ -37,52 +35,35 @@ import {
   AdminDetailTabs,
   AdminMiniStat,
 } from '../live-app-chrome'
+import { isLightTheme } from '../../theme'
+import type { ThemeMode } from '../../domain'
 import type {
   ApiAuditEvent,
+  ApiBatch,
   ApiStudentEnrollment,
   ApiMentorAssignment,
+  ApiProofRunCheckpointStudentSummary,
+  ApiSimulationStageCheckpointSummary,
+  ApiStudentRecord,
 } from '../../api/types'
-import type { LiveAdminDataset, LiveAdminRoute, RegistryFilterState } from '../../system-admin-live-data'
-import { resolveBranch, resolveFacultyMember } from '../../system-admin-live-data'
+import type { LiveAdminDataset, LiveAdminRoute, RegistryFilterState, UniversityScopeState } from '../../system-admin-live-data'
+import { resolveBranch, resolveFacultyMember, deriveCurrentYearLabel, hydrateRegistryFilter } from '../../system-admin-live-data'
 
 type StudentsSectionProps = {
   data: LiveAdminDataset
   route: LiveAdminRoute
-  themeMode: string
+  themeMode: ThemeMode
   registryPageColumns: string
   registryFilterColumns: string
   registryIsSingleColumn: boolean
-  registryScope: RegistryFilterState
-  navigate: (route: Partial<LiveAdminRoute> & { section: string }) => void
+  registryScope: UniversityScopeState | null
+  navigate: (route: LiveAdminRoute) => void
   // Student registry state
-  studentRegistryItems: Array<{
-    studentId: string
-    name: string
-    usn: string
-    email: string | null
-    phone: string | null
-    status: string
-    activeMentorAssignment: unknown
-    activeAcademicContext: {
-      branchId: string
-      branchName: string | null
-      departmentName: string | null
-      sectionCode: string | null
-      termId: string
-      academicStatus: string
-    } | null
-    enrollments: ApiStudentEnrollment[]
-    mentorAssignments: ApiMentorAssignment[]
-  }>
+  studentRegistryItems: ApiStudentRecord[]
   studentRegistryViewItems: Array<{
-    student: StudentsSectionProps['studentRegistryItems'][number]
+    student: ApiStudentRecord
     proofOverlayActive: boolean
-    checkpointSummary: {
-      currentRiskBand: string
-      currentQueueState: string
-      primaryCourseCode: string
-      primaryCourseTitle: string
-    } | null
+    checkpointSummary: ApiProofRunCheckpointStudentSummary | null
     displayCgpa: number | null
     displaySemester: number | null
     showCheckpointCgpa: boolean
@@ -97,23 +78,18 @@ type StudentsSectionProps = {
   setStudentRegistryFilter: (value: RegistryFilterState | ((prev: RegistryFilterState) => RegistryFilterState)) => void
   studentFilterDepartments: Array<{ departmentId: string; name: string }>
   studentFilterBranches: Array<{ branchId: string; name: string }>
-  studentFilterBatches: Array<{ batchId: string; batchLabel: string; currentSemester: string }>
+  studentFilterBatches: ApiBatch[]
   studentFilterSections: string[]
   visibleAcademicFaculties: Array<{ academicFacultyId: string; name: string }>
   // Selected student state
-  selectedStudent: StudentsSectionProps['studentRegistryItems'][number] | null
+  selectedStudent: ApiStudentRecord | null
   selectedStudentRouteIsExplicit: boolean
   selectedStudentScopeMismatch: boolean
   selectedStudentDisplayCgpa: number
   selectedStudentDisplaySemester: number | null
   selectedStudentDisplayBacklogCount: number | null
   selectedStudentCheckpointCgpaVisible: boolean
-  selectedStudentCheckpointSummary: {
-    currentRiskBand: string
-    currentQueueState: string
-    primaryCourseCode: string
-    primaryCourseTitle: string
-  } | null
+  selectedStudentCheckpointSummary: ApiProofRunCheckpointStudentSummary | null
   selectedStudentCheckpointBanner: string | null
   selectedStudentProofBanner: string | null
   selectedStudentPolicy: unknown
@@ -131,13 +107,10 @@ type StudentsSectionProps = {
     startDate: string
     endDate: string
   }>
-  selectedProofCheckpoint: {
-    semesterNumber: number
-    stageLabel: string
-  } | null
+  selectedProofCheckpoint: ApiSimulationStageCheckpointSummary | null
   // Student detail tab
   studentDetailTab: StudentDetailTab
-  setStudentDetailTab: (tab: string) => void
+  setStudentDetailTab: Dispatch<SetStateAction<StudentDetailTab>>
   // Forms
   studentForm: StudentFormState
   setStudentForm: (value: StudentFormState | ((prev: StudentFormState) => StudentFormState)) => void

@@ -989,6 +989,10 @@
 {"file":"tests/academic-workspace-sidebar.test.tsx","role":"unit-test","kind":"describe","name":"AcademicWorkspaceSidebar","line":51}
 {"file":"tests/academic-workspace-sidebar.test.tsx","role":"unit-test","kind":"it","name":"marks queue history as the active mentor nav item on queue-history pages","line":56}
 {"file":"tests/academic-workspace-sidebar.test.tsx","role":"unit-test","kind":"it","name":"routes queue history selection through the sidebar nav button","line":63}
+{"file":"tests/action-queue-rail.test.tsx","role":"unit-test","kind":"describe","name":"ActionQueueRail","line":97}
+{"file":"tests/action-queue-rail.test.tsx","role":"unit-test","kind":"it","name":"does not render the control rail when its responsive layout slot is closed","line":98}
+{"file":"tests/action-queue-rail.test.tsx","role":"unit-test","kind":"it","name":"opens a request in the governed request workspace","line":104}
+{"file":"tests/action-queue-rail.test.tsx","role":"unit-test","kind":"it","name":"keeps request, reminder, restore, and quick-add actions connected to their shell handlers","line":112}
 {"file":"tests/admin-request-selection.test.ts","role":"unit-test","kind":"describe","name":"resolveSelectedAdminRequest","line":43}
 {"file":"tests/admin-request-selection.test.ts","role":"unit-test","kind":"it","name":"prefers the newer detail record when it is ahead of the cached summary","line":44}
 {"file":"tests/admin-request-selection.test.ts","role":"unit-test","kind":"it","name":"keeps the newer summary when the detail lags behind","line":51}
@@ -1114,14 +1118,14 @@
 {"file":"tests/playwright-runtime.test.ts","role":"unit-test","kind":"it","name":"unwraps CommonJS default runtime modules from explicit imports","line":5}
 {"file":"tests/playwright-runtime.test.ts","role":"unit-test","kind":"it","name":"keeps named-export runtime modules unchanged","line":16}
 {"file":"tests/playwright-runtime.test.ts","role":"unit-test","kind":"it","name":"unwraps callable CommonJS default runtime modules from Nix Playwright","line":27}
-{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"describe","name":"portal routing","line":5}
-{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"parses supported hash routes","line":6}
-{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"parses admin routes into structured LiveAdminRoutes","line":16}
-{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"keeps the home route on the portal selector until the hash explicitly changes","line":28}
-{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"maps routes back to canonical hashes","line":34}
-{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"recognizes sub-routes as belonging to their portal workspace","line":40}
-{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"navigates by mutating the location hash","line":46}
-{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"clears every remembered workspace hint when leaving the portal","line":56}
+{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"describe","name":"portal routing","line":6}
+{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"parses supported hash routes","line":7}
+{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"parses admin routes into structured LiveAdminRoutes","line":17}
+{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"keeps the home route on the portal selector until the hash explicitly changes","line":27}
+{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"maps routes back to canonical hashes","line":33}
+{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"recognizes sub-routes as belonging to their portal workspace","line":39}
+{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"navigates by mutating the location hash","line":45}
+{"file":"tests/portal-routing.test.ts","role":"unit-test","kind":"it","name":"clears every remembered workspace hint when leaving the portal","line":55}
 {"file":"tests/proof-monitoring-tasks.test.ts","role":"unit-test","kind":"describe","name":"proof monitoring task materialization","line":53}
 {"file":"tests/proof-monitoring-tasks.test.ts","role":"unit-test","kind":"it","name":"builds stable task ids from reassessment, run, student, offering, and checkpoint scope","line":54}
 {"file":"tests/proof-monitoring-tasks.test.ts","role":"unit-test","kind":"it","name":"suppresses generated proof queue tasks by legacy dismissed ids","line":64}

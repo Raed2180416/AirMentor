@@ -22,6 +22,7 @@
     "build:api": "npm --workspace air-mentor-api run build",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "architecture:check": "node scripts/check-architecture-boundaries.mjs",
     "agent:map": "node scripts/generate-agent-repo-map.mjs",
     "inventory:compat-routes": "node scripts/report-compat-route-callers.mjs",
     "test:api": "npm --workspace air-mentor-api test",

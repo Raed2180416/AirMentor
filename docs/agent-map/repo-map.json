@@ -38,6 +38,7 @@
         "build:api": "npm --workspace air-mentor-api run build",
         "build": "tsc -b && vite build",
         "lint": "eslint .",
+        "architecture:check": "node scripts/check-architecture-boundaries.mjs",
         "agent:map": "node scripts/generate-agent-repo-map.mjs",
         "inventory:compat-routes": "node scripts/report-compat-route-callers.mjs",
         "test:api": "npm --workspace air-mentor-api test",
@@ -149,35 +150,35 @@
     }
   },
   "totals": {
-    "trackedFiles": 948,
-    "ignoredEntriesObserved": 41,
-    "bytes": 15097564,
-    "lines": 311846,
-    "nonEmptyLines": 289041,
-    "commentLines": 6016,
-    "localDependencyEdges": 711,
-    "symbols": 23578,
+    "trackedFiles": 964,
+    "ignoredEntriesObserved": 43,
+    "bytes": 15144408,
+    "lines": 313273,
+    "nonEmptyLines": 290214,
+    "commentLines": 6001,
+    "localDependencyEdges": 761,
+    "symbols": 23615,
     "apiRoutes": 190,
-    "testCases": 1370,
-    "filesWithTests": 194,
-    "atoms": 81139,
+    "testCases": 1374,
+    "filesWithTests": 195,
+    "atoms": 81267,
     "anomalies": 0
   },
   "counts": {
     "byExtension": {
-      ".md": 53,
+      ".md": 55,
       "[no-ext]": 14,
-      ".json": 30,
+      ".json": 31,
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
       ".example": 1,
-      ".ts": 388,
+      ".ts": 395,
       ".toml": 3,
       ".txt": 7,
       ".py": 108,
       ".cjs": 1,
-      ".mjs": 55,
+      ".mjs": 56,
       ".sh": 48,
       ".js": 2,
       ".sql": 34,
@@ -190,7 +191,7 @@
       ".service": 3,
       ".timer": 1,
       ".conf": 2,
-      ".tsx": 77,
+      ".tsx": 82,
       ".css": 2
     },
     "byRole": {
@@ -201,12 +202,12 @@
       "model-contract": 3,
       "backend-script": 97,
       "backend": 153,
-      "unit-test": 161,
-      "documentation": 31,
+      "unit-test": 162,
+      "documentation": 34,
       "forge-audit": 22,
       "pipeline": 171,
-      "repo-script": 108,
-      "frontend": 88,
+      "repo-script": 109,
+      "frontend": 99,
       "e2e-test": 50
     },
     "byTopDirectory": {
@@ -229,7 +230,7 @@
       ".windsurf": 1,
       "air-mentor-api": 363,
       "CLAUDE.md": 1,
-      "docs": 31,
+      "docs": 34,
       "eslint.config.js": 1,
       "flake.lock": 1,
       "flake.nix": 1,
@@ -241,11 +242,11 @@
       "package.json": 1,
       "pipeline": 171,
       "public": 1,
-      "scripts": 108,
+      "scripts": 109,
       "skills-lock.json": 1,
-      "src": 88,
+      "src": 99,
       "tests-e2e": 50,
-      "tests": 67,
+      "tests": 68,
       "tsconfig.app.json": 1,
       "tsconfig.json": 1,
       "tsconfig.node.json": 1,
@@ -254,6 +255,7 @@
       "vitest.config.ts": 1
     },
     "ignoredByTopDirectory": {
+      ".absolute-human": 1,
       ".agents": 1,
       ".audit": 1,
       ".devin": 1,
@@ -265,6 +267,7 @@
       "air-mentor-api": 9,
       "context_main.json": 1,
       "context.json": 1,
+      "output": 1,
       "scripts": 1,
       "src": 8,
       "tests-e2e": 5,
@@ -276,22 +279,22 @@
     "highFanIn": [
       {
         "path": "src/data.ts",
-        "importers": 73,
+        "importers": 74,
         "role": "frontend"
       },
       {
         "path": "src/api/types.ts",
-        "importers": 52,
+        "importers": 59,
         "role": "frontend"
       },
       {
         "path": "src/domain.ts",
-        "importers": 52,
+        "importers": 54,
         "role": "frontend"
       },
       {
         "path": "src/ui-primitives.tsx",
-        "importers": 46,
+        "importers": 49,
         "role": "frontend"
       },
       {
@@ -316,18 +319,18 @@
       },
       {
         "path": "src/system-admin-ui.tsx",
-        "importers": 23,
+        "importers": 26,
+        "role": "frontend"
+      },
+      {
+        "path": "src/system-admin-live-data.ts",
+        "importers": 20,
         "role": "frontend"
       },
       {
         "path": "tests-e2e/helpers/proof-run-api.ts",
         "importers": 20,
         "role": "e2e-test"
-      },
-      {
-        "path": "src/system-admin-live-data.ts",
-        "importers": 17,
-        "role": "frontend"
       },
       {
         "path": "src/selectors.ts",
@@ -345,9 +348,19 @@
         "role": "frontend"
       },
       {
+        "path": "src/theme.ts",
+        "importers": 10,
+        "role": "frontend"
+      },
+      {
         "path": "scripts/system-admin-live-auth.mjs",
         "importers": 9,
         "role": "repo-script"
+      },
+      {
+        "path": "src/admin/live-app-model.ts",
+        "importers": 9,
+        "role": "frontend"
       },
       {
         "path": "src/repositories.ts",
@@ -356,11 +369,6 @@
       },
       {
         "path": "src/proof-surface-shell.tsx",
-        "importers": 8,
-        "role": "frontend"
-      },
-      {
-        "path": "src/theme.ts",
         "importers": 8,
         "role": "frontend"
       },
@@ -380,22 +388,22 @@
         "role": "frontend"
       },
       {
-        "path": "src/admin/live-app-model.ts",
-        "importers": 7,
-        "role": "frontend"
-      },
-      {
         "path": "src/proof-provenance.ts",
         "importers": 7,
         "role": "frontend"
       },
       {
-        "path": "src/system-admin-live-app.tsx",
-        "importers": 7,
+        "path": "src/admin/live-app-chrome.tsx",
+        "importers": 6,
         "role": "frontend"
       },
       {
         "path": "src/pages/workflow-pages.tsx",
+        "importers": 6,
+        "role": "frontend"
+      },
+      {
+        "path": "src/system-admin-live-app.tsx",
         "importers": 6,
         "role": "frontend"
       },
@@ -405,7 +413,7 @@
         "role": "backend"
       },
       {
-        "path": "src/admin/live-app-chrome.tsx",
+        "path": "src/admin/sections/entity-editor-modal-types.ts",
         "importers": 5,
         "role": "frontend"
       },
@@ -421,6 +429,11 @@
       },
       {
         "path": "src/proof-playback.ts",
+        "importers": 5,
+        "role": "frontend"
+      },
+      {
+        "path": "src/system-admin-overview-helpers.ts",
         "importers": 5,
         "role": "frontend"
       },
@@ -445,6 +458,11 @@
         "role": "frontend"
       },
       {
+        "path": "src/admin/live-app-validation.ts",
+        "importers": 4,
+        "role": "frontend"
+      },
+      {
         "path": "src/app/workspace-helpers.ts",
         "importers": 4,
         "role": "frontend"
@@ -458,27 +476,12 @@
         "path": "src/proof-pilot.ts",
         "importers": 4,
         "role": "frontend"
-      },
-      {
-        "path": "src/proof-simulation-controls.tsx",
-        "importers": 4,
-        "role": "frontend"
-      },
-      {
-        "path": "src/system-admin-overview-helpers.ts",
-        "importers": 4,
-        "role": "frontend"
-      },
-      {
-        "path": "src/system-admin-proof-dashboard-workspace.tsx",
-        "importers": 4,
-        "role": "frontend"
       }
     ],
     "highFanOut": [
       {
         "path": "src/system-admin-live-app.tsx",
-        "localImports": 35,
+        "localImports": 36,
         "role": "frontend"
       },
       {
@@ -492,6 +495,11 @@
         "role": "frontend"
       },
       {
+        "path": "src/admin/live-app-model.ts",
+        "localImports": 18,
+        "role": "frontend"
+      },
+      {
         "path": "src/academic-workspace-route-surface.tsx",
         "localImports": 17,
         "role": "frontend"
@@ -502,8 +510,18 @@
         "role": "frontend"
       },
       {
+        "path": "src/admin/sections/faculty-members-section.tsx",
+        "localImports": 12,
+        "role": "frontend"
+      },
+      {
         "path": "src/academic-faculty-profile-page.tsx",
         "localImports": 11,
+        "role": "frontend"
+      },
+      {
+        "path": "src/admin/sections/students-section.tsx",
+        "localImports": 10,
         "role": "frontend"
       },
       {
@@ -532,16 +550,6 @@
         "role": "frontend"
       },
       {
-        "path": "src/admin/sections/faculty-members-section.tsx",
-        "localImports": 8,
-        "role": "frontend"
-      },
-      {
-        "path": "src/admin/sections/students-section.tsx",
-        "localImports": 8,
-        "role": "frontend"
-      },
-      {
         "path": "src/system-admin-faculty-calendar-workspace.tsx",
         "localImports": 8,
         "role": "frontend"
@@ -552,12 +560,12 @@
         "role": "unit-test"
       },
       {
-        "path": "src/admin/live-app-chrome.tsx",
+        "path": "src/admin/action-queue-rail.tsx",
         "localImports": 7,
         "role": "frontend"
       },
       {
-        "path": "src/admin/live-app-model.ts",
+        "path": "src/admin/live-app-chrome.tsx",
         "localImports": 7,
         "role": "frontend"
       },
@@ -590,6 +598,11 @@
         "path": "tests-e2e/specs/complete-realism-audit-2026-06-04.spec.ts",
         "localImports": 7,
         "role": "e2e-test"
+      },
+      {
+        "path": "src/admin/sections/overview-section.tsx",
+        "localImports": 6,
+        "role": "frontend"
       },
       {
         "path": "src/pages/calendar-pages.tsx",
@@ -642,7 +655,7 @@
         "role": "frontend"
       },
       {
-        "path": "src/admin/sections/overview-section.tsx",
+        "path": "src/admin/sections/faculty-editor-modals.tsx",
         "localImports": 5,
         "role": "frontend"
       },
@@ -665,30 +678,20 @@
         "path": "src/system-admin-history-workspace.tsx",
         "localImports": 5,
         "role": "frontend"
-      },
-      {
-        "path": "tests-e2e/specs/demo-reality-realism-hardening.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/editable-data-recompute.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
       }
     ],
     "topExternalImports": [
       {
         "key": "vitest",
-        "value": 159
+        "value": 160
       },
       {
         "key": "node:fs",
-        "value": 121
+        "value": 123
       },
       {
         "key": "node:path",
-        "value": 102
+        "value": 103
       },
       {
         "key": "drizzle-orm",
@@ -700,7 +703,7 @@
       },
       {
         "key": "react",
-        "value": 76
+        "value": 77
       },
       {
         "key": "pathlib",
@@ -708,14 +711,14 @@
       },
       {
         "key": "node:url",
-        "value": 40
-      },
-      {
-        "key": "argparse",
-        "value": 35
+        "value": 41
       },
       {
         "key": "lucide-react",
+        "value": 36
+      },
+      {
+        "key": "argparse",
         "value": 35
       },
       {
@@ -739,6 +742,10 @@
         "value": 22
       },
       {
+        "key": "framer-motion",
+        "value": 20
+      },
+      {
         "key": "dataclasses",
         "value": 18
       },
@@ -755,7 +762,7 @@
         "value": 17
       },
       {
-        "key": "framer-motion",
+        "key": "@testing-library/react",
         "value": 16
       },
       {
@@ -765,10 +772,6 @@
       {
         "key": "node:crypto",
         "value": 16
-      },
-      {
-        "key": "@testing-library/react",
-        "value": 15
       },
       {
         "key": "datetime",
@@ -854,8 +857,8 @@
       "name": "Frontend live admin shell",
       "file": "src/system-admin-live-app.tsx",
       "role": "frontend",
-      "lines": 5589,
-      "localImports": 35,
+      "lines": 5497,
+      "localImports": 36,
       "symbols": 624,
       "note": "Live System Admin surface and proof playback/admin control entry."
     },
@@ -962,7 +965,7 @@
       "name": "Root package scripts",
       "file": "package.json",
       "role": "build-config",
-      "lines": 84,
+      "lines": 85,
       "localImports": 0,
       "symbols": 0,
       "note": "Primary command registry."
@@ -1491,7 +1494,7 @@
     {
       "file": "src/admin/live-app-chrome.tsx",
       "role": "frontend",
-      "lines": 496,
+      "lines": 502,
       "components": [
         "ActionQueueCard",
         "AdminDetailTabPanel",
@@ -1572,7 +1575,7 @@
     {
       "file": "src/system-admin-live-app.tsx",
       "role": "frontend",
-      "lines": 5589,
+      "lines": 5497,
       "components": [
         "SystemAdminLiveApp"
       ],
@@ -1922,65 +1925,65 @@
       "hooks": []
     },
     {
+      "file": "src/admin/action-queue-rail.tsx",
+      "role": "frontend",
+      "lines": 168,
+      "components": [
+        "ActionQueueRail"
+      ],
+      "hooks": []
+    },
+    {
       "file": "src/admin/sections/entity-editor-modals.tsx",
       "role": "frontend",
-      "lines": 433,
+      "lines": 21,
       "components": [
         "EntityEditorModals"
       ],
       "hooks": []
     },
     {
+      "file": "src/admin/sections/faculty-editor-modals.tsx",
+      "role": "frontend",
+      "lines": 175,
+      "components": [
+        "FacultyEditorModals"
+      ],
+      "hooks": []
+    },
+    {
       "file": "src/admin/sections/faculty-members-section.tsx",
       "role": "frontend",
-      "lines": 676,
+      "lines": 677,
       "components": [
         "FacultyMembersSection"
       ],
       "hooks": []
     },
     {
+      "file": "src/admin/sections/hierarchy-editor-modals.tsx",
+      "role": "frontend",
+      "lines": 111,
+      "components": [
+        "HierarchyEditorModals"
+      ],
+      "hooks": []
+    },
+    {
       "file": "src/admin/sections/overview-section.tsx",
       "role": "frontend",
-      "lines": 173,
+      "lines": 174,
       "components": [
         "OverviewSection"
       ],
       "hooks": []
     },
     {
-      "file": "src/admin/sections/students-section.tsx",
+      "file": "src/admin/sections/student-editor-modals.tsx",
       "role": "frontend",
-      "lines": 621,
+      "lines": 153,
       "components": [
-        "StudentsSection"
-      ],
-      "hooks": []
-    },
-    {
-      "file": "src/components/reevaluating-risk-loader.tsx",
-      "role": "frontend",
-      "lines": 54,
-      "components": [
-        "ReevaluatingRiskLoader"
-      ],
-      "hooks": []
-    },
-    {
-      "file": "src/demo-workspace-badge.tsx",
-      "role": "frontend",
-      "lines": 11,
-      "components": [
-        "DemoWorkspaceBadge"
-      ],
-      "hooks": []
-    },
-    {
-      "file": "src/proof-simulation-controls.tsx",
-      "role": "frontend",
-      "lines": 230,
-      "components": [
-        "ProofSimulationControls"
+        "StudentEditorModals"
       ],
       "hooks": []
     }
@@ -1999,12 +2002,12 @@
       "value": 1228
     },
     {
-      "key": "get",
-      "value": 1047
+      "key": "it",
+      "value": 1048
     },
     {
-      "key": "it",
-      "value": 1045
+      "key": "get",
+      "value": 1047
     },
     {
       "key": "async",
@@ -2036,7 +2039,7 @@
     },
     {
       "key": "has",
-      "value": 474
+      "value": 475
     },
     {
       "key": "toBeTruthy",
@@ -2052,7 +2055,7 @@
     },
     {
       "key": "fn",
-      "value": 366
+      "value": 373
     },
     {
       "key": "first",
@@ -2076,7 +2079,7 @@
     },
     {
       "key": "parse",
-      "value": 266
+      "value": 267
     },
     {
       "key": "toBeGreaterThan",
@@ -2088,15 +2091,15 @@
     },
     {
       "key": "toBeNull",
+      "value": 227
+    },
+    {
+      "key": "getByRole",
       "value": 226
     },
     {
       "key": "isArray",
       "value": 222
-    },
-    {
-      "key": "getByRole",
-      "value": 219
     },
     {
       "key": "waitForTimeout",
@@ -2120,7 +2123,7 @@
     },
     {
       "key": "expectVisible",
-      "value": 187
+      "value": 189
     },
     {
       "key": "number",
@@ -2136,19 +2139,20 @@
     },
     {
       "key": "getByText",
-      "value": 153
+      "value": 154
+    },
+    {
+      "key": "resolve",
+      "value": 148
     },
     {
       "key": "and",
       "value": 147
-    },
-    {
-      "key": "auth",
-      "value": 146
     }
   ],
   "anomalies": [],
   "ignoredExamples": [
+    ".absolute-human/archive/",
     ".agents/",
     ".audit/",
     ".devin/",
@@ -2174,6 +2178,7 @@
     "air-mentor-api/tests/helpers/context.json",
     "context_main.json",
     "context.json",
+    "output/",
     "scripts/context.json",
     "src/admin/context.json",
     "src/admin/sections/context.json",
