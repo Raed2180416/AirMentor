@@ -12,8 +12,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
 | Tracked files | 964 |
 | Tracked bytes | 14.4 MiB |
-| Tracked source/doc lines | 313273 |
-| Non-empty lines | 290214 |
+| Tracked source/doc lines | 313293 |
+| Non-empty lines | 290230 |
 | Comment lines | 6001 |
 | Local dependency edges | 761 |
 | Symbols/blocks discovered | 23615 |

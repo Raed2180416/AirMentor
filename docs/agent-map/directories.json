@@ -23,7 +23,7 @@
   {
     "path": ".absolute-human",
     "fileCount": 1,
-    "bytes": 3460,
+    "bytes": 3479,
     "lines": 113,
     "roles": {
       "other": 1
@@ -134,8 +134,8 @@
   {
     "path": ".github/workflows",
     "fileCount": 5,
-    "bytes": 15808,
-    "lines": 534,
+    "bytes": 16243,
+    "lines": 554,
     "roles": {
       "ci": 5
     },

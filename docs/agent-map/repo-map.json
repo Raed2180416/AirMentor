@@ -152,9 +152,9 @@
   "totals": {
     "trackedFiles": 964,
     "ignoredEntriesObserved": 43,
-    "bytes": 15144408,
-    "lines": 313273,
-    "nonEmptyLines": 290214,
+    "bytes": 15144862,
+    "lines": 313293,
+    "nonEmptyLines": 290230,
     "commentLines": 6001,
     "localDependencyEdges": 761,
     "symbols": 23615,
