@@ -16,9 +16,11 @@ AirMentor is a **real AI-powered academic risk monitoring product for universiti
 
 Before any broad exploration, read these in order:
 1. `.github/copilot-instructions.md` — Product boundaries, verification commands, change rules
-2. `.windsurf/AGENTS.md` — Complete agent playbook, tool ecosystem, role hierarchy
-3. `docs/agent-map/AGENT_REPO_MAP_2026-06-06.md` — Deterministic repo navigation layer
-4. `docs/agent-map/repo-map.json` — Machine-queriable index of files, symbols, routes, tests
+2. `.windsurf/AGENTS.md` — Complete agent playbook, tool ecosystem, role hierarchy, auto-update
+3. `docs/agent-map/DEVIN_AGENT_SETUP.md` — Devin-specific onboarding, skills, MCP plugins
+4. `docs/SKILLS_INDEX.md` — Required skills and plugins for this codebase
+5. `docs/agent-map/AGENT_REPO_MAP_2026-06-06.md` — Deterministic repo navigation layer
+6. `docs/agent-map/repo-map.json` — Machine-queriable index of files, symbols, routes, tests, atoms
 
 ## Communication
 

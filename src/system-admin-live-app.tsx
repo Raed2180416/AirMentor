@@ -28,14 +28,20 @@ import {
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
 import { readActiveDemoWorkspacePointer, writeActiveDemoWorkspacePointer } from './demo-workspace-pointer'
 import type {
+  ApiAcademicFaculty,
   ApiAdminFacultyPasswordSetupResponse,
   ApiAuditEvent,
   ApiAdminFacultyCalendar,
+  ApiBatchProvisioningRequest,
+  ApiBatch,
+  ApiBranch,
   ApiCurriculumFeatureConfigBundle,
   ApiCurriculumFeatureConfigHistoryEvent,
   ApiCurriculumFeatureConfigPreview,
   ApiCurriculumLinkageCandidate,
   ApiCurriculumLinkageGenerationStatus,
+  ApiCurriculumFeatureConfigPayload,
+  ApiDepartment,
   ApiFacultyRecord,
   ApiFacultyAppointment,
   ApiMentorAssignmentBulkApplyResponse,
@@ -45,6 +51,7 @@ import type {
   ApiAdminRequestSummary,
   ApiOfferingStageEligibility,
   ApiOfferingOwnership,
+  ApiPolicyPayload,
   ApiProofDashboard,
   ApiProofRunCheckpointDetail,
   ApiProofRunCheckpointStudentSummary,
@@ -55,7 +62,9 @@ import type {
   ApiRoleGrant,
   ApiSessionResponse,
   ApiSimulationStageCheckpointSummary,
+  ApiStageEvidenceKind,
   ApiStagePolicyOverride,
+  ApiStagePolicyPayload,
   ApiStudentEnrollment,
   ApiStudentRecord,
 } from './api/types'
@@ -93,8 +102,10 @@ import {
   resolveFacultyMember,
   resolveStudent,
   searchLiveAdminWorkspace,
+  type LiveAdminProofProvenance,
   type LiveAdminDataset,
   type LiveAdminRoute,
+  type LiveAdminSearchScope,
   type RegistryFilterState,
   type UniversityScopeState,
 } from './system-admin-live-data'
@@ -106,7 +117,9 @@ import {
   isLeaderLikeOwnership,
   matchesFacultyScope,
   matchesStudentScope,
+  type HierarchyScopeInput,
 } from './system-admin-overview-helpers'
+import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
 import { resolveSelectedAdminRequest } from './admin-request-selection'
 import { areSessionResponsesEquivalent } from './session-response-helpers'
 import {
@@ -134,6 +147,7 @@ import {
   mergeAdminQueueDismissKeys,
 } from './system-admin-action-queue'
 import {
+  AdminBreadcrumbs,
   DayToggle,
   EmptyState,
   EntityButton,
@@ -148,6 +162,7 @@ import {
   SelectInput,
   TextAreaInput,
   TextInput,
+  TOP_TABS,
   formatDate,
   formatDateTime,
   type BreadcrumbSegment,
@@ -168,14 +183,25 @@ import { SystemAdminSessionBoundary } from './system-admin-session-shell'
 import { ProofSurfaceLauncher } from './proof-surface-shell'
 import { ProofSimulationControls, type ProofAdvanceControlMode } from './proof-simulation-controls'
 import {
+  BrandMark,
   Btn,
   Card,
   Chip,
   ModalWorkspace,
+  NotificationCountBadge,
   PageShell,
+  UI_FONT_SIZES,
   getPrimaryActionButtonStyle,
+  getIconButtonStyle,
+  getSegmentedButtonStyle,
+  getSegmentedGroupStyle,
+  getShellBarStyle,
+  withAlpha,
 } from './ui-primitives'
 import { useDismissibleSessionNotice } from './hooks/use-dismissible-session-notice'
+import { OverviewSection } from './admin/sections/overview-section'
+import { StudentsSection } from './admin/sections/students-section'
+import { FacultyMembersSection } from './admin/sections/faculty-members-section'
 
 type SystemAdminLiveAppProps = {
   apiBaseUrl: string
@@ -184,9 +210,7 @@ type SystemAdminLiveAppProps = {
 
 
 // Re-exports for backward compatibility — model + chrome extracted to src/admin/
-// eslint-disable-next-line react-refresh/only-export-components
 export * from './admin/live-app-model'
-// eslint-disable-next-line react-refresh/only-export-components
 export * from './admin/live-app-chrome'
 
 import {
@@ -196,6 +220,7 @@ import {
   DEFAULT_PROGRESSION_RULES,
   ADMIN_DISMISSED_QUEUE_STORAGE_KEY,
   ADMIN_INLINE_ACTION_QUEUE_MIN_VIEWPORT,
+  UNIVERSITY_TABS,
   DEFAULT_STAGE_POLICY,
   STAGE_EVIDENCE_OPTIONS,
   type PolicyFormState,
@@ -220,6 +245,7 @@ import {
   type ProvenancedRecord,
   isUniversityTab,
   applyFacultyVisibilityRules,
+  hasRecordProofProvenance,
   formatRecordProofBanner,
   shouldShowProofCheckpointCgpa,
   shouldOverlayProofCheckpointStudentSummary,
@@ -233,6 +259,7 @@ import {
   defaultStudentForm,
   defaultCurriculumFeatureForm,
   hydrateCurriculumFeatureForm,
+  parseCurriculumFeatureLines,
   buildCurriculumFeaturePayload,
   validateCurriculumFeaturePrerequisites,
   defaultStagePolicyForm,
@@ -246,18 +273,25 @@ import {
   defaultFacultyForm,
   toRegistrySearchScope,
   normalizeHierarchyScope,
+  normalizeAdminSectionCode,
+  buildAdminSectionScopeId,
+  parseAdminSectionScopeId,
   buildAdminActiveScopeChain,
   fadeColor,
   defaultAppointmentForm,
   defaultRoleGrantForm,
   defaultOwnershipForm,
   hydratePolicyForm,
+  buildPolicyPayload,
   toErrorMessage,
   requireText,
   requirePositiveInteger,
+  requireNonNegativeInteger,
   requirePositiveEvenInteger,
   requireDate,
+  requireRange,
   buildValidatedPolicyPayload,
+  formatClockLabel,
   readStringField,
   readNumberField,
   readBooleanField,
@@ -1151,7 +1185,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedProofCheckpointStudentMap = useMemo(() => (
     new Map((selectedProofCheckpointStudents ?? []).map(item => [item.studentId, item]))
   ), [selectedProofCheckpointStudents])
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const studentRegistryProofScopeActive = route.section === 'students' && scopeTargetsCanonicalProofHierarchy(scopedAdminDirectoryFilter)
   const selectedStudentRecord = resolveStudent(operatorData, route.studentId)
   const selectedStudent = selectedStudentRecord && isStudentVisible(operatorData, selectedStudentRecord)
@@ -4982,116 +5015,31 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {dataError ? <InfoBanner tone="error" message={dataError} /> : null}
 
         {/* ========== OVERVIEW ========== */}
+        {/* ========== OVERVIEW ========== */}
         {route.section === 'overview' && (
-          <div style={{ display: 'grid', gap: 18 }}>
-            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: viewportWidth > 1180 ? 'minmax(0, 1.6fr) minmax(280px, 0.95fr)' : 'minmax(0, 1fr)' }}>
-              <Card style={{ padding: 24, display: 'grid', gap: 16, textAlign: 'left', background: `radial-gradient(circle at top left, ${T.accent}14, transparent 34%), linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
-                <div style={{ display: 'grid', gap: 10 }}>
-                  <div style={{ ...mono, fontSize: 10, color: ADMIN_SECTION_TONES.overview, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Sysadmin Control Plane</div>
-                  <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text }}>System Admin Control Plane</div>
-                  <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.9, maxWidth: 760 }}>
-                    Use this workspace for full university setup, registry cleanup, faculty ownership, proof verification, and governed requests. The canonical MNC proof batch stays available as a dedicated preview path, but the rest of admin is no longer forced into that batch.
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start', maxWidth: 620 }}>
-                  <HeroBadge color={T.accent} compact><Bell size={11} /> Action Queue {actionQueueCount}</HeroBadge>
-                  <HeroBadge color={T.warning} compact><Clock3 size={11} /> Open Requests {openRequests.length}</HeroBadge>
-                  <HeroBadge color={T.danger} compact><RefreshCw size={11} /> Hidden Records {hiddenItemCount}</HeroBadge>
-                  <HeroBadge color={remindersSupported ? T.success : T.orange} compact><CheckCircle2 size={11} /> {remindersSupported ? `Private Reminders ${pendingReminders.length}` : 'Reminder API offline on this backend'}</HeroBadge>
-                </div>
-                <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-                  <SectionLaunchCard
-                    title="Proof"
-                    caption={activeRunDetail
-                      ? `${activeRunDetail.monitoringSummary.activeReassessmentCount} queue · ${activeRunDetail.monitoringSummary.acknowledgementCount} acknowledgements`
-                      : 'No active proof run'}
-                    helper={activeRunDetail
-                      ? `${proofLauncherStageLabel} · ${activeRunDetail.monitoringSummary.resolutionCount} resolutions · dedicated dashboard route.`
-                      : 'Open the dedicated proof dashboard to validate imports, stage runs, and monitor proof acknowledgements before advancing the branch.'}
-                    icon={<Layers3 size={18} />}
-                    tone={ADMIN_SECTION_TONES.overview}
-                    active={false}
-                    onClick={() => navigate({ section: 'proof-dashboard' })}
-                  />
-                  <SectionLaunchCard
-                    title="University"
-                    caption={`${visibleAcademicFaculties.length} faculties · ${visibleDepartments.length} departments · ${visibleBranches.length} branches`}
-                    helper="Selector-driven hierarchy control for the proof branch faculty, department, branch, year, section, policy bands, and course tables."
-                    icon={<LayoutDashboard size={18} />}
-                    tone={ADMIN_SECTION_TONES.faculties}
-                    active={false}
-                    onClick={() => navigate({ section: 'faculties' })}
-                  />
-                  <SectionLaunchCard
-                    title="Students"
-                    caption={overviewHierarchyScope
-                      ? `${overviewVisibleStudentCount} records · ${overviewVisibleMentoredCount} mentored`
-                      : `${overviewGlobalStudentCount} records · ${overviewGlobalMentoredCount} mentored`}
-                    helper={overviewHierarchyScope
-                      ? `Canonical student identity, mentor linkage, and semester progression filtered to ${overviewScopeLabel ?? 'the active academic scope'}.`
-                      : 'Open the proof-branch student registry directly, or set a faculty, department, branch, year, or section in the university workspace to preserve scope.'}
-                    icon={<GraduationCap size={18} />}
-                    tone={ADMIN_SECTION_TONES.students}
-                    active={false}
-                    onClick={() => navigate({ section: 'students' })}
-                  />
-                  <SectionLaunchCard
-                    title="Faculty"
-                    caption={overviewFacultyCaption}
-                    helper={overviewHierarchyScope
-                      ? `Appointments, permissions, class ownership, and timetable review filtered to ${overviewScopeLabel ?? 'the active academic scope'}.`
-                      : 'Global appointments, permissions, class ownership, and timetable review. Select an academic scope to narrow these totals.'}
-                    icon={<UserCog size={18} />}
-                    tone={ADMIN_SECTION_TONES['faculty-members']}
-                    active={false}
-                    onClick={() => navigate({ section: 'faculty-members' })}
-                  />
-                </div>
-              </Card>
-
-              <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
-                <OverviewSupportCard title="Requests" value={String(openRequests.length)} helper="Governed items waiting in the action rail." tone={T.warning} onClick={() => navigate({ section: 'requests' })} />
-                <OverviewSupportCard title="Hidden Records" value={String(hiddenItemCount)} helper="Archived or deleted records with restore visibility." tone={T.danger} onClick={() => navigate({ section: 'history' })} />
-                <OverviewSupportCard
-                  title="Mentor Gaps"
-                  value={String(overviewVisibleMentorGapCount)}
-                  helper={overviewHierarchyScope
-                    ? `Students still missing an active mentor linkage inside ${overviewScopeLabel ?? 'the active academic scope'}.`
-                    : 'No hierarchy scope selected yet. Mentor-gap totals stay empty until you select a faculty, department, branch, year, or section.'}
-                  tone={ADMIN_SECTION_TONES.students}
-                  onClick={() => navigate({ section: 'students' })}
-                />
-                <OverviewSupportCard
-                  title="Teaching Load"
-                  value={String(overviewCounts.ownershipCount)}
-                  helper={overviewHierarchyScope
-                    ? `Active teaching ownership records mapped to faculty inside ${overviewScopeLabel ?? 'the active academic scope'}.`
-                    : 'No hierarchy scope selected yet. Teaching-load totals stay empty until you choose the academic slice you want to inspect.'}
-                  tone={ADMIN_SECTION_TONES['faculty-members']}
-                  onClick={() => navigate({ section: 'faculty-members' })}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-              <Card style={{ padding: 16, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, display: 'grid', gap: 10 }}>
-                <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Immediate Watchlist</div>
-                <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>What needs eyes first</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                  {openRequests.length > 0
-                    ? `${openRequests[0].summary} is currently the highest-visibility governed request.`
-                    : 'No governed requests are waiting right now.'}
-                </div>
-              </Card>
-              <Card style={{ padding: 16, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, display: 'grid', gap: 10 }}>
-                <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Scoped Navigation</div>
-                <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Rail state carries forward</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                  Deep faculty, student, and faculty-member searches now respect the active hierarchy scope so you can move across panels without rebuilding context.
-                </div>
-              </Card>
-            </div>
-          </div>
+          <OverviewSection
+            viewportWidth={viewportWidth}
+            actionQueueCount={actionQueueCount}
+            openRequests={openRequests}
+            hiddenItemCount={hiddenItemCount}
+            remindersSupported={remindersSupported}
+            pendingReminders={pendingReminders}
+            activeRunDetail={activeRunDetail}
+            proofLauncherStageLabel={proofLauncherStageLabel}
+            visibleAcademicFaculties={visibleAcademicFaculties}
+            visibleDepartments={visibleDepartments}
+            visibleBranches={visibleBranches}
+            overviewHierarchyScope={overviewHierarchyScope}
+            overviewVisibleStudentCount={overviewVisibleStudentCount}
+            overviewVisibleMentoredCount={overviewVisibleMentoredCount}
+            overviewGlobalStudentCount={overviewGlobalStudentCount}
+            overviewGlobalMentoredCount={overviewGlobalMentoredCount}
+            overviewScopeLabel={overviewScopeLabel}
+            overviewFacultyCaption={overviewFacultyCaption}
+            overviewVisibleMentorGapCount={overviewVisibleMentorGapCount}
+            overviewCounts={overviewCounts}
+            navigate={navigate}
+          />
         )}
 
         {/* ========== PROOF DASHBOARD ========== */}
@@ -5357,920 +5305,138 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         )}
 
         {/* ========== STUDENTS ========== */}
+        {/* ========== STUDENTS ========== */}
         {route.section === 'students' && (
-          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: registryPageColumns }}>
-            <Card style={{ padding: 18, display: 'grid', gap: 12, gridTemplateRows: 'auto auto auto minmax(0, 1fr)', alignContent: 'start', maxHeight: registryIsSingleColumn ? 'none' : 'calc(100vh - 200px)', overflow: registryIsSingleColumn ? 'visible' : 'hidden' }}>
-              <SectionHeading
-                title="Students"
-                eyebrow="Registry"
-                caption={studentRegistryCaption}
-                toneColor={ADMIN_SECTION_TONES.students}
-              />
-              <div style={{ display: 'grid', gap: 12 }}>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <Btn type="button" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}><Plus size={14} /> New Student</Btn>
-                  <Chip color={T.accent}>{studentRegistryItems.length} active</Chip>
-                  <Chip color={T.warning}>{studentRegistryItems.filter(item => !item.activeMentorAssignment).length} mentor gaps</Chip>
-                  {studentRegistryProofOverlayActive && selectedProofCheckpoint ? <Chip color={T.success}>{`Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}`}</Chip> : null}
-                  {studentRegistryScopeLabel ? <Chip color={ADMIN_SECTION_TONES.students}>{studentRegistryScopeLabel}</Chip> : <Chip color={T.dim}>All students</Chip>}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: registryFilterColumns, gap: 10 }}>
-                  <div>
-                    <FieldLabel>Faculty</FieldLabel>
-                    <SelectInput value={effectiveStudentRegistryFilter.academicFacultyId} onChange={event => setStudentRegistryFilter({
-                      academicFacultyId: event.target.value,
-                      departmentId: '',
-                      branchId: '',
-                      batchId: '',
-                      sectionCode: '',
-                    })}>
-                      <option value="">All Faculties</option>
-                      {visibleAcademicFaculties.map(item => <option key={item.academicFacultyId} value={item.academicFacultyId}>{item.name}</option>)}
-                    </SelectInput>
-                  </div>
-                  <div>
-                    <FieldLabel>Department</FieldLabel>
-                    <SelectInput value={effectiveStudentRegistryFilter.departmentId} onChange={event => setStudentRegistryFilter(prev => ({
-                      ...prev,
-                      departmentId: event.target.value,
-                      branchId: '',
-                      batchId: '',
-                      sectionCode: '',
-                    }))}>
-                      <option value="">All Departments</option>
-                      {studentFilterDepartments.map(item => <option key={item.departmentId} value={item.departmentId}>{item.name}</option>)}
-                    </SelectInput>
-                  </div>
-                  <div>
-                    <FieldLabel>Branch</FieldLabel>
-                    <SelectInput value={effectiveStudentRegistryFilter.branchId} onChange={event => setStudentRegistryFilter(prev => ({
-                      ...prev,
-                      branchId: event.target.value,
-                      batchId: '',
-                      sectionCode: '',
-                    }))}>
-                      <option value="">All Branches</option>
-                      {studentFilterBranches.map(item => <option key={item.branchId} value={item.branchId}>{item.name}</option>)}
-                    </SelectInput>
-                  </div>
-                  <div>
-                    <FieldLabel>Year</FieldLabel>
-                    <SelectInput value={effectiveStudentRegistryFilter.batchId} onChange={event => setStudentRegistryFilter(prev => ({
-                      ...prev,
-                      batchId: event.target.value,
-                      sectionCode: '',
-                    }))}>
-                      <option value="">All Years</option>
-                      {studentFilterBatches.map(item => <option key={item.batchId} value={item.batchId}>{deriveCurrentYearLabel(item.currentSemester)} · {item.batchLabel}</option>)}
-                    </SelectInput>
-                  </div>
-                  <div>
-                    <FieldLabel>Section</FieldLabel>
-                    <SelectInput value={effectiveStudentRegistryFilter.sectionCode} onChange={event => setStudentRegistryFilter(prev => ({ ...prev, sectionCode: event.target.value }))}>
-                      <option value="">All Sections</option>
-                      {studentFilterSections.map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>)}
-                    </SelectInput>
-                  </div>
-                </div>
-                <SearchField
-                  value={studentRegistrySearch}
-                  onChange={setStudentRegistrySearch}
-                  placeholder="Search student, USN, branch, section, email..."
-                  ariaLabel="Student registry search"
-                />
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <Btn type="button" variant="ghost" onClick={() => setStudentRegistryFilter(hydrateRegistryFilter(registryScope))}>Reset Filters</Btn>
-                  <Chip color={T.dim}>Sorted A-Z</Chip>
-                </div>
-              </div>
-              <div className="scroll-pane" style={{ display: 'grid', gap: 8, minHeight: 0, overflowY: registryIsSingleColumn ? 'visible' : 'auto', paddingRight: 4 }}>
-                {studentRegistryViewItems.map(({ student, proofOverlayActive, checkpointSummary, displayCgpa, displaySemester, showCheckpointCgpa }) => (
-                  <EntityButton key={student.studentId} selected={route.studentId === student.studentId} onClick={() => navigate({ section: 'students', studentId: student.studentId })}>
-                    <div style={{ display: 'grid', gap: 10 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
-                          <div style={{ width: 34, height: 34, borderRadius: 12, background: `${ADMIN_SECTION_TONES.students}18`, color: ADMIN_SECTION_TONES.students, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...sora, fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
-                            {student.name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase() ?? '').join('') || 'ST'}
-                          </div>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{student.name}</div>
-                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{student.usn} · {student.activeAcademicContext?.branchName ?? 'No branch mapped'}</div>
-                          </div>
-                        </div>
-                        <Chip color={student.activeMentorAssignment ? T.success : T.warning} size={9}>{student.activeMentorAssignment ? 'Mentored' : 'Mentor missing'}</Chip>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {student.activeAcademicContext?.departmentName ? <Chip color={T.warning} size={9}>{student.activeAcademicContext.departmentName}</Chip> : null}
-                        {student.activeAcademicContext?.sectionCode ? <Chip color={T.accent} size={9}>Sec {student.activeAcademicContext.sectionCode}</Chip> : null}
-                        {checkpointSummary?.currentRiskBand ? <Chip color={checkpointSummary.currentRiskBand.toLowerCase() === 'high' ? T.danger : checkpointSummary.currentRiskBand.toLowerCase() === 'medium' ? T.warning : T.success} size={9}>{`${checkpointSummary.currentRiskBand} risk`}</Chip> : null}
-                        {checkpointSummary?.currentQueueState ? <Chip color={T.orange} size={9}>{checkpointSummary.currentQueueState}</Chip> : null}
-                        {showCheckpointCgpa && typeof displayCgpa === 'number' ? <Chip color={T.success} size={9}>CGPA {displayCgpa.toFixed(2)}</Chip> : null}
-                      </div>
-                      <div style={{ ...mono, fontSize: 10, color: T.success, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
-                        Semester {displaySemester ?? '—'}{checkpointSummary?.primaryCourseCode ? ` · ${checkpointSummary.primaryCourseCode}` : ''}{proofOverlayActive && selectedProofCheckpoint ? ` · ${selectedProofCheckpoint.stageLabel}` : ''} · {student.email ?? 'Email not set'} · {student.phone ?? 'Phone not set'}
-                      </div>
-                    </div>
-                  </EntityButton>
-                ))}
-                {studentRegistryItems.length === 0 ? <InfoBanner message={studentRegistryEmptyMessage} /> : null}
-              </div>
-            </Card>
-
-            <div style={{ display: 'grid', gap: 16 }}>
-              <Card
-                style={{
-                  position: 'sticky',
-                  top: 0,
-                  zIndex: 2,
-                  padding: 18,
-                  display: 'grid',
-                  gap: 14,
-                  minHeight: 238,
-                  alignContent: 'start',
-                  background: isLightTheme(themeMode) ? fadeColor(T.surface, 'f0') : fadeColor(T.surface, 'ea'),
-                  backdropFilter: 'blur(12px)',
-                }}
-                data-proof-surface="system-admin-student-drilldown"
-                data-proof-student-id={selectedStudent?.studentId ?? undefined}
-              >
-                <SectionHeading
-                  title={selectedStudent ? selectedStudent.name : 'Create Student'}
-                  eyebrow="Student Workspace"
-                  caption={selectedStudent
-                    ? `Identity, academic context, mentor linkage, progression review, and history stay in one focused workspace.${selectedStudentRouteIsExplicit ? ' Opened from the explicit /admin/students/:id path.' : ''}`
-                    : 'Create the student identity first, then move through academic context, mentoring, and progression from the tabs below.'}
-                />
-                {selectedStudent ? (
-                  <>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <Chip color={selectedStudentRouteIsExplicit ? T.accent : T.dim}>{selectedStudentRouteIsExplicit ? 'Direct drilldown' : 'Filtered registry'}</Chip>
-                      <Chip color={selectedStudentScopeMismatch ? T.warning : T.success}>{selectedStudentScopeMismatch ? 'Outside current scope' : 'Scope aligned'}</Chip>
-                      {selectedStudentCheckpointSummary && selectedProofCheckpoint ? <Chip color={T.orange}>{`Proof snapshot · Sem ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}`}</Chip> : null}
-                      <Chip color={selectedStudentPolicyLoading ? T.dim : selectedStudentPolicy ? T.success : T.dim}>{selectedStudentPolicyLoading ? 'Loading policy…' : selectedStudentPolicy ? 'Policy loaded' : 'Policy unavailable'}</Chip>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 10 }}>
-                      <AdminMiniStat label="CGPA" value={selectedStudentCheckpointCgpaVisible ? selectedStudentDisplayCgpa.toFixed(2) : 'Deferred'} tone={T.success} />
-                      <AdminMiniStat label="Semester" value={String(selectedStudentDisplaySemester ?? '—')} tone={T.accent} />
-                      <AdminMiniStat label="Enrollments" value={String(selectedStudent.enrollments.length)} tone={T.warning} />
-                      <AdminMiniStat label="Mentor Links" value={String(selectedStudent.mentorAssignments.length)} tone={ADMIN_SECTION_TONES['faculty-members']} />
-                      <AdminMiniStat label="Audit Events" value={String(studentAuditEvents.length)} tone={T.orange} />
-                    </div>
-                  </>
-                ) : null}
-                <AdminDetailTabs
-                  activeTab={studentDetailTab}
-                  onChange={tabId => setStudentDetailTab(tabId as StudentDetailTab)}
-                  ariaLabel="Student detail sections"
-                  idBase="student-detail"
-                  tabs={[
-                    { id: 'profile', label: 'Profile' },
-                    { id: 'academic', label: 'Academic', count: selectedStudent?.enrollments.length ?? 0, disabled: !selectedStudent },
-                    { id: 'mentor', label: 'Mentor', count: selectedStudent?.mentorAssignments.length ?? 0, disabled: !selectedStudent },
-                    { id: 'progression', label: 'Progression', disabled: !selectedStudent },
-                    { id: 'history', label: 'History', count: studentAuditEvents.length, disabled: !selectedStudent },
-                  ]}
-                />
-              </Card>
-
-              {studentDetailTab === 'profile' && (
-              <AdminDetailTabPanel idBase="student-detail" tabId="profile">
-              <Card style={{ padding: 18, display: 'grid', gap: 14 }} data-proof-surface="system-admin-student-profile" data-proof-student-id={selectedStudent?.studentId ?? undefined}>
-                <SectionHeading title={selectedStudent ? 'Student Detail' : 'Create Student'} eyebrow={selectedStudent ? selectedStudent.name : 'New record'} caption="Save the identity record first, then maintain enrollment, mentor, and promotion details below." />
-                {selectedStudent ? (
-                  <>
-                    {!selectedStudentPolicy && !selectedStudentPolicyLoading ? <InfoBanner message="No resolved scope policy snapshot is loaded for this student yet. Progression guidance falls back to the default guardrails until a policy is available." /> : null}
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <Chip color={T.accent}>{selectedStudent.usn}</Chip>
-                      {selectedStudentCheckpointCgpaVisible ? <Chip color={T.success}>CGPA {selectedStudentDisplayCgpa.toFixed(2)}</Chip> : null}
-                      <Chip color={T.warning}>{selectedStudent.activeAcademicContext?.departmentName ?? 'No department'}</Chip>
-                      {selectedStudentCheckpointSummary?.currentRiskBand ? <Chip color={selectedStudentCheckpointSummary.currentRiskBand.toLowerCase() === 'high' ? T.danger : selectedStudentCheckpointSummary.currentRiskBand.toLowerCase() === 'medium' ? T.warning : T.success}>{`${selectedStudentCheckpointSummary.currentRiskBand} risk`}</Chip> : null}
-                      <Chip color={selectedStudent.status === 'active' ? T.success : T.danger}>{selectedStudent.status}</Chip>
-                    </div>
-                    {selectedStudentCheckpointBanner ? <InfoBanner tone="neutral" message={selectedStudentCheckpointBanner} /> : null}
-                    {selectedStudentProofBanner ? <InfoBanner tone="neutral" message={selectedStudentProofBanner} /> : null}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
-                      <Card style={{ padding: 14, background: T.surface2 }}>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Policy Snapshot</div>
-                        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>
-                          {selectedStudentPolicyLoading ? 'Loading policy…' : selectedStudentPolicy ? `Min CGPA ${selectedStudentPromotionRules.minimumCgpaForPromotion.toFixed(1)}` : 'No policy snapshot'}
-                        </div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                          {selectedStudentPolicyLoading ? 'Awaiting policy resolution…' : selectedStudentPolicy ? `Pass threshold ${selectedStudentPromotionRules.passMarkPercent}% · backlog guard ${selectedStudentPromotionRules.requireNoActiveBacklogs ? 'on' : 'off'}` : 'Configured defaults only until a resolved scope policy loads.'}
-                        </div>
-                      </Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Academic Lineage</div>
-                        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.activeAcademicContext ? `${selectedStudent.activeAcademicContext.branchName ?? 'Branch'} · Sem ${selectedStudentDisplaySemester ?? '—'}` : 'No active academic context'}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{selectedStudentCheckpointSummary?.primaryCourseCode ? `${selectedStudentCheckpointSummary.primaryCourseCode} · ${selectedStudentCheckpointSummary.primaryCourseTitle}` : selectedStudent.activeAcademicContext?.sectionCode ? `Section ${selectedStudent.activeAcademicContext.sectionCode}` : 'No section assigned'}</div>
-                      </Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Mentor Link</div>
-                        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.activeMentorAssignment ? 'Mentor linked' : 'No mentor linked'}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{selectedStudent.mentorAssignments.length} historical assignment{selectedStudent.mentorAssignments.length === 1 ? '' : 's'}</div>
-                      </Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Audit Trail</div>
-                        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{studentAuditEvents.length} events</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{studentAuditLoading ? 'Loading history…' : studentAuditEvents.length > 0 ? 'Change history is available.' : 'No audit events recorded yet.'}</div>
-                      </Card>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Name</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.name}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Roll Number</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.rollNumber ?? 'Not set'}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Admission Date</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{formatDate(selectedStudent.admissionDate)}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedStudent.email ?? 'Not set'}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Phone</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedStudent.phone ?? 'Not set'}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current Context</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedStudent.activeAcademicContext ? `${selectedStudent.activeAcademicContext.branchName ?? 'Branch'} · Sem ${selectedStudentDisplaySemester ?? '—'} · Sec ${selectedStudent.activeAcademicContext.sectionCode}` : 'No active academic context'}</div></Card>
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn type="button" size="sm" onClick={() => setEditingEntity('student-profile')}>Edit Student</Btn>
-                      <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveStudent()}>Delete Student</Btn>
-                      <Btn type="button" size="sm" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>Back to Registry</Btn>
-                      <Btn type="button" size="sm" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>{selectedStudent ? 'Create Student' : 'New Student'}</Btn>
-                    </div>
-                  </>
-                ) : (
-                  <form onSubmit={handleSaveStudent} style={{ display: 'grid', gap: 10 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                      <div><FieldLabel>Name</FieldLabel><TextInput value={studentForm.name} onChange={event => setStudentForm(prev => ({ ...prev, name: event.target.value }))} placeholder="Student name" /></div>
-                      <div><FieldLabel>University ID / USN</FieldLabel><TextInput value={studentForm.usn} onChange={event => setStudentForm(prev => ({ ...prev, usn: event.target.value }))} placeholder="1MS22CS001" /></div>
-                      <div><FieldLabel>Roll Number</FieldLabel><TextInput value={studentForm.rollNumber} onChange={event => setStudentForm(prev => ({ ...prev, rollNumber: event.target.value }))} placeholder="Optional" /></div>
-                      <div><FieldLabel>Admission Date</FieldLabel><TextInput value={studentForm.admissionDate} onChange={event => setStudentForm(prev => ({ ...prev, admissionDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
-                      <div><FieldLabel>Email</FieldLabel><TextInput value={studentForm.email} onChange={event => setStudentForm(prev => ({ ...prev, email: event.target.value }))} placeholder="student@campus.edu" /></div>
-                      <div><FieldLabel>Phone</FieldLabel><TextInput value={studentForm.phone} onChange={event => setStudentForm(prev => ({ ...prev, phone: event.target.value }))} placeholder="+91…" /></div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn type="submit">Create Student</Btn>
-                      <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>Clear Form</Btn>
-                    </div>
-                  </form>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-
-              {studentDetailTab === 'academic' && (
-              <AdminDetailTabPanel idBase="student-detail" tabId="academic">
-              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
-                <SectionHeading title="Academic Context" eyebrow="Enrollment" caption="Keep branch, term, section, and academic standing aligned with the canonical term structure." />
-                {!selectedStudent ? <EmptyState title="Save the student first" body="Enrollment editing becomes available after the student record exists." /> : (
-                  <>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      {selectedStudent.enrollments.length === 0 ? <InfoBanner message="No enrollment trail exists yet for this student." /> : selectedStudent.enrollments.map(enrollment => {
-                        const term = data.terms.find(item => item.termId === enrollment.termId)
-                        const branch = resolveBranch(data, enrollment.branchId)
-                        return (
-                          <Card key={enrollment.enrollmentId} style={{ padding: 12, background: T.surface2 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                              <div>
-                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{branch?.name ?? 'Unknown branch'} · Semester {term?.semesterNumber ?? '—'} · Section {enrollment.sectionCode}</div>
-                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{term?.academicYearLabel ?? enrollment.termId} · {formatDate(enrollment.startDate)} to {enrollment.endDate ? formatDate(enrollment.endDate) : 'Active'} · {enrollment.academicStatus}</div>
-                              </div>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Btn type="button" size="sm" variant="ghost" onClick={() => { startEditingEnrollment(enrollment); setEditingEntity('student-enrollment') }}>Edit</Btn>
-                                <Btn type="button" size="sm" variant="danger" onClick={() => void handleCloseEnrollment(enrollment)}>Close</Btn>
-                              </div>
-                            </div>
-                          </Card>
-                        )
-                      })}
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-                      <Btn type="button" size="sm" onClick={() => {
-                        setEnrollmentForm({
-                          ...defaultEnrollmentForm(),
-                          branchId: selectedStudent.activeAcademicContext?.branchId ?? '',
-                          termId: selectedStudent.activeAcademicContext?.termId ?? '',
-                          sectionCode: selectedStudent.activeAcademicContext?.sectionCode ?? 'A',
-                        })
-                        setEditingEntity('student-enrollment')
-                      }}>Add New Enrollment</Btn>
-                    </div>
-                  </>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-
-              {studentDetailTab === 'mentor' && (
-              <AdminDetailTabPanel idBase="student-detail" tabId="mentor">
-              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
-                <SectionHeading title="Mentor Linkage" eyebrow="Faculty" caption="Only faculty with an active mentor permission are shown as eligible mentors." />
-                {!selectedStudent ? <EmptyState title="Save the student first" body="Mentor assignment becomes available after the student record exists." /> : (
-                  <>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      {selectedStudent.mentorAssignments.length === 0 ? <InfoBanner message="No mentor assignments recorded yet." /> : selectedStudent.mentorAssignments.map(assignment => {
-                        const mentor = resolveFacultyMember(data, assignment.facultyId)
-                        return (
-                          <Card key={assignment.assignmentId} style={{ padding: 12, background: T.surface2 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                              <div>
-                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{mentor?.displayName ?? assignment.facultyId}</div>
-                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{assignment.source} · {formatDate(assignment.effectiveFrom)} to {assignment.effectiveTo ? formatDate(assignment.effectiveTo) : 'Active'}</div>
-                              </div>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Btn type="button" size="sm" variant="ghost" onClick={() => { startEditingMentorAssignment(assignment); setEditingEntity('student-mentor') }}>Edit</Btn>
-                                <Btn type="button" size="sm" variant="danger" onClick={() => void handleEndMentorAssignment(assignment)}>End</Btn>
-                              </div>
-                            </div>
-                          </Card>
-                        )
-                      })}
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-                      <Btn type="button" size="sm" onClick={() => {
-                        setMentorForm(defaultMentorAssignmentForm())
-                        setEditingEntity('student-mentor')
-                      }}>Add Mentor Link</Btn>
-                    </div>
-                  </>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-
-              {studentDetailTab === 'progression' && (
-              <AdminDetailTabPanel idBase="student-detail" tabId="progression">
-              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
-                <SectionHeading title="Promotion Review" eyebrow="Semester Progression" caption="Recommendations use the configured CGPA rule and backlog guard, then wait for explicit admin confirmation." />
-                {!selectedStudent ? <EmptyState title="Select a student" body="Promotion review appears when a student with an academic context is selected." /> : !selectedStudent.activeAcademicContext ? (
-                  <EmptyState title="No active academic context" body="Create or restore an enrollment before using the promotion panel." />
-                ) : (
-                  <>
-                    {!selectedStudentPolicy && !selectedStudentPolicyLoading ? <InfoBanner message="No resolved scope policy snapshot is loaded for this student. The progression panel is using the default guardrails only." /> : null}
-                    {selectedStudentCheckpointBanner ? <InfoBanner tone="neutral" message={selectedStudentCheckpointBanner} /> : null}
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <Chip color={selectedStudentPromotionRecommended ? T.success : T.warning}>{selectedStudentPromotionRecommended ? 'Recommended' : 'Hold for review'}</Chip>
-                      {selectedStudentCheckpointCgpaVisible ? <Chip color={T.accent}>Current CGPA {selectedStudentDisplayCgpa.toFixed(2)}</Chip> : <Chip color={T.dim}>CGPA deferred at this checkpoint</Chip>}
-                      <Chip color={T.warning}>Min CGPA {selectedStudentPromotionRules.minimumCgpaForPromotion.toFixed(1)}</Chip>
-                      {selectedStudentCheckpointSummary?.currentQueueState ? <Chip color={T.orange}>{selectedStudentCheckpointSummary.currentQueueState}</Chip> : null}
-                      {selectedStudentPolicyLoading ? <Chip color={T.dim}>Loading policy…</Chip> : null}
-                    </div>
-                    <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.9 }}>
-                      Current semester: {selectedStudentDisplaySemester ?? '—'} · Academic status: {selectedStudent.activeAcademicContext.academicStatus}{selectedStudentDisplayBacklogCount != null ? ` · Backlogs ${selectedStudentDisplayBacklogCount}` : ''}<br />
-                      Promotion rule: {selectedStudentPromotionRules.requireNoActiveBacklogs ? 'Require no active backlogs' : 'Backlog check disabled'} · Pass threshold {selectedStudentPromotionRules.passMarkPercent}%
-                    </div>
-                    {selectedStudentNextTerms.length === 0 ? <InfoBanner message="No next-semester term is configured yet for this branch. Add the next term in the university workspace first." /> : (
-                      <div style={{ display: 'grid', gap: 8 }}>
-                        {selectedStudentNextTerms.map(term => (
-                          <Card key={term.termId} style={{ padding: 12, background: T.surface2, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                            <div>
-                              <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{term.academicYearLabel} · Semester {term.semesterNumber}</div>
-                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{formatDate(term.startDate)} to {formatDate(term.endDate)}</div>
-                            </div>
-                            <Btn type="button" onClick={() => void handlePromoteStudent(term.termId)}>Promote Into This Term</Btn>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-
-              {studentDetailTab === 'history' && (
-              <AdminDetailTabPanel idBase="student-detail" tabId="history">
-              <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
-                <SectionHeading title="History" eyebrow="Audit Trail" caption="Every student, enrollment, and mentor change lands here so deletions and corrections stay traceable." />
-                {studentAuditLoading ? <InfoBanner message="Loading audit history…" /> : null}
-                {!studentAuditLoading && studentAuditEvents.length === 0 ? <EmptyState title="No audit trail yet" body="Student create/update activity will appear here." /> : (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {studentAuditEvents.slice(0, 16).map(item => (
-                      <Card key={item.auditEventId} style={{ padding: 12, background: T.surface2 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{item.entityType} · {summarizeAuditEvent(item)}</div>
-                          <Chip color={T.accent} size={9}>{formatDateTime(item.createdAt)}</Chip>
-                        </div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>{item.entityId}{item.actorRole ? ` · ${item.actorRole}` : ''}</div>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-            </div>
-          </div>
+          <StudentsSection
+            data={data}
+            route={route}
+            themeMode={themeMode}
+            registryPageColumns={registryPageColumns}
+            registryFilterColumns={registryFilterColumns}
+            registryIsSingleColumn={registryIsSingleColumn}
+            registryScope={registryScope}
+            navigate={navigate}
+            studentRegistryItems={studentRegistryItems}
+            studentRegistryViewItems={studentRegistryViewItems}
+            studentRegistryCaption={studentRegistryCaption}
+            studentRegistryEmptyMessage={studentRegistryEmptyMessage}
+            studentRegistryScopeLabel={studentRegistryScopeLabel}
+            studentRegistryProofOverlayActive={studentRegistryProofOverlayActive}
+            studentRegistrySearch={studentRegistrySearch}
+            setStudentRegistrySearch={setStudentRegistrySearch}
+            effectiveStudentRegistryFilter={effectiveStudentRegistryFilter}
+            setStudentRegistryFilter={setStudentRegistryFilter}
+            studentFilterDepartments={studentFilterDepartments}
+            studentFilterBranches={studentFilterBranches}
+            studentFilterBatches={studentFilterBatches}
+            studentFilterSections={studentFilterSections}
+            visibleAcademicFaculties={visibleAcademicFaculties}
+            selectedStudent={selectedStudent}
+            selectedStudentRouteIsExplicit={selectedStudentRouteIsExplicit}
+            selectedStudentScopeMismatch={selectedStudentScopeMismatch}
+            selectedStudentDisplayCgpa={selectedStudentDisplayCgpa}
+            selectedStudentDisplaySemester={selectedStudentDisplaySemester}
+            selectedStudentDisplayBacklogCount={selectedStudentDisplayBacklogCount}
+            selectedStudentCheckpointCgpaVisible={selectedStudentCheckpointCgpaVisible}
+            selectedStudentCheckpointSummary={selectedStudentCheckpointSummary}
+            selectedStudentCheckpointBanner={selectedStudentCheckpointBanner}
+            selectedStudentProofBanner={selectedStudentProofBanner}
+            selectedStudentPolicy={selectedStudentPolicy}
+            selectedStudentPolicyLoading={selectedStudentPolicyLoading}
+            selectedStudentPromotionRecommended={selectedStudentPromotionRecommended}
+            selectedStudentPromotionRules={selectedStudentPromotionRules}
+            selectedStudentNextTerms={selectedStudentNextTerms}
+            selectedProofCheckpoint={selectedProofCheckpoint}
+            studentDetailTab={studentDetailTab}
+            setStudentDetailTab={setStudentDetailTab}
+            studentForm={studentForm}
+            setStudentForm={setStudentForm}
+            enrollmentForm={enrollmentForm}
+            setEnrollmentForm={setEnrollmentForm}
+            mentorForm={mentorForm}
+            setMentorForm={setMentorForm}
+            studentAuditLoading={studentAuditLoading}
+            studentAuditEvents={studentAuditEvents}
+            handleSaveStudent={handleSaveStudent}
+            handleArchiveStudent={handleArchiveStudent}
+            handleCloseEnrollment={handleCloseEnrollment}
+            handleEndMentorAssignment={handleEndMentorAssignment}
+            handlePromoteStudent={handlePromoteStudent}
+            setEditingEntity={setEditingEntity}
+            resetStudentEditors={resetStudentEditors}
+            startEditingEnrollment={startEditingEnrollment}
+            startEditingMentorAssignment={startEditingMentorAssignment}
+          />
         )}
 
         {/* ========== FACULTY MEMBERS ========== */}
+        {/* ========== FACULTY MEMBERS ========== */}
         {route.section === 'faculty-members' && (
-          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: registryPageColumns }}>
-            <Card style={{ padding: 18, display: 'grid', gap: 12, gridTemplateRows: 'auto auto auto minmax(0, 1fr)', alignContent: 'start', maxHeight: registryIsSingleColumn ? 'none' : 'calc(100vh - 200px)', overflow: registryIsSingleColumn ? 'visible' : 'hidden' }}>
-              <SectionHeading
-                title="Faculty Members"
-                eyebrow="Registry"
-                caption={registryScope
-                  ? `Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here. Live scope-backed feed filtered to ${registryScope.label}.`
-                  : 'Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here.'}
-                toneColor={ADMIN_SECTION_TONES['faculty-members']}
-              />
-              <div style={{ display: 'grid', gap: 12 }}>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <Btn type="button" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}><Plus size={14} /> New Faculty</Btn>
-                  <Chip color={T.accent}>{facultyRegistryItems.length} active</Chip>
-                  <Chip color={T.warning}>{facultyRegistryItems.filter(item => !item.roleGrants.some(grant => isCurrentRoleGrant(grant))).length} no active permissions</Chip>
-                  {registryScope ? <Chip color={ADMIN_SECTION_TONES['faculty-members']}>{registryScope.label}</Chip> : null}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: registryFilterColumns, gap: 10 }}>
-                  <div>
-                    <FieldLabel>Faculty</FieldLabel>
-                    <SelectInput value={effectiveFacultyRegistryFilter.academicFacultyId} onChange={event => setFacultyRegistryFilter({
-                      academicFacultyId: event.target.value,
-                      departmentId: '',
-                      branchId: '',
-                      batchId: '',
-                      sectionCode: '',
-                    })}>
-                      <option value="">All Faculties</option>
-                      {visibleAcademicFaculties.map(item => <option key={item.academicFacultyId} value={item.academicFacultyId}>{item.name}</option>)}
-                    </SelectInput>
-                  </div>
-                  <div>
-                    <FieldLabel>Department</FieldLabel>
-                    <SelectInput value={effectiveFacultyRegistryFilter.departmentId} onChange={event => setFacultyRegistryFilter(prev => ({
-                      ...prev,
-                      departmentId: event.target.value,
-                      branchId: '',
-                      batchId: '',
-                      sectionCode: '',
-                    }))}>
-                      <option value="">All Departments</option>
-                      {facultyFilterDepartments.map(item => <option key={item.departmentId} value={item.departmentId}>{item.name}</option>)}
-                    </SelectInput>
-                  </div>
-                  <div>
-                    <FieldLabel>Branch</FieldLabel>
-                    <SelectInput value={effectiveFacultyRegistryFilter.branchId} onChange={event => setFacultyRegistryFilter(prev => ({
-                      ...prev,
-                      branchId: event.target.value,
-                      batchId: '',
-                      sectionCode: '',
-                    }))}>
-                      <option value="">All Branches</option>
-                      {facultyFilterBranches.map(item => <option key={item.branchId} value={item.branchId}>{item.name}</option>)}
-                    </SelectInput>
-                  </div>
-                  <div>
-                    <FieldLabel>Year</FieldLabel>
-                    <SelectInput value={effectiveFacultyRegistryFilter.batchId} onChange={event => setFacultyRegistryFilter(prev => ({
-                      ...prev,
-                      batchId: event.target.value,
-                      sectionCode: '',
-                    }))}>
-                      <option value="">All Years</option>
-                      {facultyFilterBatches.map(item => <option key={item.batchId} value={item.batchId}>{deriveCurrentYearLabel(item.currentSemester)} · {item.batchLabel}</option>)}
-                    </SelectInput>
-                  </div>
-                  <div>
-                    <FieldLabel>Section</FieldLabel>
-                    <SelectInput value={effectiveFacultyRegistryFilter.sectionCode} onChange={event => setFacultyRegistryFilter(prev => ({ ...prev, sectionCode: event.target.value }))}>
-                      <option value="">All Sections</option>
-                      {facultyFilterSections.map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>)}
-                    </SelectInput>
-                  </div>
-                </div>
-                <SearchField
-                  value={facultyRegistrySearch}
-                  onChange={setFacultyRegistrySearch}
-                  placeholder="Search faculty, code, department, role, email..."
-                  ariaLabel="Faculty registry search"
-                />
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <Btn type="button" variant="ghost" onClick={() => setFacultyRegistryFilter(hydrateRegistryFilter(registryScope))}>Reset Filters</Btn>
-                  <Btn type="button" variant="ghost" onClick={() => handleOpenFullRegistry('faculty-members')}>Open Complete Page</Btn>
-                  <Chip color={T.dim}>Sorted A-Z</Chip>
-                </div>
-              </div>
-              <div className="scroll-pane" style={{ display: 'grid', gap: 8, minHeight: 0, overflowY: registryIsSingleColumn ? 'visible' : 'auto', paddingRight: 4 }}>
-                {facultyRegistryItems.map(item => {
-                  const primaryDepartment = resolveDepartment(operatorData, getPrimaryAppointmentDepartmentId(item))
-                  return (
-                    <EntityButton key={item.facultyId} selected={route.facultyMemberId === item.facultyId} onClick={() => navigate({ section: 'faculty-members', facultyMemberId: item.facultyId })}>
-                      <div style={{ display: 'grid', gap: 10 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-                          <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
-                            <div style={{ width: 34, height: 34, borderRadius: 12, background: `${ADMIN_SECTION_TONES['faculty-members']}18`, color: ADMIN_SECTION_TONES['faculty-members'], display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...sora, fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
-                              {item.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase() ?? '').join('') || 'FM'}
-                            </div>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.displayName}</div>
-                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.employeeCode} · {primaryDepartment?.name ?? 'No primary department'}</div>
-                            </div>
-                          </div>
-                          <Chip color={item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)) ? T.success : T.dim} size={9}>{item.roleGrants.some(grant => isCurrentRoleGrant(grant)) ? 'Has Permissions' : 'No Permissions'}</Chip>
-                        </div>
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {item.roleGrants.filter(isCurrentRoleGrant).slice(0, 3).map(grant => <Chip key={grant.grantId} color={T.accent} size={9}>{grant.roleCode}</Chip>)}
-                        </div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.designation} · {item.email}</div>
-                      </div>
-                    </EntityButton>
-                  )
-                })}
-                {facultyRegistryItems.length === 0 ? <InfoBanner message="No active faculty profiles yet. Create the first faculty record from this panel." /> : null}
-              </div>
-            </Card>
-
-            <div style={{ display: 'grid', gap: 16 }}>
-              <Card
-                style={{
-                  position: 'sticky',
-                  top: 0,
-                  zIndex: 2,
-                  padding: 18,
-                  display: 'grid',
-                  gap: 14,
-                  minHeight: 238,
-                  alignContent: 'start',
-                  background: isLightTheme(themeMode) ? fadeColor(T.surface, 'f0') : fadeColor(T.surface, 'ea'),
-                  backdropFilter: 'blur(12px)',
-                }}
-              >
-                <SectionHeading
-                  title={selectedFacultyMember ? selectedFacultyMember.displayName : 'Create Faculty'}
-                  eyebrow="Faculty Workspace"
-                  caption={selectedFacultyMember
-                    ? 'Identity, appointments, permissions, teaching coverage, timetable planning, and history now stay in a tighter working loop.'
-                    : 'Create the faculty profile first, then use the tabs to manage appointments, permissions, teaching coverage, and planning.'}
-                />
-                {selectedFacultyMember ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 10 }}>
-                    <AdminMiniStat label="Appointments" value={String(selectedFacultyMember.appointments.length)} tone={T.warning} />
-                    <AdminMiniStat label="Permissions" value={String(selectedFacultyMember.roleGrants.length)} tone={T.success} />
-                    <AdminMiniStat label="Classes" value={String(selectedFacultyAssignments.length)} tone={T.accent} />
-                    <AdminMiniStat label="Mentor Load" value={String(operatorData.students.filter(item => item.activeMentorAssignment?.facultyId === selectedFacultyMember.facultyId).length)} tone={ADMIN_SECTION_TONES.students} />
-                    <AdminMiniStat label="Audit Events" value={String(facultyAuditEvents.length)} tone={T.orange} />
-                  </div>
-                ) : null}
-                <AdminDetailTabs
-                  activeTab={facultyDetailTab}
-                  onChange={tabId => setFacultyDetailTab(tabId as FacultyDetailTab)}
-                  ariaLabel="Faculty detail sections"
-                  idBase="faculty-detail"
-                  tabs={[
-                    { id: 'profile', label: 'Profile' },
-                    { id: 'appointments', label: 'Appointments', count: selectedFacultyMember?.appointments.length ?? 0, disabled: !selectedFacultyMember },
-                    { id: 'permissions', label: 'Permissions', count: selectedFacultyMember?.roleGrants.length ?? 0, disabled: !selectedFacultyMember },
-                    { id: 'teaching', label: 'Teaching', count: selectedFacultyAssignments.length, disabled: !selectedFacultyMember },
-                    { id: 'timetable', label: 'Timetable', disabled: !selectedFacultyMember },
-                    { id: 'history', label: 'History', count: facultyAuditEvents.length, disabled: !selectedFacultyMember },
-                  ]}
-                />
-              </Card>
-
-              {facultyDetailTab === 'profile' && (
-              <AdminDetailTabPanel idBase="faculty-detail" tabId="profile">
-              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
-                <SectionHeading title={selectedFacultyMember ? 'Faculty Detail' : 'Create Faculty'} eyebrow={selectedFacultyMember ? selectedFacultyMember.displayName : 'New profile'} caption="Master identity stays admin-owned. Teaching workflow actions continue in the teaching workspace." />
-                {selectedFacultyMember ? (
-                  <>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <Chip color={T.accent}>{selectedFacultyMember.employeeCode}</Chip>
-                      <Chip color={T.warning}>{resolveDepartment(operatorData, getPrimaryAppointmentDepartmentId(selectedFacultyMember))?.name ?? 'No primary department'}</Chip>
-                      {selectedFacultyMember.roleGrants.filter(isCurrentRoleGrant).map(grant => <Chip key={grant.grantId} color={T.success}>{formatFacultyGrantScopeLabel(grant)}</Chip>)}
-                    </div>
-                    {selectedFacultyProofBanner ? <InfoBanner tone="neutral" message={selectedFacultyProofBanner} /> : null}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Display Name</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.displayName}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Username</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.username}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Designation</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.designation}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.email}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Phone</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.phone ?? 'Not set'}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Joined On</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.joinedOn ? formatDate(selectedFacultyMember.joinedOn) : 'Not set'}</div></Card>
-                    </div>
-                    <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 10 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                        <div>
-                          <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Sign-In Setup</div>
-                          <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>
-                            {selectedFacultyCredentialStatus.passwordConfigured ? 'Password is active' : 'Waiting for first password setup'}
-                          </div>
-                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
-                            {selectedFacultyCredentialStatus.activeSetupRequest
-                              ? `${selectedFacultyCredentialStatus.latestPurpose === 'reset' ? 'Reset' : 'Invite'} link is still active${selectedFacultyCredentialStatus.latestExpiresAt ? ` until ${formatDateTime(selectedFacultyCredentialStatus.latestExpiresAt)}` : ''}.`
-                              : selectedFacultyCredentialStatus.passwordConfigured
-                                ? 'Create a reset link when this faculty member needs to change their password.'
-                                : 'Issue the first invite link so this faculty member can create a password from their email.'}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <Chip color={selectedFacultyCredentialStatus.passwordConfigured ? T.success : T.warning}>
-                            {selectedFacultyCredentialStatus.passwordConfigured ? 'Password ready' : 'Password missing'}
-                          </Chip>
-                          {selectedFacultyCredentialStatus.latestPurpose ? (
-                            <Chip color={selectedFacultyCredentialStatus.latestPurpose === 'reset' ? T.accent : T.orange}>
-                              {selectedFacultyCredentialStatus.latestPurpose === 'reset' ? 'Latest action: reset' : 'Latest action: invite'}
-                            </Chip>
-                          ) : null}
-                        </div>
-                      </div>
-                      {facultyPasswordSetupResult ? (
-                        <InfoBanner
-                          tone="success"
-                          message={facultyPasswordSetupResult.setupUrl
-                            ? `${facultyPasswordSetupResult.purpose === 'invite' ? 'Invite' : 'Reset'} link ready for ${facultyPasswordSetupResult.issuedToEmail}. It expires ${formatDateTime(facultyPasswordSetupResult.expiresAt)}.`
-                            : `${facultyPasswordSetupResult.purpose === 'invite' ? 'Invite' : 'Reset'} link created for ${facultyPasswordSetupResult.issuedToEmail}.`}
-                        />
-                      ) : null}
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <Btn type="button" size="sm" onClick={() => void handleIssueFacultyPasswordSetup()}>
-                          {selectedFacultyCredentialStatus.passwordConfigured ? 'Create Reset Link' : 'Create Invite Link'}
-                        </Btn>
-                        {facultyPasswordSetupResult?.setupUrl ? (
-                          <Btn type="button" size="sm" variant="ghost" onClick={() => window.open(facultyPasswordSetupResult.setupUrl ?? '', '_blank', 'noopener,noreferrer')}>
-                            Open Link
-                          </Btn>
-                        ) : null}
-                        {facultyPasswordSetupResult?.setupUrl ? (
-                          <Btn type="button" size="sm" variant="ghost" onClick={() => void navigator.clipboard.writeText(facultyPasswordSetupResult.setupUrl ?? '')}>
-                            Copy Link
-                          </Btn>
-                        ) : null}
-                      </div>
-                    </Card>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn type="button" size="sm" onClick={() => setEditingEntity('faculty-profile')}>Edit Faculty</Btn>
-                      <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveFaculty()}>Delete Faculty</Btn>
-                      <Btn type="button" size="sm" variant="ghost" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}>New Faculty</Btn>
-                    </div>
-                  </>
-                ) : (
-                  <form onSubmit={handleSaveFaculty} style={{ display: 'grid', gap: 10 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                      <div><FieldLabel>Display Name</FieldLabel><TextInput value={facultyForm.displayName} onChange={event => setFacultyForm(prev => ({ ...prev, displayName: event.target.value }))} placeholder="Faculty name" /></div>
-                      <div><FieldLabel>Employee Code</FieldLabel><TextInput value={facultyForm.employeeCode} onChange={event => setFacultyForm(prev => ({ ...prev, employeeCode: event.target.value }))} placeholder="EMP001" /></div>
-                      <div><FieldLabel>Username</FieldLabel><TextInput value={facultyForm.username} onChange={event => setFacultyForm(prev => ({ ...prev, username: event.target.value }))} placeholder="faculty.user" /></div>
-                      <div><FieldLabel>Email</FieldLabel><TextInput value={facultyForm.email} onChange={event => setFacultyForm(prev => ({ ...prev, email: event.target.value }))} placeholder="faculty@campus.edu" /></div>
-                      <div><FieldLabel>Phone</FieldLabel><TextInput value={facultyForm.phone} onChange={event => setFacultyForm(prev => ({ ...prev, phone: event.target.value }))} placeholder="+91…" /></div>
-                      <div><FieldLabel>Designation</FieldLabel><TextInput value={facultyForm.designation} onChange={event => setFacultyForm(prev => ({ ...prev, designation: event.target.value }))} placeholder="Assistant Professor" /></div>
-                    </div>
-                    <InfoBanner message="New faculty now finish sign-in through an invite link. Create the profile first, then use Sign-In Setup on the detail page to issue or copy the link." />
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn type="submit">Create Faculty</Btn>
-                      <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}>Clear Form</Btn>
-                    </div>
-                  </form>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-
-              {facultyDetailTab === 'appointments' && (
-              <AdminDetailTabPanel idBase="faculty-detail" tabId="appointments">
-              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
-                <SectionHeading title="Appointments" eyebrow="Canonical Affiliation" caption="Department and branch affiliation stay canonical here, even when HoD visibility rolls up external teaching activity." />
-                {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Appointments become available after the faculty record exists." /> : (
-                  <>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      {selectedFacultyMember.appointments.length === 0 ? <InfoBanner message="No appointments recorded yet." /> : selectedFacultyMember.appointments.map(appointment => {
-                        return (
-                          <Card key={appointment.appointmentId} style={{ padding: 12, background: T.surface2 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                              <div>
-                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{formatFacultyAppointmentLabel(appointment)}</div>
-                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{appointment.isPrimary ? 'Primary appointment' : 'Supporting appointment'} · {formatDate(appointment.startDate)} to {appointment.endDate ? formatDate(appointment.endDate) : 'Active'}</div>
-                              </div>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Btn type="button" size="sm" variant="ghost" onClick={() => { startEditingAppointment(appointment); setEditingEntity('faculty-appointment') }}>Edit</Btn>
-                                <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveAppointment(appointment)}>Delete</Btn>
-                              </div>
-                            </div>
-                          </Card>
-                        )
-                      })}
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-                      <Btn type="button" size="sm" onClick={() => {
-                        setAppointmentForm(defaultAppointmentForm())
-                        setEditingEntity('faculty-appointment')
-                      }}>Add New Appointment</Btn>
-                    </div>
-                  </>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-
-              {facultyDetailTab === 'permissions' && (
-              <AdminDetailTabPanel idBase="faculty-detail" tabId="permissions">
-              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
-                <SectionHeading title="Permissions" eyebrow="Role Grants" caption="Mentor, HoD, Course Leader, and System Admin permissions stay separate from actual class ownership." />
-                {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Permissions become available after the faculty record exists." /> : (
-                  <>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      {selectedFacultyMember.roleGrants.length === 0 ? <InfoBanner message="No permissions granted yet." /> : selectedFacultyMember.roleGrants.map(grant => (
-                        <Card key={grant.grantId} style={{ padding: 12, background: T.surface2 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                            <div>
-                              <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{grant.roleCode}</div>
-                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{formatFacultyGrantScopeLabel(grant)} · {grant.startDate ?? 'No start'} to {grant.endDate ?? 'Active'} · {grant.status}</div>
-                            </div>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              <Btn type="button" size="sm" variant="ghost" onClick={() => { startEditingRoleGrant(grant); setEditingEntity('faculty-permission') }}>Edit</Btn>
-                              <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveRoleGrant(grant)}>Delete</Btn>
-                            </div>
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-                      <Btn type="button" size="sm" onClick={() => {
-                        setRoleGrantForm(defaultRoleGrantForm())
-                        setEditingEntity('faculty-permission')
-                      }}>Add New Permission</Btn>
-                    </div>
-                  </>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-
-              {facultyDetailTab === 'teaching' && (
-              <AdminDetailTabPanel idBase="faculty-detail" tabId="teaching">
-              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
-                <SectionHeading title="Class Ownership" eyebrow="Single Owner Assignment" caption="System admin assigns classes here as a single-owner list. Ownership role stays fixed and no class can belong to more than one professor at the same time." />
-                {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Teaching ownership becomes available after the faculty record exists." /> : (
-                  <>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      {selectedFacultyOwnerships.length === 0 ? <InfoBanner message="No teaching ownership records yet." /> : selectedFacultyOwnerships.map(ownership => {
-                        const offering = operatorData.offerings.find(item => item.offId === ownership.offeringId)
-                        return (
-                          <Card key={ownership.ownershipId} style={{ padding: 12, background: T.surface2 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                              <div>
-                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{offering?.code ?? ownership.offeringId} · {offering?.title ?? 'Unknown offering'}</div>
-                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{offering?.dept ?? 'NA'} · {offering?.year ?? '—'} · Section {offering?.section ?? '—'} · owner · {ownership.status}</div>
-                              </div>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveOwnership(ownership)}>Delete</Btn>
-                              </div>
-                            </div>
-                          </Card>
-                        )
-                      })}
-                    </div>
-                    <form onSubmit={handleSaveOwnership} style={{ display: 'grid', gap: 10 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-                        <div>
-                          <FieldLabel>Offering / Class</FieldLabel>
-                          <SelectInput value={ownershipForm.offeringId} onChange={event => setOwnershipForm(prev => ({ ...prev, offeringId: event.target.value, facultyId: selectedFacultyMember.facultyId }))}>
-                            <option value="">{availableOwnershipOfferings.length > 0 ? 'Select unassigned class' : 'No unassigned classes available'}</option>
-                            {availableOwnershipOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Section {offering.section}</option>)}
-                          </SelectInput>
-                        </div>
-                        <div>
-                          <FieldLabel>Assigned Role</FieldLabel>
-                          <TextInput value="owner" readOnly />
-                        </div>
-                      </div>
-                      {availableOwnershipOfferings.length === 0 ? <InfoBanner message="All visible classes already have an active owner. Remove an ownership first before reassigning a class." /> : null}
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <Btn type="submit" disabled={!ownershipForm.offeringId}>Add Class</Btn>
-                        <Btn type="button" variant="ghost" onClick={() => setOwnershipForm({
-                          ...defaultOwnershipForm(),
-                          facultyId: selectedFacultyMember.facultyId,
-                        })}>Clear Selection</Btn>
-                      </div>
-                    </form>
-                    {selectedFacultyAssignments.length > 0 ? (
-                      <Card style={{ padding: 12, background: T.surface }}>
-                        <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Current Owned Classes</div>
-                        <div style={{ display: 'grid', gap: 8 }}>
-                          {selectedFacultyAssignments.map(item => (
-                            <div key={item.ownership.ownershipId} style={{ ...mono, fontSize: 10, color: T.text }}>
-                              {item.offering?.code} · {item.offering?.dept} · {item.offering?.year} · Section {item.offering?.section} · owner
-                            </div>
-                          ))}
-                        </div>
-                      </Card>
-                    ) : null}
-                  </>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-
-              {facultyDetailTab === 'timetable' && (
-              <AdminDetailTabPanel idBase="faculty-detail" tabId="timetable">
-              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
-                <SectionHeading title="Timetable Planner" eyebrow="Calendar-First Review" caption="System admin starts with a calendar summary here, then expands into the full planner only when a wider review surface is needed." />
-                {!selectedFacultyMember ? <EmptyState title="Select or create a faculty member first" body="Timetable planning becomes available once the faculty profile exists." /> : facultyCalendarLoading && !facultyCalendar ? (
-                  <InfoBanner message="Loading timetable planner…" />
-                ) : (
-                  <div style={{ display: 'grid', gap: 14 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                      <AdminMiniStat label="Mapped Classes" value={String(selectedFacultyCalendarOfferings.length)} tone={T.accent} />
-                      <AdminMiniStat label="Weekly Blocks" value={String(facultyCalendarRecurringBlocks.length)} tone={T.success} />
-                      <AdminMiniStat label="Exceptions" value={String(facultyCalendarExtraBlocks.length)} tone={T.warning} />
-                      <AdminMiniStat label="Markers" value={String(sortedFacultyCalendarMarkers.length)} tone={T.orange} />
-                    </div>
-
-                    <Card style={{ padding: 16, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, display: 'grid', gap: 12 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                        <div>
-                          <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Planner Summary</div>
-                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
-                            Review the institutional calendar state first, then open the expanded planner when you need the full weekly board without leaving the faculty workspace.
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <Chip color={facultyCalendar?.classEditingLocked ? T.danger : T.success}>{facultyCalendar?.classEditingLocked ? 'Recurring edits locked' : 'Recurring edits open'}</Chip>
-                          <Chip color={facultyCalendar?.workspace.publishedAt ? T.accent : T.warning}>{facultyCalendar?.workspace.publishedAt ? `Published ${formatDate(facultyCalendar.workspace.publishedAt.slice(0, 10))}` : 'Not published'}</Chip>
-                          <Btn type="button" size="sm" variant="primary" onClick={() => setShowFacultyTimetableExpanded(true)}>
-                            Open Full Planner
-                          </Btn>
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
-                        <Card style={{ padding: 14, background: T.surface }}>
-                          <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Upcoming Markers</div>
-                          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
-                            {sortedFacultyCalendarMarkers.slice(0, 4).map(marker => (
-                              <div key={marker.markerId} style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.8 }}>
-                                {marker.title} · {formatDate(marker.dateISO)}
-                              </div>
-                            ))}
-                            {sortedFacultyCalendarMarkers.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No semester or event markers mapped yet.</div> : null}
-                          </div>
-                        </Card>
-                        <Card style={{ padding: 14, background: T.surface }}>
-                          <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Class Coverage</div>
-                          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
-                            {selectedFacultyCalendarOfferings.slice(0, 4).map(offering => (
-                              <div key={offering.offId} style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.8 }}>
-                                {offering.code} · {offering.year} · Section {offering.section}
-                              </div>
-                            ))}
-                            {selectedFacultyCalendarOfferings.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No classes are currently assigned to this faculty member.</div> : null}
-                          </div>
-                        </Card>
-                      </div>
-                    </Card>
-
-                    <AnimatePresence>
-                      {showFacultyTimetableExpanded ? (
-                        <ModalWorkspace
-                          size="full"
-                          eyebrow="Faculty Planner"
-                          title={`${selectedFacultyMember.displayName} · Weekly Planner`}
-                          caption="Use this full-screen planner review surface for weekly edits, then return to the faculty workspace when you are done."
-                          onClose={() => setShowFacultyTimetableExpanded(false)}
-                        >
-                          <div style={{ display: 'grid', gap: 14, padding: 4 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <Btn type="button" variant="ghost" onClick={() => setShowFacultyTimetableExpanded(false)}>
-                                <ChevronLeft size={14} /> Back to Faculty Workspace
-                              </Btn>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Chip color={facultyCalendar?.classEditingLocked ? T.danger : T.success}>{facultyCalendar?.classEditingLocked ? 'Recurring edits locked' : 'Recurring edits open'}</Chip>
-                                <Chip color={facultyCalendar?.workspace.publishedAt ? T.accent : T.warning}>{facultyCalendar?.workspace.publishedAt ? `Published ${formatDate(facultyCalendar.workspace.publishedAt.slice(0, 10))}` : 'Not published'}</Chip>
-                              </div>
-                            </div>
-                            <div className="scroll-pane" style={{ minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
-                              <SystemAdminFacultyCalendarWorkspace
-                                facultyId={selectedFacultyMember.facultyId}
-                                facultyName={selectedFacultyMember.displayName}
-                                offerings={selectedFacultyCalendarOfferings}
-                                calendar={facultyCalendar}
-                                onSave={handleSaveFacultyCalendar}
-                              />
-                            </div>
-                          </div>
-                        </ModalWorkspace>
-                      ) : null}
-                    </AnimatePresence>
-                  </div>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-
-              {facultyDetailTab === 'history' && (
-              <AdminDetailTabPanel idBase="faculty-detail" tabId="history">
-              <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
-                <SectionHeading title="History" eyebrow="Audit Trail" caption="Profile, appointment, permission, and class-ownership changes all land here for restore and review." />
-                {facultyAuditLoading ? <InfoBanner message="Loading audit history…" /> : null}
-                {!facultyAuditLoading && facultyAuditEvents.length === 0 ? <EmptyState title="No audit trail yet" body="Faculty create/update activity will appear here." /> : (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {facultyAuditEvents.slice(0, 18).map(item => (
-                      <Card key={item.auditEventId} style={{ padding: 12, background: T.surface2 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{item.entityType} · {summarizeAuditEvent(item)}</div>
-                          <Chip color={T.accent} size={9}>{formatDateTime(item.createdAt)}</Chip>
-                        </div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>{item.entityId}{item.actorRole ? ` · ${item.actorRole}` : ''}</div>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </Card>
-              </AdminDetailTabPanel>
-              )}
-            </div>
-          </div>
+          <FacultyMembersSection
+            data={data}
+            route={route}
+            themeMode={themeMode}
+            now={now}
+            password={password}
+            registryPageColumns={registryPageColumns}
+            registryFilterColumns={registryFilterColumns}
+            registryIsSingleColumn={registryIsSingleColumn}
+            registryScope={registryScope}
+            navigate={navigate}
+            facultyRegistryItems={facultyRegistryItems}
+            facultyRegistrySearch={facultyRegistrySearch}
+            setFacultyRegistrySearch={setFacultyRegistrySearch}
+            effectiveFacultyRegistryFilter={effectiveFacultyRegistryFilter}
+            setFacultyRegistryFilter={setFacultyRegistryFilter}
+            facultyFilterDepartments={facultyFilterDepartments}
+            facultyFilterBranches={facultyFilterBranches}
+            facultyFilterBatches={facultyFilterBatches}
+            facultyFilterSections={facultyFilterSections}
+            visibleAcademicFaculties={visibleAcademicFaculties}
+            selectedFacultyMember={selectedFacultyMember}
+            selectedFacultyAssignments={selectedFacultyAssignments}
+            selectedFacultyOwnerships={selectedFacultyOwnerships}
+            selectedFacultyCalendarOfferings={selectedFacultyCalendarOfferings}
+            selectedFacultyCredentialStatus={selectedFacultyCredentialStatus}
+            selectedFacultyProofBanner={selectedFacultyProofBanner}
+            facultyCalendar={facultyCalendar}
+            facultyCalendarLoading={facultyCalendarLoading}
+            facultyCalendarRecurringBlocks={facultyCalendarRecurringBlocks}
+            facultyCalendarExtraBlocks={facultyCalendarExtraBlocks}
+            sortedFacultyCalendarMarkers={sortedFacultyCalendarMarkers}
+            showFacultyTimetableExpanded={showFacultyTimetableExpanded}
+            setShowFacultyTimetableExpanded={setShowFacultyTimetableExpanded}
+            availableOwnershipOfferings={availableOwnershipOfferings}
+            facultyDetailTab={facultyDetailTab}
+            setFacultyDetailTab={setFacultyDetailTab}
+            facultyForm={facultyForm}
+            setFacultyForm={setFacultyForm}
+            appointmentForm={appointmentForm}
+            setAppointmentForm={setAppointmentForm}
+            roleGrantForm={roleGrantForm}
+            setRoleGrantForm={setRoleGrantForm}
+            ownershipForm={ownershipForm}
+            setOwnershipForm={setOwnershipForm}
+            facultyPasswordSetupResult={facultyPasswordSetupResult}
+            facultyAuditLoading={facultyAuditLoading}
+            facultyAuditEvents={facultyAuditEvents}
+            handleSaveFaculty={handleSaveFaculty}
+            handleArchiveFaculty={handleArchiveFaculty}
+            handleIssueFacultyPasswordSetup={handleIssueFacultyPasswordSetup}
+            handleSaveAppointment={handleSaveAppointment}
+            handleArchiveAppointment={handleArchiveAppointment}
+            handleSaveRoleGrant={handleSaveRoleGrant}
+            handleArchiveRoleGrant={handleArchiveRoleGrant}
+            handleSaveOwnership={handleSaveOwnership}
+            handleArchiveOwnership={handleArchiveOwnership}
+            handleSaveFacultyCalendar={handleSaveFacultyCalendar}
+            handleOpenFullRegistry={handleOpenFullRegistry}
+            setEditingEntity={setEditingEntity}
+            resetFacultyEditors={resetFacultyEditors}
+            startEditingAppointment={startEditingAppointment}
+            startEditingRoleGrant={startEditingRoleGrant}
+            operatorData={operatorData}
+          />
         )}
 
         {/* ========== HISTORY ========== */}

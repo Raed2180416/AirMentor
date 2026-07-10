@@ -124,7 +124,7 @@ log "Watching: $REPO_ROOT (debounce: ${DEBOUNCE_SECONDS}s, max_gen: ${MAX_MAP_GE
 # Main watch loop — use inotifywait -m for continuous monitoring
 inotifywait -m \
   -r "$REPO_ROOT" \
-  --exclude '(\.git|node_modules|\.logicstamp|\.ctxo|\.worktrees|dist|output|catboost_info|test-results|tmp|\.audit|\.venv)' \
+  --exclude '(\.git|node_modules|\.logicstamp|\.ctxo|\.worktrees|dist|output|catboost_info|test-results|tmp|\.audit|\.venv|docs/agent-map)' \
   -e close_write -e move -e create -e delete \
   --format '%w%f %e' |
 while read -r filepath event; do

@@ -149,24 +149,24 @@
     }
   },
   "totals": {
-    "trackedFiles": 950,
-    "ignoredEntriesObserved": 40,
-    "bytes": 15064471,
-    "lines": 311043,
-    "nonEmptyLines": 288267,
-    "commentLines": 5980,
-    "localDependencyEdges": 682,
-    "symbols": 23552,
+    "trackedFiles": 947,
+    "ignoredEntriesObserved": 41,
+    "bytes": 15091073,
+    "lines": 311721,
+    "nonEmptyLines": 288923,
+    "commentLines": 5998,
+    "localDependencyEdges": 705,
+    "symbols": 23572,
     "apiRoutes": 190,
     "testCases": 1370,
     "filesWithTests": 194,
-    "atoms": 81119,
-    "anomalies": 9
+    "atoms": 81130,
+    "anomalies": 0
   },
   "counts": {
     "byExtension": {
       ".md": 53,
-      "[no-ext]": 13,
+      "[no-ext]": 14,
       ".json": 30,
       ".yaml": 107,
       ".yml": 5,
@@ -178,7 +178,7 @@
       ".py": 108,
       ".cjs": 1,
       ".mjs": 55,
-      ".sh": 47,
+      ".sh": 48,
       ".js": 2,
       ".sql": 34,
       ".snap": 1,
@@ -187,14 +187,14 @@
       ".nix": 1,
       ".html": 1,
       ".svg": 1,
-      ".service": 2,
+      ".service": 3,
       ".timer": 1,
       ".conf": 2,
-      ".tsx": 73,
+      ".tsx": 76,
       ".css": 2
     },
     "byRole": {
-      "other": 32,
+      "other": 33,
       "build-config": 16,
       "agent-config": 7,
       "ci": 8,
@@ -205,8 +205,8 @@
       "documentation": 31,
       "forge-audit": 22,
       "pipeline": 171,
-      "repo-script": 106,
-      "frontend": 84,
+      "repo-script": 108,
+      "frontend": 87,
       "e2e-test": 50
     },
     "byTopDirectory": {
@@ -219,6 +219,7 @@
       ".codex": 1,
       ".ctxo": 1,
       ".cursorrules": 1,
+      ".githooks": 1,
       ".github": 8,
       ".gitignore": 1,
       ".hintrc": 1,
@@ -240,9 +241,9 @@
       "package.json": 1,
       "pipeline": 171,
       "public": 1,
-      "scripts": 106,
+      "scripts": 108,
       "skills-lock.json": 1,
-      "src": 84,
+      "src": 87,
       "tests-e2e": 50,
       "tests": 67,
       "tsconfig.app.json": 1,
@@ -265,7 +266,7 @@
       "context_main.json": 1,
       "context.json": 1,
       "scripts": 1,
-      "src": 7,
+      "src": 8,
       "tests-e2e": 5,
       "tests": 1,
       "tmp": 1
@@ -275,7 +276,7 @@
     "highFanIn": [
       {
         "path": "src/data.ts",
-        "importers": 69,
+        "importers": 72,
         "role": "frontend"
       },
       {
@@ -285,12 +286,12 @@
       },
       {
         "path": "src/api/types.ts",
-        "importers": 49,
+        "importers": 51,
         "role": "frontend"
       },
       {
         "path": "src/ui-primitives.tsx",
-        "importers": 42,
+        "importers": 45,
         "role": "frontend"
       },
       {
@@ -314,18 +315,18 @@
         "role": "e2e-test"
       },
       {
+        "path": "src/system-admin-ui.tsx",
+        "importers": 20,
+        "role": "frontend"
+      },
+      {
         "path": "tests-e2e/helpers/proof-run-api.ts",
         "importers": 20,
         "role": "e2e-test"
       },
       {
-        "path": "src/system-admin-ui.tsx",
-        "importers": 19,
-        "role": "frontend"
-      },
-      {
         "path": "src/system-admin-live-data.ts",
-        "importers": 13,
+        "importers": 17,
         "role": "frontend"
       },
       {
@@ -354,6 +355,11 @@
         "role": "frontend"
       },
       {
+        "path": "src/proof-provenance.ts",
+        "importers": 8,
+        "role": "frontend"
+      },
+      {
         "path": "src/proof-surface-shell.tsx",
         "importers": 8,
         "role": "frontend"
@@ -379,13 +385,13 @@
         "role": "frontend"
       },
       {
-        "path": "src/proof-provenance.ts",
+        "path": "src/system-admin-live-app.tsx",
         "importers": 7,
         "role": "frontend"
       },
       {
-        "path": "src/system-admin-live-app.tsx",
-        "importers": 7,
+        "path": "src/admin/live-app-model.ts",
+        "importers": 6,
         "role": "frontend"
       },
       {
@@ -397,6 +403,11 @@
         "path": "air-mentor-api/src/db/seeds/msruas-mnc-curriculum.json",
         "importers": 5,
         "role": "backend"
+      },
+      {
+        "path": "src/admin/live-app-chrome.tsx",
+        "importers": 5,
+        "role": "frontend"
       },
       {
         "path": "src/demo-workspace-pointer.ts",
@@ -462,22 +473,12 @@
         "path": "src/system-admin-proof-dashboard-workspace.tsx",
         "importers": 4,
         "role": "frontend"
-      },
-      {
-        "path": "src/academic-faculty-profile-page.tsx",
-        "importers": 3,
-        "role": "frontend"
-      },
-      {
-        "path": "src/academic-workspace-route-helpers.ts",
-        "importers": 3,
-        "role": "frontend"
       }
     ],
     "highFanOut": [
       {
         "path": "src/system-admin-live-app.tsx",
-        "localImports": 32,
+        "localImports": 36,
         "role": "frontend"
       },
       {
@@ -547,6 +548,16 @@
       },
       {
         "path": "src/admin/live-app-model.ts",
+        "localImports": 7,
+        "role": "frontend"
+      },
+      {
+        "path": "src/admin/sections/faculty-members-section.tsx",
+        "localImports": 7,
+        "role": "frontend"
+      },
+      {
+        "path": "src/admin/sections/students-section.tsx",
         "localImports": 7,
         "role": "frontend"
       },
@@ -626,6 +637,11 @@
         "role": "frontend"
       },
       {
+        "path": "src/admin/sections/overview-section.tsx",
+        "localImports": 5,
+        "role": "frontend"
+      },
+      {
         "path": "src/curriculum-graph-workspace.tsx",
         "localImports": 5,
         "role": "frontend"
@@ -659,21 +675,6 @@
         "path": "tests-e2e/specs/humanised-action-labels.spec.ts",
         "localImports": 5,
         "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/intervention-affects-marks.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/manual-edit-verification.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/proof-browser-sentinel-matrix.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
       }
     ],
     "topExternalImports": [
@@ -699,7 +700,7 @@
       },
       {
         "key": "react",
-        "value": 73
+        "value": 75
       },
       {
         "key": "pathlib",
@@ -715,7 +716,7 @@
       },
       {
         "key": "lucide-react",
-        "value": 32
+        "value": 35
       },
       {
         "key": "typing",
@@ -853,9 +854,9 @@
       "name": "Frontend live admin shell",
       "file": "src/system-admin-live-app.tsx",
       "role": "frontend",
-      "lines": 6745,
-      "localImports": 32,
-      "symbols": 635,
+      "lines": 5911,
+      "localImports": 36,
+      "symbols": 629,
       "note": "Live System Admin surface and proof playback/admin control entry."
     },
     {
@@ -1571,7 +1572,7 @@
     {
       "file": "src/system-admin-live-app.tsx",
       "role": "frontend",
-      "lines": 6745,
+      "lines": 5911,
       "components": [
         "SystemAdminLiveApp"
       ],
@@ -1921,6 +1922,33 @@
       "hooks": []
     },
     {
+      "file": "src/admin/sections/faculty-members-section.tsx",
+      "role": "frontend",
+      "lines": 674,
+      "components": [
+        "FacultyMembersSection"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "src/admin/sections/overview-section.tsx",
+      "role": "frontend",
+      "lines": 173,
+      "components": [
+        "OverviewSection"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "src/admin/sections/students-section.tsx",
+      "role": "frontend",
+      "lines": 619,
+      "components": [
+        "StudentsSection"
+      ],
+      "hooks": []
+    },
+    {
       "file": "src/components/reevaluating-risk-loader.tsx",
       "role": "frontend",
       "lines": 54,
@@ -1953,33 +1981,6 @@
       "lines": 143,
       "components": [
         "SystemAdminHierarchyWorkspaceShell"
-      ],
-      "hooks": []
-    },
-    {
-      "file": "src/system-admin-request-workspace.tsx",
-      "role": "frontend",
-      "lines": 177,
-      "components": [
-        "SystemAdminRequestWorkspace"
-      ],
-      "hooks": []
-    },
-    {
-      "file": "src/system-admin-scoped-registry-launches.tsx",
-      "role": "frontend",
-      "lines": 74,
-      "components": [
-        "SystemAdminScopedRegistryLaunches"
-      ],
-      "hooks": []
-    },
-    {
-      "file": "tests/fault-tolerance-degradation.test.tsx",
-      "role": "unit-test",
-      "lines": 57,
-      "components": [
-        "BuggyComponent"
       ],
       "hooks": []
     }
@@ -2146,44 +2147,7 @@
       "value": 146
     }
   ],
-  "anomalies": [
-    {
-      "file": ".windsurf/AGENT_OPTIMIZATION_CONFIG.json",
-      "reason": "Tracked file missing in working tree; skipped from mapping."
-    },
-    {
-      "file": ".windsurf/autostart.json",
-      "reason": "Tracked file missing in working tree; skipped from mapping."
-    },
-    {
-      "file": ".windsurf/PROJECT_CONTEXT.md",
-      "reason": "Tracked file missing in working tree; skipped from mapping."
-    },
-    {
-      "file": ".windsurf/README_SKILLS_SETUP.md",
-      "reason": "Tracked file missing in working tree; skipped from mapping."
-    },
-    {
-      "file": ".windsurf/skills/agentic-eval",
-      "reason": "Tracked file missing in working tree; skipped from mapping."
-    },
-    {
-      "file": ".windsurf/skills/skill-creator",
-      "reason": "Tracked file missing in working tree; skipped from mapping."
-    },
-    {
-      "file": ".windsurf/verify_agent_optimization.sh",
-      "reason": "Tracked file missing in working tree; skipped from mapping."
-    },
-    {
-      "file": ".windsurf/workflows/airmentor-subagent-architecture.md",
-      "reason": "Tracked file missing in working tree; skipped from mapping."
-    },
-    {
-      "file": ".windsurf/workflows/review.md",
-      "reason": "Tracked file missing in working tree; skipped from mapping."
-    }
-  ],
+  "anomalies": [],
   "ignoredExamples": [
     ".agents/",
     ".audit/",
@@ -2212,6 +2176,7 @@
     "context.json",
     "scripts/context.json",
     "src/admin/context.json",
+    "src/admin/sections/context.json",
     "src/api/context.json",
     "src/app/context.json",
     "src/components/context.json",

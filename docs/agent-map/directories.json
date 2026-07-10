@@ -84,6 +84,18 @@
     }
   },
   {
+    "path": ".githooks",
+    "fileCount": 1,
+    "bytes": 749,
+    "lines": 0,
+    "roles": {
+      "other": 1
+    },
+    "extensions": {
+      "[no-ext]": 1
+    }
+  },
+  {
     "path": ".github",
     "fileCount": 1,
     "bytes": 4643,
@@ -633,18 +645,18 @@
   },
   {
     "path": "scripts",
-    "fileCount": 105,
-    "bytes": 1012831,
-    "lines": 23852,
+    "fileCount": 107,
+    "bytes": 1014443,
+    "lines": 23898,
     "roles": {
-      "repo-script": 105
+      "repo-script": 107
     },
     "extensions": {
       ".mjs": 50,
-      ".service": 2,
+      ".service": 3,
       ".timer": 1,
       ".ts": 10,
-      ".sh": 39,
+      ".sh": 40,
       ".md": 1,
       ".conf": 2
     }
@@ -664,8 +676,8 @@
   {
     "path": "src",
     "fileCount": 63,
-    "bytes": 1436453,
-    "lines": 30128,
+    "bytes": 1358967,
+    "lines": 29294,
     "roles": {
       "frontend": 63
     },
@@ -686,6 +698,18 @@
     "extensions": {
       ".tsx": 1,
       ".ts": 1
+    }
+  },
+  {
+    "path": "src/admin/sections",
+    "fileCount": 3,
+    "bytes": 101727,
+    "lines": 1466,
+    "roles": {
+      "frontend": 3
+    },
+    "extensions": {
+      ".tsx": 3
     }
   },
   {

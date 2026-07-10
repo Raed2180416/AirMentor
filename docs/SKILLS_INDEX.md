@@ -7,6 +7,69 @@
 **Total skills discovered:** 182
 **Sources:** Windsurf, Claude Code, Cursor, Generic agent skills
 
+## Recommended Skills for AirMentor (Devin Priority)
+
+These skills should be preloaded for the most common tasks in this repo. See `docs/agent-map/DEVIN_AGENT_SETUP.md` and `.windsurf/AGENTS.md` for the full agent playbook.
+
+### Frontend (React 19 + Vite)
+
+- `vercel-react-best-practices`
+- `vercel-react-view-transitions`
+- `vercel-composition-patterns`
+- `playwright-testing`
+- `jest-vitest`
+- `accessibility-wcag`
+- `frontend-developer`
+
+### Backend (Fastify + TypeScript + Python)
+
+- `backend-engineering`
+- `api-design`
+- `api-testing`
+- `database-engineering`
+- `docker-kubernetes`
+- `python-appservice-deploy`
+
+### Data, ML, and Evaluation
+
+- `ml-ops`
+- `data-pipelines`
+- `data-science`
+- `analytics-engineering`
+
+### Security, Quality, and Refactoring
+
+- `appsec-owasp`
+- `accessibility-wcag`
+- `clean-code`
+- `code-review-mastery`
+- `absolute-simplify`
+
+### DevOps and Deployment
+
+- `ci-cd-pipelines`
+- `azure-prepare`
+- `azure-deploy`
+- `terraform-iac`
+- `azure-reliability`
+
+### Documentation and Agentics
+
+- `technical-writing`
+- `internal-docs`
+- `ai-agent-design`
+- `mcp-builder`
+- `mastra`
+
+## MCP Plugins to Load
+
+- `devin/filesystem` — use only when repo-map does not answer
+- `devin/github-mcp-server` — PRs, issues, code search
+- `devin/mcp-playwright` — browser verification
+- `devin/context7` — dependency docs
+- `devin/memory` — cross-session context
+- `devin/fetch` — web research
+
 ## Skills by Category
 
 ### 30-60-90

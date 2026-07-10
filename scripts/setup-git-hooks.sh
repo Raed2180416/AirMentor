@@ -1,0 +1,45 @@
+#!/bin/bash
+# AirMentor Git Hooks Setup
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+
+mkdir -p .githooks
+if [ ! -f .githooks/pre-commit ]; then
+  cp .git/hooks/pre-commit .githooks/pre-commit 2>/dev/null || true
+fi
+
+# Ensure the pre-commit hook regenerates the repo map
+cat > .githooks/pre-commit << 'PREHOOK'
+#!/bin/bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+
+echo "[pre-commit] Regenerating deterministic repo map..."
+if ! npm run agent:map; then
+  echo "[pre-commit] Repo map generation failed. Commit blocked."
+  exit 1
+fi
+
+echo "[pre-commit] Staging updated map files..."
+git add -f docs/agent-map/repo-map.json \
+  docs/agent-map/files.jsonl \
+  docs/agent-map/symbols.jsonl \
+  docs/agent-map/imports.jsonl \
+  docs/agent-map/routes.jsonl \
+  docs/agent-map/tests.jsonl \
+  docs/agent-map/atoms.jsonl \
+  docs/agent-map/directories.json \
+  docs/agent-map/AGENT_REPO_MAP_2026-06-06.md \
+  docs/agent-map/CODEBASE_MAPPING_STRATEGY_2026-06-06.md 2>/dev/null || true
+
+echo "[pre-commit] Map updated and staged."
+PREHOOK
+
+chmod +x .githooks/pre-commit
+git config --local core.hooksPath .githooks
+
+echo "Git hooks installed at .githooks/ and configured in this repo."

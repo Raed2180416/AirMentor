@@ -29,13 +29,19 @@ cp "$REPO_ROOT/scripts/live-repo-watcher.service" ~/.config/systemd/user/airment
 sed -i "s|/home/raed/Projects/air-mentor-ui|$REPO_ROOT|g" ~/.config/systemd/user/airmentor-live-watcher.service
 systemctl --user daemon-reload
 
+echo "Starting and enabling live watcher..."
+systemctl --user start airmentor-live-watcher || true
+systemctl --user enable airmentor-live-watcher || true
+
+echo "Installing git pre-commit hook..."
+bash "$REPO_ROOT/scripts/setup-git-hooks.sh" 2>/dev/null || true
+
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Start now:    systemctl --user start airmentor-live-watcher"
-echo "Auto-start:   systemctl --user enable airmentor-live-watcher"
-echo "Status:       systemctl --user status airmentor-live-watcher"
+echo "Service:      systemctl --user status airmentor-live-watcher"
 echo "Logs:         tail -f $REPO_ROOT/.audit/live-watcher.log"
-echo "Index output: $REPO_ROOT/.audit/deterministic-index/"
+echo "Git hook:     .githooks/pre-commit (runs npm run agent:map before each commit)"
+echo "Map output:   $REPO_ROOT/docs/agent-map/"
 echo ""
-echo "The watcher auto-regenerates deterministic codebase indexes on every file change."
+echo "The watcher auto-regenerates the repo map on every file change, and the pre-commit hook regenerates it on commit."

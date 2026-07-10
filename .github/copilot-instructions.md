@@ -13,10 +13,12 @@ AirMentor is a **real AI-powered academic risk monitoring product for universiti
 ## Read Order (Before Any Broad Exploration)
 
 1. `CLAUDE.md` — Product truth and communication policy
-2. `.windsurf/AGENTS.md` — Complete agent playbook, tools, verification loop
-3. `docs/agent-map/AGENT_REPO_MAP_2026-06-06.md` — Deterministic navigation layer
-4. `docs/agent-map/repo-map.json` — Machine-queriable file/symbol/route/test index
-5. `docs/CURRENT_PRODUCT_CLEANUP_DECISION_MATRIX_2026-06-06.md` — What stays, what goes, what archives
+2. `.windsurf/AGENTS.md` — Complete agent playbook, tools, verification loop, auto-update setup
+3. `docs/agent-map/DEVIN_AGENT_SETUP.md` — Devin-specific onboarding, skill list, MCP plugins
+4. `docs/SKILLS_INDEX.md` — Required skills and plugins for this codebase
+5. `docs/agent-map/AGENT_REPO_MAP_2026-06-06.md` — Deterministic navigation layer
+6. `docs/agent-map/repo-map.json` — Machine-queriable file/symbol/route/test/atom index
+7. `docs/CURRENT_PRODUCT_CLEANUP_DECISION_MATRIX_2026-06-06.md` — What stays, what goes, what archives
 
 ## Durable Repository Areas (Protected)
 

@@ -21,6 +21,7 @@ const outputs = {
   imports: path.join(outputDir, 'imports.jsonl'),
   routes: path.join(outputDir, 'routes.jsonl'),
   tests: path.join(outputDir, 'tests.jsonl'),
+  atoms: path.join(outputDir, 'atoms.jsonl'),
   directories: path.join(outputDir, 'directories.json'),
   markdown: path.join(outputDir, 'AGENT_REPO_MAP_2026-06-06.md'),
   strategy: path.join(outputDir, 'CODEBASE_MAPPING_STRATEGY_2026-06-06.md'),
@@ -350,6 +351,224 @@ function extractReactSignals(text, ext) {
   return { components: [...components].sort(), hooks: [...hooks].sort() }
 }
 
+function extractExportAtoms(file, text, ext) {
+  if (!text || !['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(ext)) return []
+  const starts = lineStarts(text)
+  const atoms = []
+  const patterns = [
+    ['export-named', /\bexport\s+(?:const|let|var|function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g],
+    ['export-default', /\bexport\s+default\s+(?:class|function)?\s*([A-Za-z_$][\w$]*)?/g],
+    ['export-all', /\bexport\s*\*\s*from\s+['"`]([^'"`]+)['"`]/g],
+    ['export-from', /\bexport\s+(?:type\s+)?\{[^}]*\}\s*from\s+['"`]([^'"`]+)['"`]/g],
+  ]
+  for (const [kind, pattern] of patterns) {
+    let match
+    while ((match = pattern.exec(text))) {
+      const name = match[1] ?? '(default)'
+      atoms.push({ atom: 'export', kind, name, file, line: lineForIndex(starts, match.index) })
+    }
+  }
+  return atoms
+}
+
+function extractEnvReferences(file, text, ext) {
+  if (!text || !['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(ext)) return []
+  const starts = lineStarts(text)
+  const atoms = []
+  const pattern = /(?:process\.env|import\.meta\.env)\.(?:[A-Za-z_$][\w$]*|\[["']([^"']+)["']\])/g
+  let match
+  while ((match = pattern.exec(text))) {
+    const name = match[1] ?? match[0].split('.').pop()
+    atoms.push({ atom: 'env', name, file, line: lineForIndex(starts, match.index) })
+  }
+  return atoms
+}
+
+function extractSqlReferences(file, text, ext) {
+  if (!text || !['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.sql', '.py', '.sh'].includes(ext)) return []
+  const starts = lineStarts(text)
+  const atoms = []
+  // Direct SQL patterns (uppercase to avoid matching JS identifiers like `update` or `from` in imports)
+  const patterns = [
+    ['INSERT INTO', /\bINSERT\s+INTO\s+["`']?([A-Za-z_$][A-Za-z0-9_$]*)["`']?/g],
+    ['UPDATE', /\bUPDATE\s+["`']?([A-Za-z_$][A-Za-z0-9_$]*)["`']?/g],
+    ['JOIN', /\bJOIN\s+["`']?([A-Za-z_$][A-Za-z0-9_$]*)["`']?/g],
+    ['TABLE', /\b(?:CREATE|DROP|ALTER|TRUNCATE)\s+(?:OR\s+REPLACE\s+)?(?:TABLE|INDEX|SEQUENCE|VIEW)\s+["`']?([A-Za-z_$][A-Za-z0-9_$]*)["`']?/g],
+    ['REFERENCES', /\bREFERENCES\s+["`']?([A-Za-z_$][A-Za-z0-9_$]*)["`']?/g],
+    // Drizzle/ORM schema definitions
+    ['drizzle-pgTable', /\bpgTable\s*\(\s*['"`]([^'"`]+)['"`]/g],
+    ['drizzle-pgEnum', /\bpgEnum\s*\(\s*['"`]([^'"`]+)['"`]/g],
+    ['drizzle-sqliteTable', /\bsqliteTable\s*\(\s*['"`]([^'"`]+)['"`]/g],
+    ['drizzle-mysqlTable', /\bmysqlTable\s*\(\s*['"`]([^'"`]+)['"`]/g],
+  ]
+  const noise = new Set([
+    'WHERE', 'AND', 'OR', 'ON', 'SET', 'VALUES', 'NOT', 'NULL', 'LIKE', 'IN', 'AS', 'BY', 'ASC', 'DESC',
+    'TRUE', 'FALSE', 'DEFAULT', 'PRIMARY', 'FOREIGN', 'KEY', 'UNIQUE', 'INDEX', 'CHECK', 'CONSTRAINT',
+    'IF', 'EXISTS', 'CASCADE', 'RESTRICT', 'RETURNING', 'DO', 'NOTHING', 'CONFLICT', 'GROUP', 'ORDER',
+    'HAVING', 'LIMIT', 'OFFSET', 'UNION', 'INTERSECT', 'EXCEPT', 'ALL', 'DISTINCT', 'CASE', 'WHEN', 'THEN',
+    'ELSE', 'END', 'BEGIN', 'COMMIT', 'ROLLBACK', 'TRANSACTION', 'IS', 'BETWEEN', 'OVER', 'PARTITION',
+    'ROW', 'ROWS', 'RANGE', 'PRECEDING', 'FOLLOWING', 'UNBOUNDED', 'CURRENT', 'EXCLUDE', 'TIES',
+    'FIRST', 'LAST', 'NTH', 'VALUE', 'LEAD', 'LAG', 'PERCENT', 'RANK', 'DENSE', 'CUME', 'DIST', 'NTILE',
+  ])
+  for (const [kind, pattern] of patterns) {
+    let match
+    while ((match = pattern.exec(text))) {
+      const name = match[1]
+      if (name.length < 2 || noise.has(name.toUpperCase())) continue
+      atoms.push({ atom: 'sql-table', kind, name, file, line: lineForIndex(starts, match.index) })
+    }
+  }
+  return atoms
+}
+
+function extractComponentCalls(file, text, ext) {
+  if (!text || !['.tsx', '.jsx'].includes(ext)) return []
+  const starts = lineStarts(text)
+  const atoms = []
+  const pattern = /\b<([A-Z][A-Za-z0-9_]*)/g
+  let match
+  while ((match = pattern.exec(text))) {
+    atoms.push({ atom: 'component-call', name: match[1], file, line: lineForIndex(starts, match.index) })
+  }
+  return atoms
+}
+
+function extractHookUsage(file, text, ext) {
+  if (!text || !['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(ext)) return []
+  const starts = lineStarts(text)
+  const atoms = []
+  const pattern = /\b(use[A-Z][A-Za-z0-9_]*)\s*\(/g
+  let match
+  while ((match = pattern.exec(text))) {
+    atoms.push({ atom: 'hook-call', name: match[1], file, line: lineForIndex(starts, match.index) })
+  }
+  return atoms
+}
+
+function extractZodSchemas(file, text, ext) {
+  if (!text || !['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(ext)) return []
+  const starts = lineStarts(text)
+  const atoms = []
+  const schemaPattern = /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*z\.object\s*\(/g
+  let match
+  while ((match = schemaPattern.exec(text))) {
+    atoms.push({ atom: 'zod-schema', name: match[1], file, line: lineForIndex(starts, match.index) })
+  }
+  const fieldPattern = /\b([A-Za-z_$][\w$]*)\s*:\s*z\.(?:string|number|boolean|date|enum|array|object|record|union|intersection|optional|nullable|default|coerce|transform|refine|superRefine|lazy|custom|instanceof|effects|any|unknown|void|never|literal|tuple|map|set|bigint|function|nan|nativeEnum|promise|undefined|null|readonly|preprocess|pipe|brand|catch|describe|max|min|email|url|uuid|cuid|cuid2|regex|ip|emoji|ulid|datetime|min|max|length|size|gt|gte|lt|lte|int|positive|nonnegative|negative|nonpositive|finite|safe|default|optional|nullable|brand|catch|describe|or|and|merge|extend|pick|omit|partial|deepPartial|required|passthrough|strict|strip|catchall)\s*\(/g
+  while ((match = fieldPattern.exec(text))) {
+    const name = match[1]
+    if (['if', 'else', 'for', 'while', 'return', 'switch', 'case', 'try', 'catch', 'const', 'let', 'var'].includes(name)) continue
+    atoms.push({ atom: 'zod-field', name, file, line: lineForIndex(starts, match.index) })
+  }
+  return atoms
+}
+
+function extractDrizzleRelations(file, text, ext) {
+  if (!text || !['.ts', '.js', '.mjs', '.cjs'].includes(ext)) return []
+  const starts = lineStarts(text)
+  const atoms = []
+  const patterns = [
+    ['drizzle-relation', /\brelations\s*\(\s*([A-Za-z_$][\w$]*)/g],
+    ['drizzle-many', /\bmany\s*\(\s*([A-Za-z_$][\w$]*)/g],
+    ['drizzle-one', /\bone\s*\(\s*([A-Za-z_$][\w$]*)/g],
+  ]
+  for (const [kind, pattern] of patterns) {
+    let match
+    while ((match = pattern.exec(text))) {
+      atoms.push({ atom: 'drizzle-relation', kind, name: match[1], file, line: lineForIndex(starts, match.index) })
+    }
+  }
+  return atoms
+}
+
+function extractFastifyPlugins(file, text, ext) {
+  if (!text || !['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(ext)) return []
+  const starts = lineStarts(text)
+  const atoms = []
+  const registerPattern = /\bregister\s*\(\s*['"`]([^'"`]+)['"`]/g
+  let match
+  while ((match = registerPattern.exec(text))) {
+    atoms.push({ atom: 'fastify-plugin', name: match[1], file, line: lineForIndex(starts, match.index) })
+  }
+  const prefixPattern = /prefix\s*:\s*['"`]([^'"`]+)['"`]/g
+  while ((match = prefixPattern.exec(text))) {
+    atoms.push({ atom: 'fastify-prefix', name: match[1], file, line: lineForIndex(starts, match.index) })
+  }
+  return atoms
+}
+
+function extractVariableDeclarations(file, text, ext) {
+  if (!text || !['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(ext)) return []
+  const starts = lineStarts(text)
+  const atoms = []
+  const declPattern = /\b(?:const|let|var)\s+(?:\{([^}]*)\}|\[([^\]]*)\]|([A-Za-z_$][\w$]*))\b/g
+  let match
+  while ((match = declPattern.exec(text))) {
+    const destructured = match[1] ?? match[2]
+    if (destructured) {
+      for (const item of destructured.split(',')) {
+        const m = item.match(/\b([A-Za-z_$][\w$]*)\b/)
+        if (m) atoms.push({ atom: 'variable', kind: 'destructured', name: m[1], file, line: lineForIndex(starts, match.index) })
+      }
+    } else if (match[3]) {
+      atoms.push({ atom: 'variable', kind: 'simple', name: match[3], file, line: lineForIndex(starts, match.index) })
+    }
+  }
+  return atoms
+}
+
+function extractFunctionCalls(file, text, ext) {
+  if (!text || !['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(ext)) return []
+  const starts = lineStarts(text)
+  const atoms = []
+  const keywords = new Set([
+    'if', 'while', 'for', 'switch', 'case', 'catch', 'return', 'throw', 'typeof', 'instanceof', 'void', 'delete', 'new',
+    'in', 'of', 'await', 'yield', 'with', 'do', 'else', 'try', 'finally', 'function', 'class', 'extends', 'implements',
+    'interface', 'type', 'enum', 'namespace', 'module', 'import', 'export', 'default', 'as', 'from', 'const', 'let', 'var',
+  ])
+  // Common built-in globals and built-in methods that are noise for navigation
+  const builtinNoise = new Set([
+    'Array', 'Object', 'String', 'Number', 'Boolean', 'Date', 'RegExp', 'Promise', 'Symbol', 'BigInt', 'Error', 'Map', 'Set',
+    'WeakMap', 'WeakSet', 'JSON', 'Math', 'console', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'parseInt',
+    'parseFloat', 'isNaN', 'isFinite', 'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent', 'escape', 'unescape',
+    'eval', 'isPrototypeOf', 'hasOwnProperty', 'toString', 'valueOf', 'toFixed', 'toPrecision', 'toExponential', 'toLocaleString',
+    'toLowerCase', 'toUpperCase', 'trim', 'trimStart', 'trimEnd', 'split', 'join', 'slice', 'splice', 'concat', 'indexOf', 'lastIndexOf',
+    'includes', 'find', 'findIndex', 'filter', 'map', 'forEach', 'reduce', 'reduceRight', 'some', 'every', 'sort', 'reverse', 'push',
+    'pop', 'shift', 'unshift', 'fill', 'copyWithin', 'from', 'of', 'keys', 'values', 'entries', 'then', 'catch', 'finally', 'bind', 'call',
+    'apply', 'focus', 'blur', 'click', 'preventDefault', 'stopPropagation', 'stopImmediatePropagation', 'addEventListener', 'removeEventListener',
+    'dispatchEvent', 'getAttribute', 'setAttribute', 'removeAttribute', 'getElementById', 'querySelector', 'querySelectorAll', 'getElementsByClassName',
+    'getElementsByTagName', 'createElement', 'createTextNode', 'appendChild', 'removeChild', 'replaceChild', 'insertBefore', 'cloneNode',
+    'contains', 'open', 'close', 'send', 'sendStatus', 'status', 'json', 'setHeader', 'setHeaders', 'sendFile', 'redirect', 'render',
+    'write', 'end', 'log', 'warn', 'error', 'info', 'debug', 'trace', 'table', 'dir', 'time', 'timeEnd', 'assert', 'count', 'countReset',
+    'group', 'groupEnd', 'clear', 'profile', 'profileEnd', 'timeLog', 'timeStamp', 'dirxml', 'groupCollapsed', 'groupEnd',
+    'at', 'charAt', 'charCodeAt', 'codePointAt', 'substring', 'substr', 'padStart', 'padEnd', 'repeat', 'replace', 'replaceAll', 'search',
+    'match', 'matchAll', 'localeCompare', 'normalize', 'raw', 'startsWith', 'endsWith', 'includes', 'repeat', 'trimLeft', 'trimRight',
+  ])
+  const callPattern = /(?<!function\s)(?<!class\s)(?<!extends\s)\b([A-Za-z_$][\w$]*)\s*\(/g
+  let match
+  while ((match = callPattern.exec(text))) {
+    const name = match[1]
+    if (keywords.has(name) || builtinNoise.has(name) || name.length === 0) continue
+    atoms.push({ atom: 'call', name, file, line: lineForIndex(starts, match.index) })
+  }
+  return atoms
+}
+
+function extractAtoms(file, text, ext) {
+  return [
+    ...extractExportAtoms(file, text, ext),
+    ...extractEnvReferences(file, text, ext),
+    ...extractSqlReferences(file, text, ext),
+    ...extractComponentCalls(file, text, ext),
+    ...extractHookUsage(file, text, ext),
+    ...extractZodSchemas(file, text, ext),
+    ...extractDrizzleRelations(file, text, ext),
+    ...extractFastifyPlugins(file, text, ext),
+    ...extractVariableDeclarations(file, text, ext),
+    ...extractFunctionCalls(file, text, ext),
+  ]
+}
+
 function resolveLocalImport(fromFile, specifier, trackedSet) {
   if (!specifier.startsWith('.')) return null
   const baseDir = path.dirname(fromFile)
@@ -447,6 +666,7 @@ function buildMap() {
   const routeRows = []
   const testRows = []
   const symbolRows = []
+  const atomRows = []
   const anomalies = []
   let totalBytes = 0
   let totalLines = 0
@@ -455,7 +675,14 @@ function buildMap() {
 
   for (const file of files) {
     const absolute = path.join(repoRoot, file)
-    const stats = statSync(absolute)
+    let stats
+    try {
+      stats = statSync(absolute)
+    } catch {
+      anomalies.push({ file, reason: 'Tracked file missing in working tree; skipped from mapping.' })
+      continue
+    }
+    if (!stats.isFile()) continue
     const ext = extOf(file)
     const role = classifyFile(file)
     const top = topDir(file)
@@ -469,6 +696,7 @@ function buildMap() {
     const routes = extractApiRoutes(file, text, ext)
     const tests = extractTestCases(file, text, ext)
     const react = extractReactSignals(text, ext)
+    const atoms = extractAtoms(file, text, ext)
     const localImports = []
     const unresolvedRelativeImports = []
     const packageImports = []
@@ -550,6 +778,7 @@ function buildMap() {
     }
     routeRows.push(...routes)
     for (const test of tests) testRows.push({ file, role, ...test })
+    for (const atom of atoms) atomRows.push({ file, role, extension: ext, ...atom })
   }
 
   const ignoredByTopDirectory = {}
@@ -564,6 +793,11 @@ function buildMap() {
     fromRole: classifyFile(edge.from),
     toRole: classifyFile(edge.to),
   }))
+  const atomCounts = {}
+  for (const atom of atomRows) {
+    const key = `${atom.atom}:${atom.name}`
+    atomCounts[key] = (atomCounts[key] ?? 0) + 1
+  }
 
   const highFanIn = topEntries(reverseImports, 40).map(item => ({
     path: item.key,
@@ -603,6 +837,7 @@ function buildMap() {
         apiRoutes: routeRows.length,
         testCases: testRows.length,
         filesWithTests: new Set(testRows.map(test => test.file)).size,
+        atoms: atomRows.length,
         anomalies: anomalies.length,
       },
       counts: {
@@ -619,6 +854,10 @@ function buildMap() {
       entryPoints: entryPointCatalog(fileSummaryByPath),
       routeOwnership: routeOwnership(routeRows),
       componentOwnership: componentOwnership(fileSummaries),
+      topAtoms: topEntries(
+        Object.fromEntries(Object.entries(atomCounts).map(([k, v]) => [k.split(':')[1], v])),
+        40,
+      ),
       anomalies,
       ignoredExamples,
       mcpObservations: [
@@ -633,6 +872,7 @@ function buildMap() {
       imports: importRows.sort((a, b) => a.from.localeCompare(b.from) || a.line - b.line || a.to.localeCompare(b.to)),
       routes: routeRows.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.route.localeCompare(b.route)),
       tests: testRows.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.name.localeCompare(b.name)),
+      atoms: atomRows.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.atom.localeCompare(b.atom) || a.name.localeCompare(b.name)),
       directories: directoryRows,
     },
   }
@@ -733,6 +973,7 @@ function writeMarkdown(map) {
         ['Symbols/blocks discovered', summary.totals.symbols],
         ['API route registrations found', summary.totals.apiRoutes],
         ['Test cases discovered', summary.totals.testCases],
+        ['Atomic references (exports/env/sql/calls/hooks)', summary.totals.atoms],
         ['Tracked path anomalies', summary.totals.anomalies],
       ],
     ),
@@ -758,6 +999,7 @@ function writeMarkdown(map) {
         ['`imports.jsonl`', 'One row per resolved local dependency edge with source line and from/to roles.'],
         ['`routes.jsonl`', 'One row per discovered API route registration with method, route, file, and line.'],
         ['`tests.jsonl`', 'One row per discovered `describe`/`it`/`test` case with file and line.'],
+        ['`atoms.jsonl`', 'One row per atomic reference: exports, env vars, SQL tables, JSX component calls, hook calls.'],
         ['`directories.json`', 'Directory-level file counts, bytes, line counts, roles, and extensions.'],
       ],
     ),
@@ -912,6 +1154,7 @@ function writeAll() {
   writeJsonl(outputs.imports, map.rows.imports)
   writeJsonl(outputs.routes, map.rows.routes)
   writeJsonl(outputs.tests, map.rows.tests)
+  writeJsonl(outputs.atoms, map.rows.atoms)
   writeFileSync(outputs.directories, `${JSON.stringify(map.rows.directories, null, 2)}\n`)
   writeFileSync(outputs.markdown, `${writeMarkdown(map)}\n`)
   writeFileSync(outputs.strategy, `${writeStrategy()}\n`)
@@ -923,3 +1166,4 @@ console.log(`agent map generated: ${normalizePath(path.relative(repoRoot, output
 console.log(`tracked files: ${map.summary.totals.trackedFiles}`)
 console.log(`symbols: ${map.summary.totals.symbols}`)
 console.log(`local imports: ${map.summary.totals.localDependencyEdges}`)
+console.log(`atoms: ${map.summary.totals.atoms}`)
