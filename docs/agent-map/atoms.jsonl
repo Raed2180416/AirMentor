@@ -81262,6 +81262,6 @@
 {"file":"vite.config.ts","role":"build-config","extension":".ts","atom":"call","name":"defineConfig","line":34}
 {"file":"vite.config.ts","role":"build-config","extension":".ts","atom":"export","kind":"export-default","name":"defineConfig","line":34}
 {"file":"vite.config.ts","role":"build-config","extension":".ts","atom":"call","name":"react","line":35}
-{"file":"vite.config.ts","role":"build-config","extension":".ts","atom":"call","name":"manualChunks","line":51}
+{"file":"vite.config.ts","role":"build-config","extension":".ts","atom":"call","name":"manualChunks","line":62}
 {"file":"vitest.config.ts","role":"build-config","extension":".ts","atom":"call","name":"defineConfig","line":3}
 {"file":"vitest.config.ts","role":"build-config","extension":".ts","atom":"export","kind":"export-default","name":"defineConfig","line":3}

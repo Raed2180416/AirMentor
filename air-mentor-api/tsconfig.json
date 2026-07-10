@@ -5,6 +5,15 @@
     "moduleResolution": "NodeNext",
     "outDir": "dist",
     "rootDir": ".",
+    "baseUrl": "..",
+    "paths": {
+      "@kernel/*": ["./kernel/*"],
+      "@adapters/*": ["./adapters/*"],
+      "@http/*": ["./adapters/http/*"],
+      "@persistence/*": ["./adapters/persistence/*"],
+      "@simulation/*": ["./adapters/simulation/*"],
+      "@universities/*": ["./universities/*"]
+    },
     "strict": true,
     "noEmitOnError": true,
     "esModuleInterop": true,
@@ -12,5 +21,5 @@
     "skipLibCheck": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "../kernel/**/*.ts", "../adapters/**/*.ts", "../universities/**/*.ts"]
 }

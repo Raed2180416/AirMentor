@@ -12,8 +12,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
 | Tracked files | 965 |
 | Tracked bytes | 14.5 MiB |
-| Tracked source/doc lines | 314310 |
-| Non-empty lines | 291246 |
+| Tracked source/doc lines | 314354 |
+| Non-empty lines | 291290 |
 | Comment lines | 6001 |
 | Local dependency edges | 761 |
 | Symbols/blocks discovered | 23615 |
@@ -229,13 +229,13 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | scripts | 108 | 995.7 KiB | 24024 | repo-script:108 |
 | air-mentor-api/src/modules | 21 | 816.1 KiB | 20106 | backend:21 |
 | tests | 68 | 613.2 KiB | 17898 | unit-test:68 |
-| . | 25 | 332.4 KiB | 9314 | other:14, build-config:10, agent-config:1 |
+| . | 25 | 333.5 KiB | 9349 | other:14, build-config:10, agent-config:1 |
 | docs | 20 | 329.2 KiB | 8885 | documentation:20 |
 | tests-e2e/specs | 36 | 363.9 KiB | 7581 | e2e-test:36 |
 | src/pages | 6 | 384.2 KiB | 7147 | frontend:6 |
 | pipeline/orchestrator | 20 | 183.8 KiB | 5163 | pipeline:20 |
+| air-mentor-api | 14 | 154.5 KiB | 4723 | other:9, build-config:5 |
 | src/api | 2 | 166.3 KiB | 4722 | frontend:2 |
-| air-mentor-api | 14 | 154.1 KiB | 4714 | other:9, build-config:5 |
 | src/app | 8 | 186.6 KiB | 3852 | frontend:8 |
 | air-mentor-api/src/db | 4 | 110.0 KiB | 2598 | backend:4 |
 | forge-audit/forge_audit/engine | 7 | 76.6 KiB | 2259 | forge-audit:7 |

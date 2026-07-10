@@ -10,6 +10,16 @@
     "skipLibCheck": true,
 
     /* Bundler mode */
+    "baseUrl": ".",
+    "paths": {
+      "@kernel/*": ["./kernel/*"],
+      "@adapters/*": ["./adapters/*"],
+      "@web/*": ["./adapters/web/*"],
+      "@http/*": ["./adapters/http/*"],
+      "@persistence/*": ["./adapters/persistence/*"],
+      "@simulation/*": ["./adapters/simulation/*"],
+      "@universities/*": ["./universities/*"]
+    },
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": false,
@@ -25,5 +35,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": false
   },
-  "include": ["src"]
+  "include": ["src", "kernel", "adapters", "universities"]
 }

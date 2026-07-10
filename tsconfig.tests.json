@@ -9,6 +9,16 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
 
+    "baseUrl": ".",
+    "paths": {
+      "@kernel/*": ["./kernel/*"],
+      "@adapters/*": ["./adapters/*"],
+      "@web/*": ["./adapters/web/*"],
+      "@http/*": ["./adapters/http/*"],
+      "@persistence/*": ["./adapters/persistence/*"],
+      "@simulation/*": ["./adapters/simulation/*"],
+      "@universities/*": ["./universities/*"]
+    },
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
@@ -30,6 +40,10 @@
     "scripts/**/*.d.ts",
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
+    "kernel/**/*.ts",
+    "adapters/**/*.ts",
+    "adapters/**/*.tsx",
+    "universities/**/*.ts",
     "vitest.config.ts",
     "vite.config.ts"
   ],

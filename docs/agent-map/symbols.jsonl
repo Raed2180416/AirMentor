@@ -23612,4 +23612,4 @@
 {"file":"vite.config.ts","role":"build-config","extension":".ts","kind":"const","name":"apiProxyTarget","startLine":10,"endLine":24,"spanLines":15}
 {"file":"vite.config.ts","role":"build-config","extension":".ts","kind":"const","name":"apiBaseUrl","startLine":11,"endLine":24,"spanLines":14}
 {"file":"vite.config.ts","role":"build-config","extension":".ts","kind":"const","name":"liveApiProxy","startLine":12,"endLine":24,"spanLines":13}
-{"file":"vite.config.ts","role":"build-config","extension":".ts","kind":"const","name":"devWatchIgnored","startLine":26,"endLine":77,"spanLines":52}
+{"file":"vite.config.ts","role":"build-config","extension":".ts","kind":"const","name":"devWatchIgnored","startLine":26,"endLine":88,"spanLines":63}

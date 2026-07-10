@@ -33,6 +33,17 @@ const devWatchIgnored = [
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@kernel': '/kernel',
+      '@adapters': '/adapters',
+      '@web': '/adapters/web',
+      '@http': '/adapters/http',
+      '@persistence': '/adapters/persistence',
+      '@simulation': '/adapters/simulation',
+      '@universities': '/universities',
+    },
+  },
   base: pagesBase,
   server: {
     ...(liveApiProxy ? { proxy: liveApiProxy } : {}),

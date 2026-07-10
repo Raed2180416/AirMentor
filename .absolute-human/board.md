@@ -50,7 +50,7 @@ Board policy: gitignored local working state.
 - **Tasks:**
   - SH-001: Add path aliases to tsconfig + vite configs
   - SH-005: Add `architecture:check` to CI (done, commit `a142e8d`)
-  - SH-006: Add ESLint import boundary rules
+  - SH-006: Add ESLint import boundary rules (done, commit `2db7a7d`)
   - SH-007: Install and configure `knip` (done, commit `b927652`)
   - SH-008: Run `knip` baseline (done; report generated but not committed — large generated artifact)
 
