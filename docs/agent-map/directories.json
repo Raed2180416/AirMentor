@@ -664,8 +664,8 @@
   {
     "path": "src",
     "fileCount": 63,
-    "bytes": 1504988,
-    "lines": 31846,
+    "bytes": 1436453,
+    "lines": 30128,
     "roles": {
       "frontend": 63
     },
@@ -673,6 +673,19 @@
       ".tsx": 34,
       ".ts": 27,
       ".css": 2
+    }
+  },
+  {
+    "path": "src/admin",
+    "fileCount": 2,
+    "bytes": 71994,
+    "lines": 1848,
+    "roles": {
+      "frontend": 2
+    },
+    "extensions": {
+      ".tsx": 1,
+      ".ts": 1
     }
   },
   {

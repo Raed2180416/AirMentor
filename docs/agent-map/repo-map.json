@@ -149,18 +149,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 948,
-    "ignoredEntriesObserved": 39,
-    "bytes": 15061012,
-    "lines": 310913,
-    "nonEmptyLines": 288142,
-    "commentLines": 5993,
-    "localDependencyEdges": 665,
-    "symbols": 23528,
+    "trackedFiles": 950,
+    "ignoredEntriesObserved": 40,
+    "bytes": 15064471,
+    "lines": 311043,
+    "nonEmptyLines": 288267,
+    "commentLines": 5980,
+    "localDependencyEdges": 682,
+    "symbols": 23552,
     "apiRoutes": 190,
     "testCases": 1370,
     "filesWithTests": 194,
-    "atoms": 81042,
+    "atoms": 81119,
     "anomalies": 9
   },
   "counts": {
@@ -172,7 +172,7 @@
       ".yml": 5,
       ".kiro": 1,
       ".example": 1,
-      ".ts": 387,
+      ".ts": 388,
       ".toml": 3,
       ".txt": 7,
       ".py": 108,
@@ -190,7 +190,7 @@
       ".service": 2,
       ".timer": 1,
       ".conf": 2,
-      ".tsx": 72,
+      ".tsx": 73,
       ".css": 2
     },
     "byRole": {
@@ -206,7 +206,7 @@
       "forge-audit": 22,
       "pipeline": 171,
       "repo-script": 106,
-      "frontend": 82,
+      "frontend": 84,
       "e2e-test": 50
     },
     "byTopDirectory": {
@@ -242,7 +242,7 @@
       "public": 1,
       "scripts": 106,
       "skills-lock.json": 1,
-      "src": 82,
+      "src": 84,
       "tests-e2e": 50,
       "tests": 67,
       "tsconfig.app.json": 1,
@@ -265,7 +265,7 @@
       "context_main.json": 1,
       "context.json": 1,
       "scripts": 1,
-      "src": 6,
+      "src": 7,
       "tests-e2e": 5,
       "tests": 1,
       "tmp": 1
@@ -275,22 +275,22 @@
     "highFanIn": [
       {
         "path": "src/data.ts",
-        "importers": 67,
+        "importers": 69,
         "role": "frontend"
       },
       {
         "path": "src/domain.ts",
-        "importers": 51,
+        "importers": 52,
         "role": "frontend"
       },
       {
         "path": "src/api/types.ts",
-        "importers": 48,
+        "importers": 49,
         "role": "frontend"
       },
       {
         "path": "src/ui-primitives.tsx",
-        "importers": 41,
+        "importers": 42,
         "role": "frontend"
       },
       {
@@ -320,7 +320,12 @@
       },
       {
         "path": "src/system-admin-ui.tsx",
-        "importers": 18,
+        "importers": 19,
+        "role": "frontend"
+      },
+      {
+        "path": "src/system-admin-live-data.ts",
+        "importers": 13,
         "role": "frontend"
       },
       {
@@ -329,8 +334,8 @@
         "role": "frontend"
       },
       {
-        "path": "src/system-admin-live-data.ts",
-        "importers": 11,
+        "path": "src/api/client.ts",
+        "importers": 10,
         "role": "frontend"
       },
       {
@@ -344,17 +349,17 @@
         "role": "repo-script"
       },
       {
-        "path": "src/api/client.ts",
-        "importers": 9,
-        "role": "frontend"
-      },
-      {
         "path": "src/repositories.ts",
         "importers": 9,
         "role": "frontend"
       },
       {
         "path": "src/proof-surface-shell.tsx",
+        "importers": 8,
+        "role": "frontend"
+      },
+      {
+        "path": "src/theme.ts",
         "importers": 8,
         "role": "frontend"
       },
@@ -380,11 +385,6 @@
       },
       {
         "path": "src/system-admin-live-app.tsx",
-        "importers": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/theme.ts",
         "importers": 7,
         "role": "frontend"
       },
@@ -444,7 +444,17 @@
         "role": "frontend"
       },
       {
+        "path": "src/proof-pilot.ts",
+        "importers": 4,
+        "role": "frontend"
+      },
+      {
         "path": "src/proof-simulation-controls.tsx",
+        "importers": 4,
+        "role": "frontend"
+      },
+      {
+        "path": "src/system-admin-overview-helpers.ts",
         "importers": 4,
         "role": "frontend"
       },
@@ -462,22 +472,12 @@
         "path": "src/academic-workspace-route-helpers.ts",
         "importers": 3,
         "role": "frontend"
-      },
-      {
-        "path": "src/api-connection.ts",
-        "importers": 3,
-        "role": "frontend"
-      },
-      {
-        "path": "src/components/reevaluating-risk-loader.tsx",
-        "importers": 3,
-        "role": "frontend"
       }
     ],
     "highFanOut": [
       {
         "path": "src/system-admin-live-app.tsx",
-        "localImports": 29,
+        "localImports": 32,
         "role": "frontend"
       },
       {
@@ -539,6 +539,16 @@
         "path": "tests/system-admin-faculties-workspace.test.tsx",
         "localImports": 8,
         "role": "unit-test"
+      },
+      {
+        "path": "src/admin/live-app-chrome.tsx",
+        "localImports": 7,
+        "role": "frontend"
+      },
+      {
+        "path": "src/admin/live-app-model.ts",
+        "localImports": 7,
+        "role": "frontend"
       },
       {
         "path": "src/app/student-drawer.tsx",
@@ -664,16 +674,6 @@
         "path": "tests-e2e/specs/proof-browser-sentinel-matrix.spec.ts",
         "localImports": 5,
         "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/receptivity-differentiation.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/shared-proof-playback-sync.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
       }
     ],
     "topExternalImports": [
@@ -698,11 +698,11 @@
         "value": 79
       },
       {
-        "key": "pathlib",
-        "value": 72
+        "key": "react",
+        "value": 73
       },
       {
-        "key": "react",
+        "key": "pathlib",
         "value": 72
       },
       {
@@ -714,12 +714,12 @@
         "value": 35
       },
       {
-        "key": "typing",
+        "key": "lucide-react",
         "value": 32
       },
       {
-        "key": "lucide-react",
-        "value": 31
+        "key": "typing",
+        "value": 32
       },
       {
         "key": "fastify",
@@ -771,7 +771,7 @@
       },
       {
         "key": "framer-motion",
-        "value": 14
+        "value": 15
       },
       {
         "key": "node:child_process",
@@ -853,9 +853,9 @@
       "name": "Frontend live admin shell",
       "file": "src/system-admin-live-app.tsx",
       "role": "frontend",
-      "lines": 8463,
-      "localImports": 29,
-      "symbols": 816,
+      "lines": 6745,
+      "localImports": 32,
+      "symbols": 635,
       "note": "Live System Admin surface and proof playback/admin control entry."
     },
     {
@@ -1298,31 +1298,6 @@
       "hooks": []
     },
     {
-      "file": "src/system-admin-live-app.tsx",
-      "role": "frontend",
-      "lines": 8463,
-      "components": [
-        "ADMIN_INLINE_ACTION_QUEUE_MIN_VIEWPORT",
-        "ActionQueueCard",
-        "AdminDetailTabPanel",
-        "AdminDetailTabs",
-        "AdminMiniStat",
-        "OperationsRail",
-        "OverviewSupportCard",
-        "SectionLaunchCard",
-        "SystemAdminLiveApp",
-        "TeachingShellAdminTopBar"
-      ],
-      "hooks": [
-        "useCallback",
-        "useDeferredValue",
-        "useDismissibleSessionNotice",
-        "useEffect",
-        "useMemo",
-        "useState"
-      ]
-    },
-    {
       "file": "src/ui-primitives.tsx",
       "role": "frontend",
       "lines": 980,
@@ -1513,6 +1488,22 @@
       ]
     },
     {
+      "file": "src/admin/live-app-chrome.tsx",
+      "role": "frontend",
+      "lines": 496,
+      "components": [
+        "ActionQueueCard",
+        "AdminDetailTabPanel",
+        "AdminDetailTabs",
+        "AdminMiniStat",
+        "OperationsRail",
+        "OverviewSupportCard",
+        "SectionLaunchCard",
+        "TeachingShellAdminTopBar"
+      ],
+      "hooks": []
+    },
+    {
       "file": "src/backend-health-indicator.tsx",
       "role": "frontend",
       "lines": 208,
@@ -1574,6 +1565,22 @@
       ],
       "hooks": [
         "useEffect",
+        "useState"
+      ]
+    },
+    {
+      "file": "src/system-admin-live-app.tsx",
+      "role": "frontend",
+      "lines": 6745,
+      "components": [
+        "SystemAdminLiveApp"
+      ],
+      "hooks": [
+        "useCallback",
+        "useDeferredValue",
+        "useDismissibleSessionNotice",
+        "useEffect",
+        "useMemo",
         "useState"
       ]
     },
@@ -2204,6 +2211,7 @@
     "context_main.json",
     "context.json",
     "scripts/context.json",
+    "src/admin/context.json",
     "src/api/context.json",
     "src/app/context.json",
     "src/components/context.json",
