@@ -931,8 +931,8 @@
 {"file":"tests-e2e/specs/flow-5-boundary-cross.spec.ts","role":"e2e-test","kind":"test","name":"flow-5 boundary cross: Next Day across TT1 boundary triggers exactly one stage auto-advance","line":20}
 {"file":"tests-e2e/specs/flow-6-nextstage-autoresolve.spec.ts","role":"e2e-test","kind":"test","name":"flow-6 Next Stage auto-resolves open actionable cases in demo mode","line":15}
 {"file":"tests-e2e/specs/flow-8-reopen.spec.ts","role":"e2e-test","kind":"test","name":"flow-8 reopen: closed case stays closed, later deterioration opens new caseId for same concernContextKey","line":18}
-{"file":"tests-e2e/specs/flow-9-hod-cycle.spec.ts","role":"e2e-test","kind":"test","name":"flow-9 HOD cycle: teacher request → HOD approve → reset-complete → teacher edit → relock","line":74}
-{"file":"tests-e2e/specs/flow-9-hod-cycle.spec.ts","role":"e2e-test","kind":"test","name":"flow-9 HOD cycle: illegal transitions rejected (engine contract via route)","line":139}
+{"file":"tests-e2e/specs/flow-9-hod-cycle.spec.ts","role":"e2e-test","kind":"test","name":"flow-9 HOD cycle: teacher request → HOD approve → reset-complete → teacher edit → relock","line":73}
+{"file":"tests-e2e/specs/flow-9-hod-cycle.spec.ts","role":"e2e-test","kind":"test","name":"flow-9 HOD cycle: illegal transitions rejected (engine contract via route)","line":138}
 {"file":"tests-e2e/specs/full-demo-ladder.spec.ts","role":"e2e-test","kind":"test","name":"full demo ladder: sysadmin, teacher, mentor, and HoD surfaces stay populated from Sem 1 to Sem 6","line":11}
 {"file":"tests-e2e/specs/humanised-action-labels.spec.ts","role":"e2e-test","kind":"test","name":"all intervention display sites surface humanised labels, never raw action codes","line":29}
 {"file":"tests-e2e/specs/intervention-affects-marks.spec.ts","role":"e2e-test","kind":"test","name":"post-tt1 intervention raises the treated student\\","line":24}

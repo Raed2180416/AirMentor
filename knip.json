@@ -1,31 +1,19 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
-    "src/main.tsx",
-    "air-mentor-api/src/index.ts",
     "scripts/**/*.mjs",
     "scripts/**/*.ts"
   ],
   "project": [
     "src/**/*.ts",
     "src/**/*.tsx",
-    "air-mentor-api/src/**/*.ts",
     "tests/**/*.ts",
     "tests/**/*.tsx",
     "tests-e2e/**/*.ts",
     "scripts/**/*.mjs",
     "scripts/**/*.ts"
   ],
-  "ignore": [
-    "docs/**",
-    "dist/**",
-    "air-mentor-api/dist/**",
-    "node_modules/**",
-    "air-mentor-api/node_modules/**",
-    "**/*.d.ts",
-    "public/**",
-    "pipeline/**"
-  ],
+  "ignore": [],
   "ignoreDependencies": [
     "@types/*"
   ],

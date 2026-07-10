@@ -219,20 +219,6 @@ async function loadFacultyCalendarCanonicalTemplate(context: RouteContext, facul
   return runtimeParsed.success ? runtimeParsed.data : null
 }
 
-async function loadFacultyCalendarTemplate(context: RouteContext, facultyId: string) {
-  const [teacherRow] = await context.db
-    .select()
-    .from(facultyCalendarWorkspaces)
-    .where(eq(facultyCalendarWorkspaces.facultyId, facultyId))
-  const teacherLocal = teacherRow ? mapFacultyCalendarTemplateRow(teacherRow) : null
-  if (teacherLocal) return teacherLocal
-  const canonical = await loadFacultyCalendarCanonicalTemplate(context, facultyId)
-  if (canonical) return canonical
-  const timetablePayload = await getRuntimeSlice(context, 'timetableByFacultyId', {} as Record<string, unknown>)
-  const parsedFallback = facultyCalendarTemplateSchema.safeParse(timetablePayload?.[facultyId])
-  return parsedFallback.success ? parsedFallback.data : null
-}
-
 async function loadFacultyCalendarAdminWorkspace(context: RouteContext, facultyId: string) {
   const [workspaceRow] = await context.db
     .select()

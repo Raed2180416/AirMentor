@@ -53,7 +53,7 @@
         "e2e": "playwright test --config=tests-e2e/playwright.config.ts",
         "e2e:attached": "AIRMENTOR_PW_SKIP_WEBSERVER=1 AIRMENTOR_PW_REUSE_SERVER=1 playwright test --config=tests-e2e/playwright.config.ts",
         "e2e:install": "playwright install firefox chromium",
-        "test": "vitest run",
+        "test": "vitest run --maxWorkers=2",
         "preview": "vite preview",
         "playwright:version": "playwright --version",
         "playwright:smoke": "bash scripts/playwright-smoke.sh",
@@ -153,16 +153,16 @@
   "totals": {
     "trackedFiles": 965,
     "ignoredEntriesObserved": 45,
-    "bytes": 15180258,
-    "lines": 314354,
-    "nonEmptyLines": 291290,
-    "commentLines": 6001,
+    "bytes": 15181307,
+    "lines": 314380,
+    "nonEmptyLines": 291318,
+    "commentLines": 6004,
     "localDependencyEdges": 761,
-    "symbols": 23616,
+    "symbols": 23610,
     "apiRoutes": 190,
     "testCases": 1374,
     "filesWithTests": 195,
-    "atoms": 81267,
+    "atoms": 81255,
     "anomalies": 0
   },
   "counts": {
@@ -1513,7 +1513,7 @@
     {
       "file": "src/backend-health-indicator.tsx",
       "role": "frontend",
-      "lines": 208,
+      "lines": 210,
       "components": [
         "ApiFallbackIndicator",
         "BackendOfflineIndicator"
@@ -1653,7 +1653,7 @@
     {
       "file": "src/course-config-drawer.tsx",
       "role": "frontend",
-      "lines": 359,
+      "lines": 360,
       "components": [
         "CourseConfigDrawer",
         "FormInput",
@@ -1998,11 +1998,11 @@
     },
     {
       "key": "eq",
-      "value": 1253
+      "value": 1252
     },
     {
       "key": "where",
-      "value": 1228
+      "value": 1227
     },
     {
       "key": "it",

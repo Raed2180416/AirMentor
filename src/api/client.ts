@@ -50,6 +50,7 @@ import type {
   ApiCurriculumFeatureConfigBundle,
   ApiCurriculumFeatureConfigHistoryEvent,
   ApiCurriculumGraphBundle,
+  ApiGraphEdge, ApiGraphNode,
   ApiCurriculumFeatureConfigPayload,
   ApiCurriculumFeatureConfigPreview,
   ApiCurriculumFeatureConfigSaveResult,
@@ -124,7 +125,6 @@ export class AirMentorApiError extends Error {
     this.details = details
   }
 }
-
 export interface AirMentorApiClientLike {
   restoreSession(): Promise<ApiSessionResponse>
   login(payload: ApiLoginRequest): Promise<ApiSessionResponse>
@@ -339,11 +339,11 @@ export interface AirMentorApiClientLike {
   previewCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, proposedOutcomes: Array<{ id: string; bloom: string }>): Promise<ApiCurriculumFeatureConfigPreview>
   getCurriculumFeatureConfigHistory(batchId: string, curriculumCourseId: string): Promise<{ events: ApiCurriculumFeatureConfigHistoryEvent[] }>
   getCurriculumGraph(batchId: string): Promise<ApiCurriculumGraphBundle>
-  saveCurriculumGraphDraft(batchId: string, payload: { nodes: any[]; edges: any[]; command?: any }): Promise<{ ok: boolean; draftId: string; savedAt: string }>
-  validateCurriculumGraph(batchId: string, payload?: { nodes?: any[]; edges?: any[] }): Promise<{ valid: boolean; errors: string[]; warnings: string[] }>
+  saveCurriculumGraphDraft(batchId: string, payload: { nodes: ApiGraphNode[]; edges: ApiGraphEdge[]; command?: unknown }): Promise<{ ok: boolean; draftId: string; savedAt: string }>
+  validateCurriculumGraph(batchId: string, payload?: { nodes?: ApiGraphNode[]; edges?: ApiGraphEdge[] }): Promise<{ valid: boolean; errors: string[]; warnings: string[] }>
   publishCurriculumGraph(batchId: string): Promise<{ ok: boolean; newImportVersionId: string; validation: { valid: boolean; errors: string[]; warnings: string[] }; publishedAt: string }>
-  undoCurriculumGraph(batchId: string): Promise<{ ok: boolean; reversePayload: any; commandType: string }>
-  redoCurriculumGraph(batchId: string): Promise<{ ok: boolean; forwardPayload: any; commandType: string }>
+  undoCurriculumGraph(batchId: string): Promise<{ ok: boolean; reversePayload: unknown; commandType: string }>
+  redoCurriculumGraph(batchId: string): Promise<{ ok: boolean; forwardPayload: unknown; commandType: string }>
   suggestCurriculumGraph(batchId: string, payload?: { targetCurriculumNodeIds?: string[] }): Promise<{ ok: boolean; candidateCount: number; candidateGenerationStatus: string }>
   approveCurriculumGraphSuggestion(batchId: string, suggestionId: string): Promise<{ ok: boolean; suggestionId: string; status: string }>
   rejectCurriculumGraphSuggestion(batchId: string, suggestionId: string): Promise<{ ok: boolean; suggestionId: string; status: string }>
@@ -1453,14 +1453,14 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<ApiCurriculumGraphBundle>(`/api/admin/batches/${batchId}/curriculum-graph`)
   }
 
-  async saveCurriculumGraphDraft(batchId: string, payload: { nodes: any[]; edges: any[]; command?: any }) {
+  async saveCurriculumGraphDraft(batchId: string, payload: { nodes: ApiGraphNode[]; edges: ApiGraphEdge[]; command?: unknown }) {
     return this.request<{ ok: boolean; draftId: string; savedAt: string }>(`/api/admin/batches/${batchId}/curriculum-graph/draft`, {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   }
 
-  async validateCurriculumGraph(batchId: string, payload?: { nodes?: any[]; edges?: any[] }) {
+  async validateCurriculumGraph(batchId: string, payload?: { nodes?: ApiGraphNode[]; edges?: ApiGraphEdge[] }) {
     return this.request<{ valid: boolean; errors: string[]; warnings: string[] }>(`/api/admin/batches/${batchId}/curriculum-graph/validate`, {
       method: 'POST',
       body: JSON.stringify(payload ?? {}),
@@ -1474,13 +1474,13 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   }
 
   async undoCurriculumGraph(batchId: string) {
-    return this.request<{ ok: boolean; reversePayload: any; commandType: string }>(`/api/admin/batches/${batchId}/curriculum-graph/undo`, {
+    return this.request<{ ok: boolean; reversePayload: unknown; commandType: string }>(`/api/admin/batches/${batchId}/curriculum-graph/undo`, {
       method: 'POST',
     })
   }
 
   async redoCurriculumGraph(batchId: string) {
-    return this.request<{ ok: boolean; forwardPayload: any; commandType: string }>(`/api/admin/batches/${batchId}/curriculum-graph/redo`, {
+    return this.request<{ ok: boolean; forwardPayload: unknown; commandType: string }>(`/api/admin/batches/${batchId}/curriculum-graph/redo`, {
       method: 'POST',
     })
   }

@@ -37,7 +37,7 @@
     "e2e": "playwright test --config=tests-e2e/playwright.config.ts",
     "e2e:attached": "AIRMENTOR_PW_SKIP_WEBSERVER=1 AIRMENTOR_PW_REUSE_SERVER=1 playwright test --config=tests-e2e/playwright.config.ts",
     "e2e:install": "playwright install firefox chromium",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=2",
     "preview": "vite preview",
     "playwright:version": "playwright --version",
     "playwright:smoke": "bash scripts/playwright-smoke.sh",

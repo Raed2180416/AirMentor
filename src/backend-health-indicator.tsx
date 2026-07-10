@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { T, mono } from './data'
@@ -66,6 +67,7 @@ export function useBackendHealthMonitor(apiBaseUrl: string, options: BackendHeal
   const consecutiveFailures = useRef(0)
   const checkSequence = useRef(0)
 
+  // Intentionally reset state when the monitor identity (URL / enabled flag) changes.
   useEffect(() => {
     checkSequence.current += 1
     consecutiveFailures.current = 0

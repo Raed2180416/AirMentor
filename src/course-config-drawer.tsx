@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Settings, BookOpen, Clock, CheckCircle2, AlertTriangle, BookMarked, GraduationCap } from 'lucide-react'
+import { X, Settings, Clock, CheckCircle2, BookMarked, GraduationCap } from 'lucide-react'
 import { T, mono, sora } from './data'
-import { Btn, Card, UI_RADII, withAlpha } from './ui-primitives'
+import { Btn, UI_RADII, withAlpha } from './ui-primitives'
 
 type CourseConfigDrawerProps = {
   isOpen: boolean

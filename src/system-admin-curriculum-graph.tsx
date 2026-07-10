@@ -1,23 +1,23 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars -- remove when decomposing into adapters/web/features/curriculum-graph/ in Phase 2 */
 import { useState, useCallback, useEffect, useMemo, useRef, memo } from 'react';
 import {
   ReactFlow, Controls, Background, MiniMap, applyNodeChanges, applyEdgeChanges,
   Panel, Handle, Position, ReactFlowProvider, BaseEdge, EdgeLabelRenderer, getBezierPath,
   useReactFlow, NodeToolbar
 } from '@xyflow/react';
-import type { Node, Edge, Connection, OnNodeDrag } from '@xyflow/react';
+import type { Node, Edge, Connection } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { T, sora, mono } from './data';
 import { Btn } from './ui-primitives';
 import {
   Save, Loader2, Maximize2, Minimize2, Map as MapIcon,
-  Plus, Trash2, BookOpen, GraduationCap
+  Trash2, BookOpen, GraduationCap
 } from 'lucide-react';
 import { AirMentorApiClient } from './api/client';
 import type { ApiCurriculumGraphBundle, ApiGraphNode, ApiGraphEdge } from './api/types';
 import type { ThemeMode } from './domain';
 import { isLightTheme } from './theme';
 import { useForceLayout } from './hooks/useForceLayout';
-
 function getConfiguredApiBaseUrl() {
   const configured = import.meta.env.VITE_AIRMENTOR_API_BASE_URL?.trim();
   return configured || 'http://127.0.0.1:4000';

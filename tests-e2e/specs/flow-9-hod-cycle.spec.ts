@@ -15,7 +15,6 @@ import { apiPath } from '../helpers/api-url'
 import { loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PlaywrightResp = { ok(): boolean; status(): number; json(): Promise<any> }
 
 async function seedCorrectionCycleTask(request: {

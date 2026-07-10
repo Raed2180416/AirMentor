@@ -1212,7 +1212,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       facultyBudgetByKey,
     })
 
-    const decisionsBySourceKey = new Map<string, typeof governance.decisions extends Map<any, infer V> ? V : never>()
+    const decisionsBySourceKey = new Map<string, typeof governance.decisions extends Map<string, infer V> ? V : never>()
     governance.decisions.forEach(decision => {
       if (decision.primarySourceKey) decisionsBySourceKey.set(decision.primarySourceKey, decision)
       decision.supportingSourceKeys.forEach(sourceKey => decisionsBySourceKey.set(sourceKey, decision))

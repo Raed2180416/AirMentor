@@ -2,8 +2,8 @@
   {
     "path": ".",
     "fileCount": 25,
-    "bytes": 341489,
-    "lines": 9349,
+    "bytes": 342538,
+    "lines": 9379,
     "roles": {
       "other": 14,
       "agent-config": 1,
@@ -315,7 +315,7 @@
   {
     "path": "air-mentor-api/src/lib",
     "fileCount": 82,
-    "bytes": 1595194,
+    "bytes": 1595142,
     "lines": 37899,
     "roles": {
       "backend": 82
@@ -327,8 +327,8 @@
   {
     "path": "air-mentor-api/src/modules",
     "fileCount": 21,
-    "bytes": 835659,
-    "lines": 20106,
+    "bytes": 834903,
+    "lines": 20092,
     "roles": {
       "backend": 21
     },
@@ -689,8 +689,8 @@
   {
     "path": "src",
     "fileCount": 63,
-    "bytes": 1324687,
-    "lines": 28880,
+    "bytes": 1325214,
+    "lines": 28883,
     "roles": {
       "frontend": 63
     },
@@ -729,7 +729,7 @@
   {
     "path": "src/api",
     "fileCount": 2,
-    "bytes": 170312,
+    "bytes": 170437,
     "lines": 4722,
     "roles": {
       "frontend": 2
@@ -741,7 +741,7 @@
   {
     "path": "src/app",
     "fileCount": 8,
-    "bytes": 191114,
+    "bytes": 191090,
     "lines": 3852,
     "roles": {
       "frontend": 8
@@ -766,8 +766,8 @@
   {
     "path": "src/hooks",
     "fileCount": 2,
-    "bytes": 4572,
-    "lines": 139,
+    "bytes": 4815,
+    "lines": 147,
     "roles": {
       "frontend": 2
     },
@@ -864,8 +864,8 @@
   {
     "path": "tests-e2e/specs",
     "fileCount": 36,
-    "bytes": 372591,
-    "lines": 7581,
+    "bytes": 372528,
+    "lines": 7580,
     "roles": {
       "e2e-test": 36
     },

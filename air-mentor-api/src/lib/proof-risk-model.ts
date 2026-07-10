@@ -912,7 +912,7 @@ function loadEbmOverallModel(): EbmModelArtifact | null {
   try {
     const raw = _readFileSync(EBM_OVERALL_MODEL, 'utf-8')
     cachedEbmOverallModel = JSON.parse(raw)
-  } catch (e) {
+  } catch (_e) {
     // Silently fall back if EBM not yet trained
   }
   return cachedEbmOverallModel
@@ -2638,7 +2638,7 @@ function loadCatBoostModels() {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
     baseDir = _resolve(__dirname, '../../../output/proof-risk-model');
-  } catch(e) {
+  } catch(_e) {
     baseDir = _resolve(process.cwd(), 'output/proof-risk-model');
   }
   

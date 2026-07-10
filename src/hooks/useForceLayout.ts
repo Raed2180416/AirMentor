@@ -9,13 +9,22 @@ export type ForceLayoutOptions = {
 
 const SEM_SPACING = 400;
 
+type SimNode = d3.SimulationNodeDatum & {
+  id: string;
+  width: number;
+  height: number;
+  targetX: number;
+  targetY: number;
+  dragging?: boolean;
+};
+
 export function useForceLayout({
-  semesterCount = 8,
-  expandedSemesters,
+  semesterCount: _semesterCount = 8,
+  expandedSemesters: _expandedSemesters,
 }: ForceLayoutOptions = {}) {
   const { getNodes, setNodes } = useReactFlow();
   const nodesInitialized = useNodesInitialized();
-  const simulationRef = useRef<d3.Simulation<d3.SimulationNodeDatum, undefined> | null>(null);
+  const simulationRef = useRef<d3.Simulation<SimNode, undefined> | null>(null);
 
   const runLayout = useCallback(() => {
     const nodes = getNodes();
@@ -32,7 +41,7 @@ export function useForceLayout({
     const totalWidth = (sortedSems.length - 1) * SEM_SPACING;
     const startX = -totalWidth / 2;
 
-    const simNodes = topLevelNodes.map((node) => {
+    const simNodes: SimNode[] = topLevelNodes.map((node) => {
       const sem = Number(node.data?.semesterNumber);
       const idx = semIndex.get(sem) ?? 0;
       const targetX = startX + idx * SEM_SPACING;
@@ -51,22 +60,21 @@ export function useForceLayout({
     });
 
     const forceCollide = d3.forceCollide()
-      .radius((d: any) => Math.max(d.width, d.height) / 2 + 20)
+      .radius((d: d3.SimulationNodeDatum) => Math.max((d as SimNode).width, (d as SimNode).height) / 2 + 20)
       .strength(0.3)
       .iterations(2);
 
     const forceTarget = (alpha: number) => {
       for (const node of simNodes) {
-        const n = node as any;
-        if (n.dragging) continue;
-        const tx = n.targetX ?? n.x;
-        const ty = n.targetY ?? n.y;
-        n.vx = (n.vx || 0) + (tx - n.x) * 0.05 * alpha;
-        n.vy = (n.vy || 0) + (ty - n.y) * 0.05 * alpha;
+        if (node.dragging) continue;
+        const tx = node.targetX ?? (node.x ?? 0);
+        const ty = node.targetY ?? (node.y ?? 0);
+        node.vx = (node.vx || 0) + (tx - (node.x ?? 0)) * 0.05 * alpha;
+        node.vy = (node.vy || 0) + (ty - (node.y ?? 0)) * 0.05 * alpha;
       }
     };
 
-    const simulation = d3.forceSimulation(simNodes as d3.SimulationNodeDatum[])
+    const simulation = d3.forceSimulation<SimNode>(simNodes)
       .velocityDecay(0.85)   // very heavy damping — no oscillation
       .alphaDecay(0.12)       // cool fast
       .alphaMin(0.001)        // stop early

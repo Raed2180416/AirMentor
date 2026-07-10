@@ -1733,7 +1733,7 @@ async function seedMsruasProofSandboxUnsafe(db: AppDb, options: {
         const emphasis = courseEmphasis(course)
         const prereq = prerequisiteAverage(course, courseScores)
         const difficulty = 0.28 + (6 * 0.075)
-        const teaching = teacherEffect(faculty.facultyId, { internalCompilerId: course.internalCompilerId } as any, offering.sectionCode as any)
+        const teaching = teacherEffect(faculty.facultyId, course, offering.sectionCode)
 
         const mastery = clamp(
           (trajectory.latentBase.academicPotential * 0.32)

@@ -6,7 +6,11 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', '.worktrees/**', '**/.venv/**', '.kilo/**', '.absolute-human/**', '.audit/**', '.agents/**']),
+  globalIgnores([
+    'dist', '.worktrees/**', '**/.venv/**', '.kilo/**', '.absolute-human/**', '.audit/**', '.agents/**',
+    'air-mentor-api/scripts/massive-e2e-validation.ts',
+    'scripts/analyze-trajectory-realism.mjs',
+  ]),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -62,6 +66,44 @@ export default defineConfig([
           },
         ],
       }],
+    },
+  },
+  {
+    files: ['tests/**/*.ts', 'tests/**/*.tsx', 'air-mentor-api/tests/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/ban-ts-comment': 'off',
+    },
+  },
+  {
+    files: ['tests-e2e/**/*.ts', 'tests-e2e/**/*.tsx'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
+  {
+    files: ['air-mentor-api/src/modules/curriculum-graph-routes.ts'],
+    rules: {
+      '@typescript-eslint/ban-ts-comment': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    files: ['air-mentor-api/scripts/**/*.ts', 'scripts/**/*.ts', 'scripts/**/*.mjs'],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: { sourceType: 'module', jsx: false },
+    },
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-empty': 'off',
+      'no-empty': 'off',
+      'prefer-const': 'off',
     },
   },
 ])

@@ -12,14 +12,14 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
 | Tracked files | 965 |
 | Tracked bytes | 14.5 MiB |
-| Tracked source/doc lines | 314354 |
-| Non-empty lines | 291290 |
-| Comment lines | 6001 |
+| Tracked source/doc lines | 314380 |
+| Non-empty lines | 291318 |
+| Comment lines | 6004 |
 | Local dependency edges | 761 |
-| Symbols/blocks discovered | 23616 |
+| Symbols/blocks discovered | 23610 |
 | API route registrations found | 190 |
 | Test cases discovered | 1374 |
-| Atomic references (exports/env/sql/calls/hooks) | 81267 |
+| Atomic references (exports/env/sql/calls/hooks) | 81255 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -110,7 +110,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | root:playwright:smoke | bash scripts/playwright-smoke.sh |
 | root:playwright:version | playwright --version |
 | root:preview | vite preview |
-| root:test | vitest run |
+| root:test | vitest run --maxWorkers=2 |
 | root:test:api | npm --workspace air-mentor-api test |
 | root:verify:final-closeout | bash scripts/verify-final-closeout.sh |
 | root:verify:final-closeout:live | bash scripts/verify-final-closeout-live.sh |
@@ -224,18 +224,18 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | air-mentor-api/src/db/migrations/meta | 5 | 1.2 MiB | 44646 | backend:5 |
 | air-mentor-api/src/lib | 82 | 1.5 MiB | 37899 | backend:82 |
 | air-mentor-api/tests | 92 | 1.2 MiB | 31845 | unit-test:92 |
-| src | 63 | 1.3 MiB | 28880 | frontend:63 |
+| src | 63 | 1.3 MiB | 28883 | frontend:63 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27309 | backend-script:97 |
 | scripts | 108 | 995.7 KiB | 24024 | repo-script:108 |
-| air-mentor-api/src/modules | 21 | 816.1 KiB | 20106 | backend:21 |
+| air-mentor-api/src/modules | 21 | 815.3 KiB | 20092 | backend:21 |
 | tests | 68 | 613.2 KiB | 17898 | unit-test:68 |
-| . | 25 | 333.5 KiB | 9349 | other:14, build-config:10, agent-config:1 |
+| . | 25 | 334.5 KiB | 9379 | other:14, build-config:10, agent-config:1 |
 | docs | 20 | 329.2 KiB | 8885 | documentation:20 |
-| tests-e2e/specs | 36 | 363.9 KiB | 7581 | e2e-test:36 |
+| tests-e2e/specs | 36 | 363.8 KiB | 7580 | e2e-test:36 |
 | src/pages | 6 | 384.2 KiB | 7147 | frontend:6 |
 | pipeline/orchestrator | 20 | 183.8 KiB | 5163 | pipeline:20 |
 | air-mentor-api | 14 | 154.5 KiB | 4723 | other:9, build-config:5 |
-| src/api | 2 | 166.3 KiB | 4722 | frontend:2 |
+| src/api | 2 | 166.4 KiB | 4722 | frontend:2 |
 | src/app | 8 | 186.6 KiB | 3852 | frontend:8 |
 | air-mentor-api/src/db | 4 | 110.0 KiB | 2598 | backend:4 |
 | forge-audit/forge_audit/engine | 7 | 76.6 KiB | 2259 | forge-audit:7 |
@@ -388,15 +388,15 @@ This regex-based list is a navigation aid, not a formal OpenAPI contract. It rec
 | POST | /api/academic/offerings/:offeringId/assessment-entries/:kind/clear-lock | air-mentor-api/src/modules/academic-runtime-routes.ts:1659 |
 | PUT | /api/academic/offerings/:offeringId/scheme | air-mentor-api/src/modules/academic-runtime-routes.ts:1708 |
 | PUT | /api/academic/offerings/:offeringId/question-papers/:kind | air-mentor-api/src/modules/academic-runtime-routes.ts:1780 |
-| GET | /api/admin/search | air-mentor-api/src/modules/admin-control-plane.ts:421 |
-| GET | /api/admin/audit-events | air-mentor-api/src/modules/admin-control-plane.ts:627 |
-| GET | /api/admin/audit-events/recent | air-mentor-api/src/modules/admin-control-plane.ts:637 |
-| GET | /api/admin/reminders | air-mentor-api/src/modules/admin-control-plane.ts:652 |
-| POST | /api/admin/reminders | air-mentor-api/src/modules/admin-control-plane.ts:665 |
-| PATCH | /api/admin/reminders/:reminderId | air-mentor-api/src/modules/admin-control-plane.ts:694 |
-| GET | /api/admin/faculty-calendar/:facultyId | air-mentor-api/src/modules/admin-control-plane.ts:725 |
-| PUT | /api/admin/faculty-calendar/:facultyId | air-mentor-api/src/modules/admin-control-plane.ts:747 |
-| GET | /api/academic/faculty-profile/:facultyId | air-mentor-api/src/modules/admin-control-plane.ts:807 |
+| GET | /api/admin/search | air-mentor-api/src/modules/admin-control-plane.ts:407 |
+| GET | /api/admin/audit-events | air-mentor-api/src/modules/admin-control-plane.ts:613 |
+| GET | /api/admin/audit-events/recent | air-mentor-api/src/modules/admin-control-plane.ts:623 |
+| GET | /api/admin/reminders | air-mentor-api/src/modules/admin-control-plane.ts:638 |
+| POST | /api/admin/reminders | air-mentor-api/src/modules/admin-control-plane.ts:651 |
+| PATCH | /api/admin/reminders/:reminderId | air-mentor-api/src/modules/admin-control-plane.ts:680 |
+| GET | /api/admin/faculty-calendar/:facultyId | air-mentor-api/src/modules/admin-control-plane.ts:711 |
+| PUT | /api/admin/faculty-calendar/:facultyId | air-mentor-api/src/modules/admin-control-plane.ts:733 |
+| GET | /api/academic/faculty-profile/:facultyId | air-mentor-api/src/modules/admin-control-plane.ts:793 |
 | GET | /api/admin/demo-workspaces | air-mentor-api/src/modules/admin-demo-workspace.ts:18 |
 | POST | /api/admin/demo-workspaces | air-mentor-api/src/modules/admin-demo-workspace.ts:28 |
 | POST | /api/admin/demo-workspaces/:demoWorkspaceId/provision/preview | air-mentor-api/src/modules/admin-demo-workspace.ts:49 |

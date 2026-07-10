@@ -990,7 +990,7 @@ export function OperationalWorkspace({
       getStudentsForOffering: getStudentsPatched,
     })
     if (target) handleOpenStudent(target.student, target.offering)
-  }, [allMentees, allOfferings, assignedMentees, assignedOfferings, getStudentsPatched, handleOpenStudent, role])
+  }, [allOfferings, assignedMentees, assignedOfferings, getStudentsPatched, handleOpenStudent, role])
   const handleOpenHistoryFromMentee = useCallback((m: Mentee) => {
     const nextHistory = buildHistoryProfile({ mentee: m, historyByUsn: studentHistoryByUsn })
     if (!nextHistory) return
@@ -2376,7 +2376,7 @@ export function OperationalWorkspace({
         setPage('student-history')
       }
     }
-  }, [allMentees, allOfferings, assignedMentees, assignedOfferings, getStudentsPatched, handleOpenStudent, page, role, studentHistoryByUsn])
+  }, [allOfferings, assignedMentees, assignedOfferings, getStudentsPatched, handleOpenStudent, page, role, studentHistoryByUsn])
 
   const pendingNoteMeta = useMemo(() => {
     if (!pendingNoteAction) return null
