@@ -82,7 +82,7 @@ function buildSeedTasks(): SharedTask[] {
   try {
     const courseLeaderTasks: SharedTask[] = (() => {
       const { generateTasks } = requireAcademicDataModule()
-      return generateTasks().map((task: SharedTask, index: number) => ({
+      return generateTasks().map((task, index) => ({
         ...task,
         createdAt: BASE_NOW + index,
         updatedAt: BASE_NOW + index,

@@ -3,12 +3,14 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { T, mono } from '../../data'
 import {
   Btn,
+} from '../../ui-primitives'
+import {
   FieldLabel,
   ModalFrame,
   SelectInput,
   TextAreaInput,
   TextInput,
-} from '../../ui-primitives'
+} from '../../system-admin-ui'
 import {
   type AppointmentFormState,
   type EditingEntity,

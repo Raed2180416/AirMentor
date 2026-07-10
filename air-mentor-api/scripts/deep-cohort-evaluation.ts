@@ -32,7 +32,7 @@ async function main() {
         const risks = riskByStudent.get(student.studentId) || [];
         // Only look at the latest risk for baseline
         if (risks.length === 0) continue;
-        const latestRisk = risks.sort((a,b) => new Date(b.assessedAt).getTime() - new Date(a.assessedAt).getTime())[0];
+        const latestRisk = risks.sort((a: typeof risks[number], b: typeof risks[number]) => new Date(b.assessedAt).getTime() - new Date(a.assessedAt).getTime())[0];
         
         if (latestRisk.riskBand === 'High') {
             highRiskCount++;
@@ -87,7 +87,7 @@ async function main() {
     for (const student of students) {
         const risks = postRiskByStudent.get(student.studentId) || [];
         if (risks.length === 0) continue;
-        const latestRisk = risks.sort((a,b) => new Date(b.assessedAt).getTime() - new Date(a.assessedAt).getTime())[0];
+        const latestRisk = risks.sort((a: typeof risks[number], b: typeof risks[number]) => new Date(b.assessedAt).getTime() - new Date(a.assessedAt).getTime())[0];
         if (latestRisk.riskBand === 'High') {
             postHighRiskCount++;
         }

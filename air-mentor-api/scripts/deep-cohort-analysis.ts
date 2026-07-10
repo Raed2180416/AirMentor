@@ -110,7 +110,7 @@ async function run() {
       studentId: studentObservedSemesterStates.studentId,
       semesterNumber: studentObservedSemesterStates.semesterNumber,
       sectionCode: studentObservedSemesterStates.sectionCode,
-      payloadJson: studentObservedSemesterStates.payloadJson,
+      observedStateJson: studentObservedSemesterStates.observedStateJson,
     })
       .from(studentObservedSemesterStates)
       .where(and(
@@ -122,7 +122,7 @@ async function run() {
       studentId: r.studentId,
       semesterNumber: r.semesterNumber,
       sectionCode: r.sectionCode,
-      payload: typeof r.payloadJson === 'string' ? JSON.parse(r.payloadJson) : r.payloadJson,
+      payload: typeof r.observedStateJson === 'string' ? JSON.parse(r.observedStateJson) : r.observedStateJson,
     }))
   }
 

@@ -238,8 +238,8 @@
   {
     "path": "air-mentor-api/scripts",
     "fileCount": 97,
-    "bytes": 1165435,
-    "lines": 27299,
+    "bytes": 1165688,
+    "lines": 27309,
     "roles": {
       "backend-script": 97
     },
@@ -676,8 +676,8 @@
   {
     "path": "src",
     "fileCount": 63,
-    "bytes": 1332602,
-    "lines": 29030,
+    "bytes": 1331220,
+    "lines": 28972,
     "roles": {
       "frontend": 63
     },
@@ -703,8 +703,8 @@
   {
     "path": "src/admin/sections",
     "fileCount": 4,
-    "bytes": 135512,
-    "lines": 1897,
+    "bytes": 135712,
+    "lines": 1903,
     "roles": {
       "frontend": 4
     },

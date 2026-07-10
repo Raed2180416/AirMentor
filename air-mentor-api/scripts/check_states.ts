@@ -57,7 +57,11 @@ async function run() {
     await seedIntoDatabase(db as any, pool, baseNow, { profile: 'full' });
 
     const sample = await db.query.studentObservedSemesterStates.findFirst();
-    console.log("Observed State JSON Sample:", JSON.stringify(JSON.parse(sample.observedStateJson), null, 2));
+    if (!sample) {
+      console.log("No observed semester states found.");
+    } else {
+      console.log("Observed State JSON Sample:", JSON.stringify(JSON.parse(sample.observedStateJson), null, 2));
+    }
 
     await pool.end();
   } finally {

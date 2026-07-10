@@ -5,6 +5,8 @@ import {
   Btn,
   Card,
   Chip,
+} from '../../ui-primitives'
+import {
   EmptyState,
   EntityButton,
   FieldLabel,
@@ -13,7 +15,7 @@ import {
   SectionHeading,
   SelectInput,
   TextInput,
-} from '../../ui-primitives'
+} from '../../system-admin-ui'
 import {
   ADMIN_SECTION_TONES,
   type AppointmentFormState,
@@ -167,7 +169,7 @@ export function FacultyMembersSection(props: FacultyMembersSectionProps) {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <Btn type="button" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}><Plus size={14} /> New Faculty</Btn>
                   <Chip color={T.accent}>{facultyRegistryItems.length} active</Chip>
-                  <Chip color={T.warning}>{facultyRegistryItems.filter(item => !item.roleGrants.some(grant => isCurrentRoleGrant(grant))).length} no active permissions</Chip>
+                  <Chip color={T.warning}>{facultyRegistryItems.filter(item => !item.roleGrants.some((grant: ApiRoleGrant) => isCurrentRoleGrant(grant))).length} no active permissions</Chip>
                   {registryScope ? <Chip color={ADMIN_SECTION_TONES['faculty-members']}>{registryScope.label}</Chip> : null}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: registryFilterColumns, gap: 10 }}>
@@ -256,10 +258,10 @@ export function FacultyMembersSection(props: FacultyMembersSectionProps) {
                               <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.employeeCode} · {primaryDepartment?.name ?? 'No primary department'}</div>
                             </div>
                           </div>
-                          <Chip color={item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)) ? T.success : T.dim} size={9}>{item.roleGrants.some(grant => isCurrentRoleGrant(grant)) ? 'Has Permissions' : 'No Permissions'}</Chip>
+                          <Chip color={item.roleGrants.some((grant: ApiRoleGrant) => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)) ? T.success : T.dim} size={9}>{item.roleGrants.some(grant => isCurrentRoleGrant(grant)) ? 'Has Permissions' : 'No Permissions'}</Chip>
                         </div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {item.roleGrants.filter(isCurrentRoleGrant).slice(0, 3).map(grant => <Chip key={grant.grantId} color={T.accent} size={9}>{grant.roleCode}</Chip>)}
+                        {item.roleGrants.filter(isCurrentRoleGrant).slice(0, 3).map((grant: ApiRoleGrant) => <Chip key={grant.grantId} color={T.accent} size={9}>{grant.roleCode}</Chip>)}
                         </div>
                         <div style={{ ...mono, fontSize: 10, color: T.muted, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.designation} · {item.email}</div>
                       </div>
@@ -326,7 +328,7 @@ export function FacultyMembersSection(props: FacultyMembersSectionProps) {
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={T.accent}>{selectedFacultyMember.employeeCode}</Chip>
                       <Chip color={T.warning}>{resolveDepartment(operatorData, getPrimaryAppointmentDepartmentId(selectedFacultyMember))?.name ?? 'No primary department'}</Chip>
-                      {selectedFacultyMember.roleGrants.filter(isCurrentRoleGrant).map(grant => <Chip key={grant.grantId} color={T.success}>{formatFacultyGrantScopeLabel(grant)}</Chip>)}
+                      {selectedFacultyMember.roleGrants.filter(isCurrentRoleGrant).map((grant: ApiRoleGrant) => <Chip key={grant.grantId} color={T.success}>{formatFacultyGrantScopeLabel(grant)}</Chip>)}
                     </div>
                     {selectedFacultyProofBanner ? <InfoBanner tone="neutral" message={selectedFacultyProofBanner} /> : null}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
@@ -457,7 +459,7 @@ export function FacultyMembersSection(props: FacultyMembersSectionProps) {
                 {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Permissions become available after the faculty record exists." /> : (
                   <>
                     <div style={{ display: 'grid', gap: 8 }}>
-                      {selectedFacultyMember.roleGrants.length === 0 ? <InfoBanner message="No permissions granted yet." /> : selectedFacultyMember.roleGrants.map(grant => (
+                      {selectedFacultyMember.roleGrants.length === 0 ? <InfoBanner message="No permissions granted yet." /> : selectedFacultyMember.roleGrants.map((grant: ApiRoleGrant) => (
                         <Card key={grant.grantId} style={{ padding: 12, background: T.surface2 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                             <div>

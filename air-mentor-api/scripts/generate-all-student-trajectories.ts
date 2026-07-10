@@ -25,7 +25,7 @@ async function main() {
             .where(eq(schema.riskAssessments.studentId, student.studentId))
             .orderBy(asc(schema.riskAssessments.assessedAt));
             
-        md += `## ${i + 1}. ${student.name} (${student.registerNumber || student.studentId})\n`;
+        md += `## ${i + 1}. ${student.name} (${student.rollNumber || student.studentId})\n`;
         
         if (risks.length === 0) {
             md += `*No risk assessments generated yet.* \n\n`;

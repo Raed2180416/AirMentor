@@ -20,7 +20,7 @@ async function main() {
         const risk = await db.select().from(schema.riskAssessments).where(eq(schema.riskAssessments.studentId, student.studentId)).orderBy(sql`${schema.riskAssessments.assessedAt} DESC`).limit(1);
         const score = risk.length > 0 ? risk[0].riskProbScaled : 'N/A';
         const tier = risk.length > 0 ? risk[0].riskBand : 'N/A';
-        output += `- **${student.name}** (${student.registerNumber}): Final Stage Risk Tier = **${tier}**, Score = **${score}**\n`;
+        output += `- **${student.name}** (${student.rollNumber}): Final Stage Risk Tier = **${tier}**, Score = **${score}**\n`;
     }
 
     // 2. Intervention Bounds

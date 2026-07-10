@@ -9,7 +9,7 @@ async function main() {
     
     // Find students who actually have risk assessments
     const assessedStudentIdsRaw = await db.execute(sql`SELECT DISTINCT student_id FROM risk_assessments LIMIT 120`);
-    const studentIds = assessedStudentIdsRaw.rows.map(r => r.student_id);
+    const studentIds = (assessedStudentIdsRaw.rows as Array<{ student_id: string }>).map(r => r.student_id);
 
     const students = await db.select().from(schema.students).where(inArray(schema.students.studentId, studentIds));
     
@@ -24,7 +24,7 @@ async function main() {
             .where(sql`student_id = ${student.studentId}`)
             .orderBy(asc(schema.riskAssessments.assessedAt));
             
-        md += `## ${i + 1}. ${student.name} (${student.registerNumber || student.studentId})\n`;
+        md += `## ${i + 1}. ${student.name} (${student.rollNumber || student.studentId})\n`;
 
         const trajectoriesByTerm = new Map();
         for (const r of risks) {

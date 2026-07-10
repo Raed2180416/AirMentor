@@ -5,6 +5,8 @@ import {
   Btn,
   Card,
   Chip,
+} from '../../ui-primitives'
+import {
   EmptyState,
   EntityButton,
   FieldLabel,
@@ -13,7 +15,7 @@ import {
   SectionHeading,
   SelectInput,
   TextInput,
-} from '../../ui-primitives'
+} from '../../system-admin-ui'
 import {
   ADMIN_SECTION_TONES,
   type StudentDetailTab,

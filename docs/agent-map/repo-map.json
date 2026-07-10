@@ -151,16 +151,16 @@
   "totals": {
     "trackedFiles": 948,
     "ignoredEntriesObserved": 41,
-    "bytes": 15098493,
-    "lines": 311888,
-    "nonEmptyLines": 289086,
-    "commentLines": 6014,
-    "localDependencyEdges": 710,
-    "symbols": 23582,
+    "bytes": 15097564,
+    "lines": 311846,
+    "nonEmptyLines": 289041,
+    "commentLines": 6016,
+    "localDependencyEdges": 711,
+    "symbols": 23578,
     "apiRoutes": 190,
     "testCases": 1370,
     "filesWithTests": 194,
-    "atoms": 81141,
+    "atoms": 81139,
     "anomalies": 0
   },
   "counts": {
@@ -316,7 +316,7 @@
       },
       {
         "path": "src/system-admin-ui.tsx",
-        "importers": 20,
+        "importers": 23,
         "role": "frontend"
       },
       {
@@ -355,11 +355,6 @@
         "role": "frontend"
       },
       {
-        "path": "src/proof-provenance.ts",
-        "importers": 8,
-        "role": "frontend"
-      },
-      {
         "path": "src/proof-surface-shell.tsx",
         "importers": 8,
         "role": "frontend"
@@ -386,6 +381,11 @@
       },
       {
         "path": "src/admin/live-app-model.ts",
+        "importers": 7,
+        "role": "frontend"
+      },
+      {
+        "path": "src/proof-provenance.ts",
         "importers": 7,
         "role": "frontend"
       },
@@ -478,7 +478,7 @@
     "highFanOut": [
       {
         "path": "src/system-admin-live-app.tsx",
-        "localImports": 37,
+        "localImports": 35,
         "role": "frontend"
       },
       {
@@ -532,6 +532,16 @@
         "role": "frontend"
       },
       {
+        "path": "src/admin/sections/faculty-members-section.tsx",
+        "localImports": 8,
+        "role": "frontend"
+      },
+      {
+        "path": "src/admin/sections/students-section.tsx",
+        "localImports": 8,
+        "role": "frontend"
+      },
+      {
         "path": "src/system-admin-faculty-calendar-workspace.tsx",
         "localImports": 8,
         "role": "frontend"
@@ -548,16 +558,6 @@
       },
       {
         "path": "src/admin/live-app-model.ts",
-        "localImports": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/admin/sections/faculty-members-section.tsx",
-        "localImports": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/admin/sections/students-section.tsx",
         "localImports": 7,
         "role": "frontend"
       },
@@ -637,6 +637,11 @@
         "role": "frontend"
       },
       {
+        "path": "src/admin/sections/entity-editor-modals.tsx",
+        "localImports": 5,
+        "role": "frontend"
+      },
+      {
         "path": "src/admin/sections/overview-section.tsx",
         "localImports": 5,
         "role": "frontend"
@@ -668,11 +673,6 @@
       },
       {
         "path": "tests-e2e/specs/editable-data-recompute.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/humanised-action-labels.spec.ts",
         "localImports": 5,
         "role": "e2e-test"
       }
@@ -854,9 +854,9 @@
       "name": "Frontend live admin shell",
       "file": "src/system-admin-live-app.tsx",
       "role": "frontend",
-      "lines": 5647,
-      "localImports": 37,
-      "symbols": 628,
+      "lines": 5589,
+      "localImports": 35,
+      "symbols": 624,
       "note": "Live System Admin surface and proof playback/admin control entry."
     },
     {
@@ -1572,7 +1572,7 @@
     {
       "file": "src/system-admin-live-app.tsx",
       "role": "frontend",
-      "lines": 5647,
+      "lines": 5589,
       "components": [
         "SystemAdminLiveApp"
       ],
@@ -1924,7 +1924,7 @@
     {
       "file": "src/admin/sections/entity-editor-modals.tsx",
       "role": "frontend",
-      "lines": 431,
+      "lines": 433,
       "components": [
         "EntityEditorModals"
       ],
@@ -1933,7 +1933,7 @@
     {
       "file": "src/admin/sections/faculty-members-section.tsx",
       "role": "frontend",
-      "lines": 674,
+      "lines": 676,
       "components": [
         "FacultyMembersSection"
       ],
@@ -1951,7 +1951,7 @@
     {
       "file": "src/admin/sections/students-section.tsx",
       "role": "frontend",
-      "lines": 619,
+      "lines": 621,
       "components": [
         "StudentsSection"
       ],

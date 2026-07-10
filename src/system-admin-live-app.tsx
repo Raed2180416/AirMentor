@@ -14,34 +14,24 @@ import {
   BookOpen,
   CheckCircle2,
   Clock3,
-  ChevronLeft,
   ChevronRight,
   Compass,
   GraduationCap,
-  Layers3,
   LayoutDashboard,
   Network,
   Plus,
-  RefreshCw,
-  UserCog,
 } from 'lucide-react'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
 import { readActiveDemoWorkspacePointer, writeActiveDemoWorkspacePointer } from './demo-workspace-pointer'
 import type {
-  ApiAcademicFaculty,
   ApiAdminFacultyPasswordSetupResponse,
   ApiAuditEvent,
   ApiAdminFacultyCalendar,
-  ApiBatchProvisioningRequest,
-  ApiBatch,
-  ApiBranch,
   ApiCurriculumFeatureConfigBundle,
   ApiCurriculumFeatureConfigHistoryEvent,
   ApiCurriculumFeatureConfigPreview,
   ApiCurriculumLinkageCandidate,
   ApiCurriculumLinkageGenerationStatus,
-  ApiCurriculumFeatureConfigPayload,
-  ApiDepartment,
   ApiFacultyRecord,
   ApiFacultyAppointment,
   ApiMentorAssignmentBulkApplyResponse,
@@ -51,20 +41,16 @@ import type {
   ApiAdminRequestSummary,
   ApiOfferingStageEligibility,
   ApiOfferingOwnership,
-  ApiPolicyPayload,
   ApiProofDashboard,
   ApiProofRunCheckpointDetail,
   ApiProofRunCheckpointStudentSummary,
   ApiResolvedBatchPolicy,
   ApiResolvedBatchStagePolicy,
-  ApiRoleCode,
   ApiScopeType,
   ApiRoleGrant,
   ApiSessionResponse,
   ApiSimulationStageCheckpointSummary,
-  ApiStageEvidenceKind,
   ApiStagePolicyOverride,
-  ApiStagePolicyPayload,
   ApiStudentEnrollment,
   ApiStudentRecord,
 } from './api/types'
@@ -102,10 +88,8 @@ import {
   resolveFacultyMember,
   resolveStudent,
   searchLiveAdminWorkspace,
-  type LiveAdminProofProvenance,
   type LiveAdminDataset,
   type LiveAdminRoute,
-  type LiveAdminSearchScope,
   type RegistryFilterState,
   type UniversityScopeState,
 } from './system-admin-live-data'
@@ -117,9 +101,7 @@ import {
   isLeaderLikeOwnership,
   matchesFacultyScope,
   matchesStudentScope,
-  type HierarchyScopeInput,
 } from './system-admin-overview-helpers'
-import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
 import { resolveSelectedAdminRequest } from './admin-request-selection'
 import { areSessionResponsesEquivalent } from './session-response-helpers'
 import {
@@ -132,7 +114,6 @@ import {
   resolveAuthoritativeOperationalSemester,
   resolveCanonicalProofBatch,
   resolveProofDashboardBatchId,
-  scopeTargetsCanonicalProofHierarchy,
 } from './proof-pilot'
 import {
   buildBulkMentorAssignmentApplyPayload,
@@ -147,23 +128,10 @@ import {
   mergeAdminQueueDismissKeys,
 } from './system-admin-action-queue'
 import {
-  AdminBreadcrumbs,
   DayToggle,
-  EmptyState,
-  EntityButton,
-  FieldLabel,
-  HeroBadge,
   InfoBanner,
-  ModalFrame,
   QueueBulkActions,
   RestoreBanner,
-  SearchField,
-  SectionHeading,
-  SelectInput,
-  TextAreaInput,
-  TextInput,
-  TOP_TABS,
-  formatDate,
   formatDateTime,
   type BreadcrumbSegment,
 } from './system-admin-ui'
@@ -171,7 +139,6 @@ import type { LiveAdminSectionId } from './system-admin-live-data'
 import { applyThemePreset, isLightTheme } from './theme'
 import { clearProofPlaybackSelection, readSharedProofPlaybackSelection, writeProofPlaybackSelection } from './proof-playback'
 import { emitClientOperationalEvent, normalizeClientTelemetryError } from './telemetry'
-import { SystemAdminFacultyCalendarWorkspace } from './system-admin-faculty-calendar-workspace'
 import {
   describeGovernanceRollbackMessage,
   SystemAdminFacultiesWorkspace,
@@ -183,20 +150,11 @@ import { SystemAdminSessionBoundary } from './system-admin-session-shell'
 import { ProofSurfaceLauncher } from './proof-surface-shell'
 import { ProofSimulationControls, type ProofAdvanceControlMode } from './proof-simulation-controls'
 import {
-  BrandMark,
   Btn,
   Card,
   Chip,
-  ModalWorkspace,
-  NotificationCountBadge,
   PageShell,
-  UI_FONT_SIZES,
   getPrimaryActionButtonStyle,
-  getIconButtonStyle,
-  getSegmentedButtonStyle,
-  getSegmentedGroupStyle,
-  getShellBarStyle,
-  withAlpha,
 } from './ui-primitives'
 import { useDismissibleSessionNotice } from './hooks/use-dismissible-session-notice'
 import { OverviewSection } from './admin/sections/overview-section'
@@ -211,7 +169,9 @@ type SystemAdminLiveAppProps = {
 
 
 // Re-exports for backward compatibility — model + chrome extracted to src/admin/
+// eslint-disable-next-line react-refresh/only-export-components
 export * from './admin/live-app-model'
+// eslint-disable-next-line react-refresh/only-export-components
 export * from './admin/live-app-chrome'
 
 import {
@@ -221,7 +181,6 @@ import {
   DEFAULT_PROGRESSION_RULES,
   ADMIN_DISMISSED_QUEUE_STORAGE_KEY,
   ADMIN_INLINE_ACTION_QUEUE_MIN_VIEWPORT,
-  UNIVERSITY_TABS,
   DEFAULT_STAGE_POLICY,
   STAGE_EVIDENCE_OPTIONS,
   type PolicyFormState,
@@ -246,12 +205,9 @@ import {
   type ProvenancedRecord,
   isUniversityTab,
   applyFacultyVisibilityRules,
-  hasRecordProofProvenance,
   formatRecordProofBanner,
   shouldShowProofCheckpointCgpa,
   shouldOverlayProofCheckpointStudentSummary,
-  formatFacultyGrantScopeLabel,
-  formatFacultyAppointmentLabel,
   resolveFacultyCredentialStatus,
   parseAdminRoute,
   routeToHash,
@@ -260,7 +216,6 @@ import {
   defaultStudentForm,
   defaultCurriculumFeatureForm,
   hydrateCurriculumFeatureForm,
-  parseCurriculumFeatureLines,
   buildCurriculumFeaturePayload,
   validateCurriculumFeaturePrerequisites,
   defaultStagePolicyForm,
@@ -274,25 +229,18 @@ import {
   defaultFacultyForm,
   toRegistrySearchScope,
   normalizeHierarchyScope,
-  normalizeAdminSectionCode,
-  buildAdminSectionScopeId,
-  parseAdminSectionScopeId,
   buildAdminActiveScopeChain,
   fadeColor,
   defaultAppointmentForm,
   defaultRoleGrantForm,
   defaultOwnershipForm,
   hydratePolicyForm,
-  buildPolicyPayload,
   toErrorMessage,
   requireText,
   requirePositiveInteger,
-  requireNonNegativeInteger,
   requirePositiveEvenInteger,
   requireDate,
-  requireRange,
   buildValidatedPolicyPayload,
-  formatClockLabel,
   readStringField,
   readNumberField,
   readBooleanField,
@@ -317,12 +265,7 @@ import {
 import {
   TeachingShellAdminTopBar,
   OperationsRail,
-  SectionLaunchCard,
-  OverviewSupportCard,
   ActionQueueCard,
-  AdminDetailTabs,
-  AdminDetailTabPanel,
-  AdminMiniStat,
 } from './admin/live-app-chrome'
 export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLiveAppProps) {
   const apiClient = useMemo(() => new AirMentorApiClient(apiBaseUrl, undefined, readActiveDemoWorkspacePointer), [apiBaseUrl])
@@ -1186,7 +1129,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedProofCheckpointStudentMap = useMemo(() => (
     new Map((selectedProofCheckpointStudents ?? []).map(item => [item.studentId, item]))
   ), [selectedProofCheckpointStudents])
-  const studentRegistryProofScopeActive = route.section === 'students' && scopeTargetsCanonicalProofHierarchy(scopedAdminDirectoryFilter)
   const selectedStudentRecord = resolveStudent(operatorData, route.studentId)
   const selectedStudent = selectedStudentRecord && isStudentVisible(operatorData, selectedStudentRecord)
     ? selectedStudentRecord
