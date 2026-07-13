@@ -15950,6 +15950,8 @@
 {"file":"air-mentor-api/tests/msruas-proof-sandbox.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"result","startLine":287,"endLine":290,"spanLines":4}
 {"file":"air-mentor-api/tests/msruas-proof-sandbox.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"result","startLine":367,"endLine":370,"spanLines":4}
 {"file":"air-mentor-api/tests/msruas-proof-sandbox.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"importRows","startLine":380,"endLine":387,"spanLines":8}
+{"file":"air-mentor-api/tests/observable-feature-keys-freeze.test.ts","role":"unit-test","extension":".ts","kind":"type","name":"error","startLine":18,"endLine":92,"spanLines":75}
+{"file":"air-mentor-api/tests/observable-feature-keys-freeze.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"FROZEN_FEATURE_KEYS","startLine":24,"endLine":92,"spanLines":69}
 {"file":"air-mentor-api/tests/openapi.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"response","startLine":14,"endLine":17,"spanLines":4}
 {"file":"air-mentor-api/tests/openapi.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"document","startLine":19,"endLine":66,"spanLines":48}
 {"file":"air-mentor-api/tests/openapi.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"response","startLine":25,"endLine":28,"spanLines":4}

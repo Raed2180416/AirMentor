@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 1098,
+    "trackedFiles": 1099,
     "ignoredEntriesObserved": 74,
-    "bytes": 15429451,
-    "lines": 321423,
-    "nonEmptyLines": 297751,
-    "commentLines": 7009,
+    "bytes": 15432566,
+    "lines": 321516,
+    "nonEmptyLines": 297837,
+    "commentLines": 7025,
     "localDependencyEdges": 344,
-    "symbols": 24154,
+    "symbols": 24156,
     "apiRoutes": 190,
-    "testCases": 1374,
-    "filesWithTests": 195,
-    "atoms": 82532,
+    "testCases": 1379,
+    "filesWithTests": 196,
+    "atoms": 82554,
     "anomalies": 0
   },
   "counts": {
@@ -173,7 +173,7 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".ts": 525,
+      ".ts": 526,
       ".tsx": 82,
       ".css": 2,
       ".example": 1,
@@ -203,7 +203,7 @@
       "model-contract": 3,
       "backend-script": 97,
       "backend": 255,
-      "unit-test": 162,
+      "unit-test": 163,
       "documentation": 34,
       "forge-audit": 22,
       "pipeline": 171,
@@ -229,7 +229,7 @@
       ".vscode": 2,
       ".windsurf": 1,
       "adapters": 98,
-      "air-mentor-api": 465,
+      "air-mentor-api": 466,
       "CLAUDE.md": 1,
       "docs": 34,
       "eslint.config.js": 1,
@@ -694,7 +694,7 @@
       },
       {
         "key": "vitest",
-        "value": 160
+        "value": 161
       },
       {
         "key": "drizzle-orm",
@@ -1962,7 +1962,7 @@
   "topAtoms": [
     {
       "key": "toBe",
-      "value": 2412
+      "value": 2416
     },
     {
       "key": "eq",
@@ -2018,7 +2018,7 @@
     },
     {
       "key": "toEqual",
-      "value": 378
+      "value": 379
     },
     {
       "key": "fn",

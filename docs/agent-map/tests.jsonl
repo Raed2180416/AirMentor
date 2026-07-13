@@ -244,6 +244,11 @@
 {"file":"air-mentor-api/tests/msruas-proof-sandbox.test.ts","role":"unit-test","kind":"it","name":"fails closed when a proof import exists without its rich curriculum graph","line":315}
 {"file":"air-mentor-api/tests/msruas-proof-sandbox.test.ts","role":"unit-test","kind":"it","name":"fails closed when a proof import exists with an incomplete projection ledger","line":330}
 {"file":"air-mentor-api/tests/msruas-proof-sandbox.test.ts","role":"unit-test","kind":"it","name":"rebuilds the canonical proof batch shell when the proof cohort already exists","line":358}
+{"file":"air-mentor-api/tests/observable-feature-keys-freeze.test.ts","role":"unit-test","kind":"describe","name":"OBSERVABLE_FEATURE_KEYS freeze (v6)","line":75}
+{"file":"air-mentor-api/tests/observable-feature-keys-freeze.test.ts","role":"unit-test","kind":"it","name":"pins the schema version","line":76}
+{"file":"air-mentor-api/tests/observable-feature-keys-freeze.test.ts","role":"unit-test","kind":"it","name":"pins the exact count (48)","line":80}
+{"file":"air-mentor-api/tests/observable-feature-keys-freeze.test.ts","role":"unit-test","kind":"it","name":"pins the exact ordered key tuple (feat_N index stability)","line":85}
+{"file":"air-mentor-api/tests/observable-feature-keys-freeze.test.ts","role":"unit-test","kind":"it","name":"has no duplicate keys","line":89}
 {"file":"air-mentor-api/tests/openapi.test.ts","role":"unit-test","kind":"describe","name":"openapi","line":11}
 {"file":"air-mentor-api/tests/openapi.test.ts","role":"unit-test","kind":"it","name":"publishes the implemented route surface","line":12}
 {"file":"air-mentor-api/tests/openapi.test.ts","role":"unit-test","kind":"it","name":"documents the semester activation request and response contract","line":23}

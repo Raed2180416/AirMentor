@@ -10,16 +10,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 1098 |
+| Tracked files | 1099 |
 | Tracked bytes | 14.7 MiB |
-| Tracked source/doc lines | 321423 |
-| Non-empty lines | 297751 |
-| Comment lines | 7009 |
+| Tracked source/doc lines | 321516 |
+| Non-empty lines | 297837 |
+| Comment lines | 7025 |
 | Local dependency edges | 344 |
-| Symbols/blocks discovered | 24154 |
+| Symbols/blocks discovered | 24156 |
 | API route registrations found | 190 |
-| Test cases discovered | 1374 |
-| Atomic references (exports/env/sql/calls/hooks) | 82532 |
+| Test cases discovered | 1379 |
+| Atomic references (exports/env/sql/calls/hooks) | 82554 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -133,7 +133,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | backend | 255 |
 | pipeline | 171 |
-| unit-test | 162 |
+| unit-test | 163 |
 | other | 161 |
 | repo-script | 112 |
 | backend-script | 97 |
@@ -149,7 +149,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Extension | Files |
 | --- | --- |
-| .ts | 525 |
+| .ts | 526 |
 | .py | 108 |
 | .yaml | 107 |
 | .tsx | 82 |
@@ -181,7 +181,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Top directory | Tracked files |
 | --- | --- |
-| air-mentor-api | 465 |
+| air-mentor-api | 466 |
 | pipeline | 171 |
 | scripts | 112 |
 | adapters | 98 |
@@ -218,7 +218,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- | --- | --- | --- |
 | air-mentor-api/src/db/migrations/meta | 5 | 1.2 MiB | 44646 | backend:5 |
 | air-mentor-api/src/lib | 82 | 1.5 MiB | 37890 | backend:82 |
-| air-mentor-api/tests | 92 | 1.2 MiB | 31843 | unit-test:92 |
+| air-mentor-api/tests | 93 | 1.2 MiB | 31936 | unit-test:93 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27309 | backend-script:97 |
 | scripts | 111 | 1017.9 KiB | 24450 | repo-script:111 |
 | tests | 68 | 614.3 KiB | 17898 | unit-test:68 |

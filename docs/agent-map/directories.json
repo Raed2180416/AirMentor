@@ -681,14 +681,14 @@
   },
   {
     "path": "air-mentor-api/tests",
-    "fileCount": 92,
-    "bytes": 1282737,
-    "lines": 31843,
+    "fileCount": 93,
+    "bytes": 1285852,
+    "lines": 31936,
     "roles": {
-      "unit-test": 92
+      "unit-test": 93
     },
     "extensions": {
-      ".ts": 92
+      ".ts": 93
     }
   },
   {
