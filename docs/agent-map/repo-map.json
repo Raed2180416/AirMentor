@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 996,
+    "trackedFiles": 1012,
     "ignoredEntriesObserved": 63,
-    "bytes": 15203505,
-    "lines": 314904,
-    "nonEmptyLines": 291831,
-    "commentLines": 5996,
+    "bytes": 15264929,
+    "lines": 316506,
+    "nonEmptyLines": 293230,
+    "commentLines": 6133,
     "localDependencyEdges": 344,
-    "symbols": 23632,
+    "symbols": 23795,
     "apiRoutes": 190,
     "testCases": 1374,
     "filesWithTests": 195,
-    "atoms": 81099,
+    "atoms": 81723,
     "anomalies": 0
   },
   "counts": {
@@ -173,7 +173,7 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".ts": 423,
+      ".ts": 439,
       ".tsx": 82,
       ".css": 2,
       ".example": 1,
@@ -202,7 +202,7 @@
       "ci": 8,
       "model-contract": 3,
       "backend-script": 97,
-      "backend": 153,
+      "backend": 169,
       "unit-test": 162,
       "documentation": 34,
       "forge-audit": 22,
@@ -229,7 +229,7 @@
       ".vscode": 2,
       ".windsurf": 1,
       "adapters": 98,
-      "air-mentor-api": 363,
+      "air-mentor-api": 379,
       "CLAUDE.md": 1,
       "docs": 34,
       "eslint.config.js": 1,
@@ -709,7 +709,7 @@
       },
       {
         "key": "drizzle-orm",
-        "value": 97
+        "value": 101
       },
       {
         "key": "__future__",
@@ -752,15 +752,15 @@
         "value": 25
       },
       {
+        "key": "zod",
+        "value": 24
+      },
+      {
         "key": "fs",
         "value": 22
       },
       {
         "key": "pipeline.orchestrator",
-        "value": 22
-      },
-      {
-        "key": "zod",
         "value": 22
       },
       {
@@ -1965,19 +1965,19 @@
     },
     {
       "key": "eq",
-      "value": 1224
+      "value": 1247
     },
     {
       "key": "where",
-      "value": 1200
+      "value": 1220
+    },
+    {
+      "key": "get",
+      "value": 1054
     },
     {
       "key": "it",
       "value": 1048
-    },
-    {
-      "key": "get",
-      "value": 1040
     },
     {
       "key": "async",
@@ -1993,7 +1993,7 @@
     },
     {
       "key": "set",
-      "value": 662
+      "value": 671
     },
     {
       "key": "inject",
@@ -2001,7 +2001,7 @@
     },
     {
       "key": "string",
-      "value": 588
+      "value": 611
     },
     {
       "key": "toContain",
@@ -2009,7 +2009,7 @@
     },
     {
       "key": "has",
-      "value": 473
+      "value": 482
     },
     {
       "key": "toBeTruthy",
@@ -2033,7 +2033,7 @@
     },
     {
       "key": "object",
-      "value": 302
+      "value": 310
     },
     {
       "key": "loginAs",
@@ -2044,6 +2044,10 @@
       "value": 274
     },
     {
+      "key": "insert",
+      "value": 268
+    },
+    {
       "key": "parse",
       "value": 267
     },
@@ -2052,12 +2056,8 @@
       "value": 259
     },
     {
-      "key": "insert",
-      "value": 257
-    },
-    {
       "key": "optional",
-      "value": 242
+      "value": 248
     },
     {
       "key": "toBeNull",
@@ -2077,7 +2077,7 @@
     },
     {
       "key": "all",
-      "value": 212
+      "value": 213
     },
     {
       "key": "num",
@@ -2096,16 +2096,16 @@
       "value": 189
     },
     {
+      "key": "number",
+      "value": 186
+    },
+    {
       "key": "resolve",
       "value": 183
     },
     {
-      "key": "number",
-      "value": 181
-    },
-    {
       "key": "toISOString",
-      "value": 178
+      "value": 180
     },
     {
       "key": "useCallback",
@@ -2116,8 +2116,8 @@
       "value": 154
     },
     {
-      "key": "auth",
-      "value": 146
+      "key": "and",
+      "value": 147
     }
   ],
   "anomalies": [],

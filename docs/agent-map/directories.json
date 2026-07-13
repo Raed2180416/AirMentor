@@ -440,6 +440,42 @@
     }
   },
   {
+    "path": "air-mentor-api/src/adapters/persistence/repositories/curriculum-graph",
+    "fileCount": 4,
+    "bytes": 25398,
+    "lines": 574,
+    "roles": {
+      "backend": 4
+    },
+    "extensions": {
+      ".ts": 4
+    }
+  },
+  {
+    "path": "air-mentor-api/src/application/ports",
+    "fileCount": 1,
+    "bytes": 3908,
+    "lines": 117,
+    "roles": {
+      "backend": 1
+    },
+    "extensions": {
+      ".ts": 1
+    }
+  },
+  {
+    "path": "air-mentor-api/src/application/use-cases/curriculum-graph",
+    "fileCount": 11,
+    "bytes": 32118,
+    "lines": 911,
+    "roles": {
+      "backend": 11
+    },
+    "extensions": {
+      ".ts": 11
+    }
+  },
+  {
     "path": "air-mentor-api/src/db",
     "fileCount": 4,
     "bytes": 112615,
