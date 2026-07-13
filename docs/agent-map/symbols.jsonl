@@ -18665,6 +18665,9 @@
 {"file":"kernel/identity/session-scope.ts","role":"other","extension":".ts","kind":"function","name":"hasHierarchyScopeSelection","startLine":54,"endLine":62,"spanLines":9}
 {"file":"kernel/policy/policy-context.ts","role":"other","extension":".ts","kind":"type","name":"PolicyContext","startLine":3,"endLine":5,"spanLines":3}
 {"file":"kernel/policy/policy-context.ts","role":"other","extension":".ts","kind":"function","name":"createPolicyContext","startLine":7,"endLine":9,"spanLines":3}
+{"file":"kernel/policy/risk-policy.ts","role":"other","extension":".ts","kind":"type","name":"RiskAttendanceRules","startLine":8,"endLine":11,"spanLines":4}
+{"file":"kernel/policy/risk-policy.ts","role":"other","extension":".ts","kind":"type","name":"RiskPassRules","startLine":14,"endLine":21,"spanLines":8}
+{"file":"kernel/policy/risk-policy.ts","role":"other","extension":".ts","kind":"type","name":"RiskPolicy","startLine":31,"endLine":35,"spanLines":5}
 {"file":"kernel/policy/university-plugin.ts","role":"other","extension":".ts","kind":"type","name":"WorkingCalendar","startLine":3,"endLine":11,"spanLines":9}
 {"file":"kernel/policy/university-plugin.ts","role":"other","extension":".ts","kind":"type","name":"CeComponentCaps","startLine":13,"endLine":20,"spanLines":8}
 {"file":"kernel/policy/university-plugin.ts","role":"other","extension":".ts","kind":"type","name":"AssessmentTemplate","startLine":22,"endLine":26,"spanLines":5}

@@ -63775,10 +63775,16 @@
 {"file":"kernel/index.ts","role":"other","extension":".ts","atom":"export","kind":"export-all","name":"./risk/index.js","line":4}
 {"file":"kernel/index.ts","role":"other","extension":".ts","atom":"export","kind":"export-all","name":"./shared/index.js","line":5}
 {"file":"kernel/policy/index.ts","role":"other","extension":".ts","atom":"export","kind":"export-from","name":"./university-plugin.js","line":1}
-{"file":"kernel/policy/index.ts","role":"other","extension":".ts","atom":"export","kind":"export-from","name":"./policy-context.js","line":10}
+{"file":"kernel/policy/index.ts","role":"other","extension":".ts","atom":"export","kind":"export-from","name":"./risk-policy.js","line":10}
 {"file":"kernel/policy/index.ts","role":"other","extension":".ts","atom":"export","kind":"export-from","name":"./policy-context.js","line":11}
+{"file":"kernel/policy/index.ts","role":"other","extension":".ts","atom":"export","kind":"export-from","name":"./policy-context.js","line":12}
 {"file":"kernel/policy/policy-context.ts","role":"other","extension":".ts","atom":"export","kind":"export-named","name":"PolicyContext","line":3}
 {"file":"kernel/policy/policy-context.ts","role":"other","extension":".ts","atom":"export","kind":"export-named","name":"createPolicyContext","line":7}
+{"file":"kernel/policy/risk-policy.ts","role":"other","extension":".ts","atom":"call","name":"thresholds","line":5}
+{"file":"kernel/policy/risk-policy.ts","role":"other","extension":".ts","atom":"export","kind":"export-named","name":"RiskAttendanceRules","line":8}
+{"file":"kernel/policy/risk-policy.ts","role":"other","extension":".ts","atom":"call","name":"reads","line":13}
+{"file":"kernel/policy/risk-policy.ts","role":"other","extension":".ts","atom":"export","kind":"export-named","name":"RiskPassRules","line":14}
+{"file":"kernel/policy/risk-policy.ts","role":"other","extension":".ts","atom":"export","kind":"export-named","name":"RiskPolicy","line":31}
 {"file":"kernel/policy/university-plugin.ts","role":"other","extension":".ts","atom":"export","kind":"export-named","name":"WorkingCalendar","line":3}
 {"file":"kernel/policy/university-plugin.ts","role":"other","extension":".ts","atom":"export","kind":"export-named","name":"CeComponentCaps","line":13}
 {"file":"kernel/policy/university-plugin.ts","role":"other","extension":".ts","atom":"export","kind":"export-named","name":"AssessmentTemplate","line":22}

@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 1374,
-    "ignoredEntriesObserved": 107,
-    "bytes": 15724991,
-    "lines": 330366,
-    "nonEmptyLines": 305906,
-    "commentLines": 7463,
+    "trackedFiles": 1375,
+    "ignoredEntriesObserved": 105,
+    "bytes": 15726167,
+    "lines": 330403,
+    "nonEmptyLines": 305939,
+    "commentLines": 7477,
     "localDependencyEdges": 898,
-    "symbols": 24691,
+    "symbols": 24694,
     "apiRoutes": 190,
     "testCases": 1379,
     "filesWithTests": 196,
-    "atoms": 83476,
+    "atoms": 83482,
     "anomalies": 0
   },
   "counts": {
@@ -173,7 +173,7 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".ts": 669,
+      ".ts": 670,
       ".tsx": 214,
       ".css": 2,
       ".example": 1,
@@ -196,7 +196,7 @@
       ".conf": 2
     },
     "byRole": {
-      "other": 408,
+      "other": 409,
       "build-config": 16,
       "agent-config": 7,
       "ci": 8,
@@ -239,7 +239,7 @@
       "HEARTBEAT.md": 1,
       "index.html": 1,
       "jsconfig.json": 1,
-      "kernel": 26,
+      "kernel": 27,
       "knip.json": 1,
       "package-lock.json": 1,
       "package.json": 1,
@@ -268,7 +268,7 @@
       ".mcp.json": 1,
       ".tmp-test-postgres": 1,
       ".vscode": 1,
-      "adapters": 43,
+      "adapters": 41,
       "air-mentor-api": 29,
       "context_main.json": 1,
       "context.json": 1,
@@ -2093,8 +2093,6 @@
     "adapters/persistence/repositories/context.json",
     "adapters/web/app/app-parts/context.json",
     "adapters/web/app/context.json",
-    "adapters/web/app/operational-workspace-parts/",
-    "adapters/web/app/operational-workspace-parts/context.json",
     "adapters/web/features/academic-faculty-profile/context.json",
     "adapters/web/features/academic-routes/context.json",
     "adapters/web/features/academic-session-shell-parts/context.json",
@@ -2153,7 +2151,9 @@
     "air-mentor-api/src/application/use-cases/admin-control-plane/context.json",
     "air-mentor-api/src/application/use-cases/admin-structure/context.json",
     "air-mentor-api/src/application/use-cases/curriculum-graph/context.json",
-    "air-mentor-api/src/application/use-cases/people/context.json"
+    "air-mentor-api/src/application/use-cases/people/context.json",
+    "air-mentor-api/src/application/use-cases/students/context.json",
+    "air-mentor-api/src/context.json"
   ],
   "mcpObservations": [
     "CTXO is callable, but the observed overlay was stale relative to current Git state; use it as a hint, not deletion authority.",

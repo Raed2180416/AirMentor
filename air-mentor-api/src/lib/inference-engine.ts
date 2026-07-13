@@ -1,4 +1,4 @@
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
+import type { RiskPolicy } from '../../../kernel/policy/index.js'
 import {
   ASSIGNMENT_WEAK_IMPACT,
   ASSIGNMENT_WEAK_THRESHOLD_PCT,
@@ -58,7 +58,7 @@ export type ObservableInferenceInput = {
   questionWeaknessCount?: number
   interventionResponseScore?: number | null
   stageKey?: string | null
-  policy: ResolvedPolicy
+  policy: RiskPolicy
 }
 
 export type ObservableInferenceOutput = {
