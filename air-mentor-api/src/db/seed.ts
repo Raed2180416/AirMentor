@@ -75,7 +75,7 @@ import {
   userPasswordCredentials,
 } from './schema.js'
 import { DEFAULT_POLICY } from '../modules/admin-structure.js'
-import { seedMsruasProofSandbox } from '../lib/msruas-proof-sandbox.js'
+import { seedMsruasProofSandbox } from '../adapters/simulation/msruas-proof-sandbox.js'
 import { hashPassword } from '../lib/passwords.js'
 import { nowIso } from '../lib/time.js'
 import { readFile } from 'node:fs/promises'

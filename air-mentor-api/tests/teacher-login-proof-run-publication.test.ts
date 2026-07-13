@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { simulationRuns } from '../src/db/schema.js'
-import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
+import { MSRUAS_PROOF_BATCH_ID } from '../src/adapters/simulation/msruas-proof-sandbox.js'
 import { createTestApp, loginAs, TEST_NOW } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null

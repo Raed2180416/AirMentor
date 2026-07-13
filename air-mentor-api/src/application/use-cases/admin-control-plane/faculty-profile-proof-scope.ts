@@ -4,7 +4,7 @@
  * from the legacy handler; `proofView` keeps its exact inferred shape via a
  * type-only import of buildFacultyProofView (erased at build time).
  */
-import type { buildFacultyProofView } from '../../../lib/msruas-proof-control-plane.js'
+import type { buildFacultyProofView } from '../../../adapters/simulation/msruas-proof-control-plane.js'
 import type {
   FacultyProfileBatchRow,
   FacultyProfileBranchRow,

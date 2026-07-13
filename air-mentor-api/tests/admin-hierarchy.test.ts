@@ -15,7 +15,7 @@ import {
   sectionOfferings,
 } from '../src/db/schema.js'
 import { DEFAULT_STAGE_POLICY } from '../src/lib/stage-policy.js'
-import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
+import { MSRUAS_PROOF_BATCH_ID } from '../src/adapters/simulation/msruas-proof-sandbox.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null

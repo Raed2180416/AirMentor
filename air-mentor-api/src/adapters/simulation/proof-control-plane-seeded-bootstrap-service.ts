@@ -1,8 +1,8 @@
 import { eq, inArray } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
-import { courses, sectionOfferings, simulationRuns } from '../db/schema.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
-import type { MsruasDeterministicPolicy } from './msruas-rules.js'
+import type { AppDb } from '../../db/client.js'
+import { courses, sectionOfferings, simulationRuns } from '../../db/schema.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
+import type { MsruasDeterministicPolicy } from '../../lib/msruas-rules.js'
 import type {
   RuntimeCourse,
   RuntimeCurriculum,

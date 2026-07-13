@@ -13,7 +13,7 @@ import {
   advanceProofSimulationPreviousDay,
   advanceProofSimulationStage,
   resolveProofAdvance,
-} from '../src/lib/proof-control-plane-advance-service.js'
+} from '../src/adapters/simulation/proof-control-plane-advance-service.js'
 
 type MockRun = {
   simulationRunId: string

@@ -5,8 +5,8 @@ import {
   simulationStageQueueCases,
   simulationStageQueueProjections,
   simulationStageStudentProjections,
-} from '../db/schema.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
+} from '../../db/schema.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
 import {
   buildActionPolicyComparison,
   buildDeterministicId,
@@ -24,11 +24,11 @@ import {
 } from './proof-control-plane-playback-service.js'
 import type {
   EvidenceApplierInterventionInput,
-} from './proof-stage-realization-evidence-applier.js'
+} from '../../lib/proof-stage-realization-evidence-applier.js'
 import type {
   InterventionStageKey,
   StudentLatentProfileForIntervention,
-} from './proof-intervention-response-types.js'
+} from '../../lib/proof-intervention-response-types.js'
 import {
   buildObservableFeaturePayload,
   featureHash,
@@ -37,17 +37,17 @@ import {
   type ProductionRiskModelArtifact,
   RISK_FEATURE_SCHEMA_VERSION,
   scoreObservableRiskWithModel,
-} from './proof-risk-model.js'
-import { roundNullablePct } from './proof-evidence-normalization.js'
-import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from './proof-demo-operational-band.js'
-import { buildMonitoringDecision } from './monitoring-engine.js'
+} from '../../lib/proof-risk-model.js'
+import { roundNullablePct } from '../../lib/proof-evidence-normalization.js'
+import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from '../../lib/proof-demo-operational-band.js'
+import { buildMonitoringDecision } from '../../lib/monitoring-engine.js'
 import {
   governProofQueueStage,
   type ProofQueueCandidate,
   type ProofQueueGovernanceStageKey,
   type ProofQueuePriorCaseState,
   type ProofQueueRole,
-} from './proof-queue-governance.js'
+} from '../../lib/proof-queue-governance.js'
 import type {
   ObservableSourceRefsWithFeatureMetadata,
   PlaybackStageKey,

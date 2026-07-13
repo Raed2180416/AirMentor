@@ -1,7 +1,7 @@
 import { count, eq, like } from 'drizzle-orm'
-import { stableAnchoredBeta, betaQuantile } from './proof-world-realism-engine.js'
-import type { AppDb } from '../db/client.js'
-import curriculumSeedJson from '../db/seeds/msruas-mnc-curriculum.json' with { type: 'json' }
+import { stableAnchoredBeta, betaQuantile } from '../../lib/proof-world-realism-engine.js'
+import type { AppDb } from '../../db/client.js'
+import curriculumSeedJson from '../../db/seeds/msruas-mnc-curriculum.json' with { type: 'json' }
 import {
   academicFaculties,
   academicCalendarAuditEvents,
@@ -56,25 +56,25 @@ import {
   uiPreferences,
   userAccounts,
   userPasswordCredentials,
-} from '../db/schema.js'
-import { inferObservableRisk } from './inference-engine.js'
-import { buildMonitoringDecision } from './monitoring-engine.js'
+} from '../../db/schema.js'
+import { inferObservableRisk } from '../../lib/inference-engine.js'
+import { buildMonitoringDecision } from '../../lib/monitoring-engine.js'
 import {
   buildCompletenessCertificate,
   buildCurriculumOutputChecksum,
   compileMsruasCurriculumWorkbook,
   EMBEDDED_CURRICULUM_SOURCE_PATH,
   validateCompiledCurriculum,
-} from './msruas-curriculum-compiler.js'
+} from '../../lib/msruas-curriculum-compiler.js'
 import {
   calculateCgpa,
   calculateSgpa,
   evaluateCourseStatus,
   type GradePointSubjectAttempt,
   type MsruasDeterministicPolicy,
-} from './msruas-rules.js'
-import { hashPassword } from './passwords.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
+} from '../../lib/msruas-rules.js'
+import { hashPassword } from '../../lib/passwords.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
 
 type CurriculumSeedCourse = {
   title: string

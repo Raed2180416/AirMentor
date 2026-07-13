@@ -22,7 +22,7 @@
 // PURE MODULE (no DB, no Date.now() — deterministic given inputs). The caller
 // (academic-proof-routes + fetcher) is responsible for loading rows.
 
-import { counterfactualAdjustment } from './proof-control-plane-playback-service.js'
+import { counterfactualAdjustment } from '../adapters/simulation/proof-control-plane-playback-service.js'
 
 // Numeric clamp matching the behaviour inside buildNoActionSnapshot in
 // proof-control-plane-playback-service.ts. Inlined here to avoid pulling in

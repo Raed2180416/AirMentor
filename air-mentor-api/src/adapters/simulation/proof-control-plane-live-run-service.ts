@@ -1,5 +1,5 @@
 import { and, eq, ne } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import {
   academicTerms,
   batches,
@@ -20,9 +20,9 @@ import {
   teacherLoadProfiles,
   transcriptSubjectResults,
   transcriptTermResults,
-} from '../db/schema.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
-import type { MsruasDeterministicPolicy } from './msruas-rules.js'
+} from '../../db/schema.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
+import type { MsruasDeterministicPolicy } from '../../lib/msruas-rules.js'
 import { buildProofRunStageBoundarySnapshot } from './proof-control-plane-rebuild-context-service.js'
 
 export type StartLiveBatchProofSimulationRunInput = {

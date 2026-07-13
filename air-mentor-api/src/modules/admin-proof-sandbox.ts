@@ -27,7 +27,7 @@ import {
   stopProofSimulationRun,
   validateProofCurriculumImport,
   archiveProofSimulationRun,
-} from '../lib/msruas-proof-control-plane.js'
+} from '../adapters/simulation/msruas-proof-control-plane.js'
 import {
   enqueueProofSimulationRun,
   retryQueuedProofSimulationRun,
@@ -36,7 +36,7 @@ import {
   ensureMsruasProofSandboxSeeded,
   MSRUAS_PROOF_BATCH_ID,
   rehydrateProofFacultyCredentials,
-} from '../lib/msruas-proof-sandbox.js'
+} from '../adapters/simulation/msruas-proof-sandbox.js'
 import { emitAuditEvent, parseOrThrow, requireRole } from './support.js'
 import {
   DEFAULT_POLICY,

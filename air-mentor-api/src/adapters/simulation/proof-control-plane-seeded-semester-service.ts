@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { GradePointSubjectAttempt, MsruasDeterministicPolicy } from './msruas-rules.js'
+import type { GradePointSubjectAttempt, MsruasDeterministicPolicy } from '../../lib/msruas-rules.js'
 import type { RuntimeCourse, SimulatedQuestionTemplate } from './msruas-proof-control-plane.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
 
 export type SeededTrajectoryLike = any
 

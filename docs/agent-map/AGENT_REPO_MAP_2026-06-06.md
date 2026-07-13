@@ -12,8 +12,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
 | Tracked files | 1375 |
 | Tracked bytes | 15.0 MiB |
-| Tracked source/doc lines | 330403 |
-| Non-empty lines | 305939 |
+| Tracked source/doc lines | 330416 |
+| Non-empty lines | 305952 |
 | Comment lines | 7477 |
 | Local dependency edges | 898 |
 | Symbols/blocks discovered | 24694 |
@@ -62,7 +62,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Backend app factory | air-mentor-api/src/app.ts | 222 | 0 | 20 | Fastify app composition, CORS/session/security hooks, and module registration. |
 | Backend DB schema | air-mentor-api/src/db/schema.ts | 1540 | 0 | 103 | Database schema source of truth. |
 | Backend seeded server | air-mentor-api/scripts/start-seeded-server.ts | 153 | 0 | 24 | Deterministic demo backend launcher. |
-| Proof runtime service | air-mentor-api/src/lib/proof-control-plane-runtime-service.ts | 1380 | 0 | 170 | Observed evidence recomputation, risk rows, playback rebuild, and checkpoint projection updates. |
+| Proof runtime service | air-mentor-api/src/adapters/simulation/proof-control-plane-runtime-service.ts | 1380 | 0 | 170 | Observed evidence recomputation, risk rows, playback rebuild, and checkpoint projection updates. |
 | Proof risk model | air-mentor-api/src/lib/proof-risk-model.ts | 2811 | 0 | 442 | Runtime proof-risk scoring/model contract logic. |
 | Proof risk contract bundle | air-mentor-api/model-contract/proof-risk-model/risk-model-bundle.json | 1628 | 0 | 0 | Tracked serving model contract. |
 | Proof risk promotion decision | air-mentor-api/model-contract/proof-risk-model/promotion-decision.json | 32 | 0 | 0 | Governed shadow-vs-serving decision. |
@@ -217,20 +217,21 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Directory | Files | Bytes | Lines | Roles |
 | --- | --- | --- | --- | --- |
 | air-mentor-api/src/db/migrations/meta | 5 | 1.2 MiB | 44646 | backend:5 |
-| air-mentor-api/src/lib | 82 | 1.5 MiB | 37517 | backend:82 |
 | air-mentor-api/tests | 93 | 1.2 MiB | 31936 | unit-test:93 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27309 | backend-script:97 |
-| scripts | 111 | 1018.2 KiB | 24455 | repo-script:111 |
+| scripts | 111 | 1018.5 KiB | 24455 | repo-script:111 |
+| air-mentor-api/src/adapters/simulation | 24 | 957.4 KiB | 22000 | backend:24 |
 | tests | 68 | 614.3 KiB | 17898 | unit-test:68 |
+| air-mentor-api/src/lib | 58 | 590.2 KiB | 15517 | backend:58 |
 | . | 25 | 337.7 KiB | 9443 | other:14, build-config:10, agent-config:1 |
-| docs | 20 | 329.4 KiB | 8887 | documentation:20 |
+| docs | 20 | 330.5 KiB | 8900 | documentation:20 |
 | adapters/web/features/admin | 29 | 366.3 KiB | 8326 | other:29 |
 | tests-e2e/specs | 36 | 363.8 KiB | 7580 | e2e-test:36 |
 | air-mentor-api/src/modules | 21 | 253.6 KiB | 6424 | backend:21 |
 | pipeline/orchestrator | 20 | 183.8 KiB | 5163 | pipeline:20 |
 | adapters/web/app | 14 | 218.1 KiB | 4822 | other:14 |
 | air-mentor-api | 14 | 154.5 KiB | 4728 | other:9, build-config:5 |
-| air-mentor-api/src/adapters/persistence/repositories/academic | 11 | 157.8 KiB | 3614 | backend:11 |
+| air-mentor-api/src/adapters/persistence/repositories/academic | 11 | 157.9 KiB | 3614 | backend:11 |
 | air-mentor-api/src/adapters/persistence/repositories/admin-structure | 20 | 147.0 KiB | 3541 | backend:20 |
 | adapters/web/shared/api/types-parts | 19 | 82.2 KiB | 3079 | other:19 |
 | adapters/web/features/admin/live-app/handlers | 15 | 112.3 KiB | 2748 | other:15 |
@@ -240,7 +241,6 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | forge-audit/forge_audit/engine | 7 | 76.6 KiB | 2259 | forge-audit:7 |
 | adapters/web/features/admin/faculties-workspace | 10 | 126.0 KiB | 2166 | other:10 |
 | air-mentor-api/src/db/seeds | 3 | 2.6 MiB | 2113 | backend:3 |
-| adapters/web/shared/api/client-parts | 12 | 97.9 KiB | 2006 | other:12 |
 
 ## High Fan-In Files
 

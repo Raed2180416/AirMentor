@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import {
   academicTerms,
   courses,
@@ -20,9 +20,9 @@ import {
   students,
   teacherAllocations,
   teacherLoadProfiles,
-} from '../db/schema.js'
-import { nullablePct } from './proof-evidence-normalization.js'
-import { parseObservedStateRow } from './proof-observed-state.js'
+} from '../../db/schema.js'
+import { nullablePct } from '../../lib/proof-evidence-normalization.js'
+import { parseObservedStateRow } from '../../lib/proof-observed-state.js'
 import type { StageCourseProjectionSource } from './msruas-proof-control-plane.js'
 
 type AttendanceHistoryEntry = {

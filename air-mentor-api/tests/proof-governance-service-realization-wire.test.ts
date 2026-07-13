@@ -23,7 +23,7 @@ import type {
 } from '../src/lib/proof-intervention-response-types.js'
 import type {
   PlaybackGovernanceRealizationData,
-} from '../src/lib/proof-control-plane-playback-governance-service.js'
+} from '../src/adapters/simulation/proof-control-plane-playback-governance-service.js'
 
 function makeProfile(overrides: Partial<{ receptivity: number; compliance: number }> = {}): StudentLatentProfileForIntervention {
   return {

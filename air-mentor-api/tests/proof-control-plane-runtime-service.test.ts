@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildLatestHistoricalPayloadByStudent,
   resolveRuntimeCurrentSemesterNumber,
-} from '../src/lib/proof-control-plane-runtime-service.js'
+} from '../src/adapters/simulation/proof-control-plane-runtime-service.js'
 
 describe('proof-control-plane-runtime-service', () => {
   it('prefers the active operational semester over terminal-semester residue', () => {

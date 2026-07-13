@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import {
   riskEvidenceSnapshots,
   simulationResetSnapshots,
@@ -12,9 +12,9 @@ import {
   studentAgentCards,
   studentAgentMessages,
   studentAgentSessions,
-} from '../db/schema.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
-import { parseJson } from './json.js'
+} from '../../db/schema.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
+import { parseJson } from '../../lib/json.js'
 
 type PlaybackResetSnapshotPayload = {
   snapshotType?: string | null

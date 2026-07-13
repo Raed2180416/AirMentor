@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { prepareSeededProofRunBootstrap } from '../src/lib/proof-control-plane-seeded-bootstrap-service.js'
+import { prepareSeededProofRunBootstrap } from '../src/adapters/simulation/proof-control-plane-seeded-bootstrap-service.js'
 
 function createDbStub() {
   const updateSet = vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) }))

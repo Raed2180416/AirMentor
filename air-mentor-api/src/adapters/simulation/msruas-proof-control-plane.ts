@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, like, lt, not, or } from 'drizzle-orm'
-import type { RouteContext } from '../app.js'
-import type { AppDb } from '../db/client.js'
+import type { RouteContext } from '../../app.js'
+import type { AppDb } from '../../db/client.js'
 import {
   academicRuntimeState,
   academicTerms,
@@ -60,16 +60,16 @@ import {
   offeringAssessmentSchemes,
   sessions,
   roleGrants,
-} from '../db/schema.js'
+} from '../../db/schema.js'
 import {
   buildFacultyTimetableTemplates as sharedBuildFacultyTimetableTemplates,
   weeklyContactHoursForCourse as sharedWeeklyContactHoursForCourse,
-} from './academic-provisioning.js'
-import { createId } from './ids.js'
-import { parseJson } from './json.js'
-import { nullablePct } from './proof-evidence-normalization.js'
-import { parseObservedStateRow } from './proof-observed-state.js'
-import { pickMostRecentActiveRun } from './proof-active-run.js'
+} from '../../lib/academic-provisioning.js'
+import { createId } from '../../lib/ids.js'
+import { parseJson } from '../../lib/json.js'
+import { nullablePct } from '../../lib/proof-evidence-normalization.js'
+import { parseObservedStateRow } from '../../lib/proof-observed-state.js'
+import { pickMostRecentActiveRun } from '../../lib/proof-active-run.js'
 import {
   buildProofBatchDashboard as buildProofBatchDashboardService,
   getProofRunCheckpointDetail as getProofRunCheckpointDetailService,
@@ -143,15 +143,15 @@ import {
 } from './proof-control-plane-playback-governance-service.js'
 import {
   buildSeverityContextByStudentId,
-} from './proof-stage-realization-bundle-assembler.js'
+} from '../../lib/proof-stage-realization-bundle-assembler.js'
 import {
   groupInterventionsByStudentAndOffering,
   parseLatentProfileForIntervention,
-} from './proof-stage-realization-data-fetcher.js'
+} from '../../lib/proof-stage-realization-data-fetcher.js'
 import type {
   StudentLatentProfileForIntervention,
-} from './proof-intervention-response-types.js'
-import { STAGE_REALIZATION_FLAG_NAME } from './proof-stage-realization-evidence-applier.js'
+} from '../../lib/proof-intervention-response-types.js'
+import { STAGE_REALIZATION_FLAG_NAME } from '../../lib/proof-stage-realization-evidence-applier.js'
 import {
   resetPlaybackStageArtifacts,
   stopProofSimulationRun as stopProofSimulationRunService,
@@ -181,8 +181,8 @@ import {
   buildSeededSemesterSixRows,
   type ProofControlPlaneSeededSemesterServiceDeps,
 } from './proof-control-plane-seeded-semester-service.js'
-import { parseSectionOverridesJson } from './proof-section-override-applier.js'
-import { maybeApplySectionOverridesToTrajectory } from './proof-section-override-trajectory-wire.js'
+import { parseSectionOverridesJson } from '../../lib/proof-section-override-applier.js'
+import { maybeApplySectionOverridesToTrajectory } from '../../lib/proof-section-override-trajectory-wire.js'
 import {
   prepareSeededProofRunBootstrap as prepareSeededProofRunBootstrapService,
   type ProofControlPlaneSeededBootstrapServiceDeps,
@@ -193,11 +193,11 @@ import {
   compileMsruasCurriculumWorkbook,
   MSRUAS_PROOF_VALIDATOR_VERSION,
   validateCompiledCurriculum,
-} from './msruas-curriculum-compiler.js'
-import { BLOOM_LEVEL_MASTERY_TARGET, MASTERY_WEAKNESS_RATIO, SCENARIO_FINGERPRINTS } from './learning-dynamics-constants.js'
-import { inferObservableRisk } from './inference-engine.js'
-import { buildMonitoringDecision } from './monitoring-engine.js'
-import { DEFAULT_STAGE_POLICY, type StagePolicyStageKey } from './stage-policy.js'
+} from '../../lib/msruas-curriculum-compiler.js'
+import { BLOOM_LEVEL_MASTERY_TARGET, MASTERY_WEAKNESS_RATIO, SCENARIO_FINGERPRINTS } from '../../lib/learning-dynamics-constants.js'
+import { inferObservableRisk } from '../../lib/inference-engine.js'
+import { buildMonitoringDecision } from '../../lib/monitoring-engine.js'
+import { DEFAULT_STAGE_POLICY, type StagePolicyStageKey } from '../../lib/stage-policy.js'
 import {
   PROOF_CORPUS_MANIFEST,
   scenarioFamilyForSeed,
@@ -211,26 +211,26 @@ import {
   type CorrelationArtifact,
   type ChallengerRiskModelArtifact,
   type ProductionRiskModelArtifact,
-} from './proof-risk-model.js'
+} from '../../lib/proof-risk-model.js'
 import {
   type FeatureConfidenceClass,
   type GraphAwareFeatureCompleteness,
   type GraphAwareFeatureProvenance,
   type GraphAwarePrerequisiteSummaryCompleteness,
-} from './graph-summary.js'
+} from '../../lib/graph-summary.js'
 import type {
   CountProvenanceValue,
   CountSourceValue,
   ResolvedFromValue,
   ScopeDescriptorValue,
   ScopeModeValue,
-} from './proof-provenance.js'
+} from '../../lib/proof-provenance.js'
 import {
   calculateCgpa,
   calculateSgpa,
   evaluateCourseStatus,
   type MsruasDeterministicPolicy,
-} from './msruas-rules.js'
+} from '../../lib/msruas-rules.js'
 import {
   MSRUAS_PROOF_BATCH_ID,
   MSRUAS_PROOF_BRANCH_ID,
@@ -241,7 +241,7 @@ import {
   ensureMsruasProofBatchStructure,
   seedMsruasProofSandbox,
 } from './msruas-proof-sandbox.js'
-import { DEFAULT_POLICY, type ResolvedPolicy } from '../modules/admin-structure.js'
+import { DEFAULT_POLICY, type ResolvedPolicy } from '../../modules/admin-structure.js'
 
 const INFERENCE_MODEL_VERSION = 'observable-inference-v2'
 const MONITORING_POLICY_VERSION = 'monitoring-policy-v2'

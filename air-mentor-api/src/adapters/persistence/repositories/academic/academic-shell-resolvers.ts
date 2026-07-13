@@ -24,7 +24,7 @@ import {
   isTeacherVisibleActiveProofRunCandidate,
   pickMostRecentActiveRun,
 } from '../../../../lib/proof-active-run.js'
-import { buildHodProofAnalytics } from '../../../../lib/msruas-proof-control-plane.js'
+import { buildHodProofAnalytics } from '../../../../adapters/simulation/msruas-proof-control-plane.js'
 import { requireAuth } from '../../../../modules/support.js'
 import {
   assertAcademicAccess,

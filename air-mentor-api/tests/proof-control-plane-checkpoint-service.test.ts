@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { stageSummaryPayload, withProofPlaybackGate } from '../src/lib/proof-control-plane-checkpoint-service.js'
+import { stageSummaryPayload, withProofPlaybackGate } from '../src/adapters/simulation/proof-control-plane-checkpoint-service.js'
 
 describe('proof-control-plane-checkpoint-service', () => {
   it('summarizes checkpoint risk and queue counts by unique student and primary queue case', () => {

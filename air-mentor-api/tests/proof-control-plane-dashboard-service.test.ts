@@ -4,7 +4,7 @@ import {
   buildProofQueueDiagnostics,
   buildProofWorkerDiagnostics,
   decorateProofRunsWithOperationalDiagnostics,
-} from '../src/lib/proof-control-plane-dashboard-service.js'
+} from '../src/adapters/simulation/proof-control-plane-dashboard-service.js'
 
 describe('proof-control-plane-dashboard-service', () => {
   it('derives queue, lease, retry, and worker diagnostics from proof runs', () => {

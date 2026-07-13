@@ -10,7 +10,7 @@
  */
 import { forbidden, notFound } from '../../../lib/http-errors.js'
 import type { ScopeDescriptorValue } from '../../../lib/proof-provenance.js'
-import type { buildFacultyProofView } from '../../../lib/msruas-proof-control-plane.js'
+import type { buildFacultyProofView } from '../../../adapters/simulation/msruas-proof-control-plane.js'
 import type { resolveAcademicStageCheckpoint } from '../../../modules/academic.js'
 import type { AdminControlPlaneRepository } from '../../ports/admin-control-plane-repository.js'
 import type { UseCaseResponse } from '../curriculum-graph/shared.js'

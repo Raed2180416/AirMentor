@@ -1,5 +1,5 @@
 import { createPool, createDb } from '../src/db/client.js'
-import { recomputeObservedOnlyRisk } from '../src/lib/msruas-proof-control-plane.js'
+import { recomputeObservedOnlyRisk } from '../src/adapters/simulation/msruas-proof-control-plane.js'
 import { DEFAULT_POLICY } from '../src/modules/admin-structure.js'
 
 async function run() {

@@ -7,7 +7,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { and, asc, count, eq, gt, inArray, isNotNull } from 'drizzle-orm'
 import { createPersistentTestApp, createTestApp, TEST_NOW } from '../tests/helpers/test-app.js'
-import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
+import { MSRUAS_PROOF_BATCH_ID } from '../src/adapters/simulation/msruas-proof-sandbox.js'
 import { createDb, createPool, type AppDb } from '../src/db/client.js'
 import { runSqlMigrations } from '../src/db/migrate.js'
 import { seedIntoDatabase } from '../src/db/seed.js'
@@ -37,7 +37,7 @@ import {
   reviewProofCrosswalks,
   startProofSimulationRun,
   validateProofCurriculumImport,
-} from '../src/lib/msruas-proof-control-plane.js'
+} from '../src/adapters/simulation/msruas-proof-control-plane.js'
 import { resolveBatchPolicy } from '../src/modules/admin-structure.js'
 import {
   BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG,

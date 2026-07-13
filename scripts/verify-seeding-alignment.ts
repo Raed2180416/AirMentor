@@ -4,8 +4,8 @@ import {
   studentAssessmentScores,
   simulationRuns,
 } from '../air-mentor-api/src/db/schema.js'
-import { seedMsruasProofSandbox } from '../air-mentor-api/src/lib/msruas-proof-sandbox.js'
-import { advanceProofSimulationStage } from '../air-mentor-api/src/lib/proof-control-plane-advance-service.js'
+import { seedMsruasProofSandbox } from '../air-mentor-api/src/adapters/simulation/msruas-proof-sandbox.js'
+import { advanceProofSimulationStage } from '../air-mentor-api/src/adapters/simulation/proof-control-plane-advance-service.js'
 import { DEFAULT_POLICY } from '../air-mentor-api/src/modules/admin-structure.js'
 
 async function run() {

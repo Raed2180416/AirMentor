@@ -118,7 +118,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       ],
       filesRead: [
         { path: 'air-mentor-api/src/lib/proof-risk-model.ts', purpose: 'Main risk scoring logic' },
-        { path: 'air-mentor-api/src/lib/msruas-proof-sandbox.ts', purpose: 'Proof sandbox' },
+        { path: 'air-mentor-api/src/adapters/simulation/msruas-proof-sandbox.ts', purpose: 'Proof sandbox' },
       ],
       keyFindings: [
         { finding: 'Current model does not weight features by credit hours', confidence: 'high' },

@@ -1,10 +1,10 @@
 import { asc, eq } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import {
   batches,
   simulationRuns,
   simulationStageCheckpoints,
-} from '../db/schema.js'
+} from '../../db/schema.js'
 import { buildProofRunStageBoundarySnapshot } from './proof-control-plane-rebuild-context-service.js'
 
 export type ActivateProofOperationalSemesterInput = {

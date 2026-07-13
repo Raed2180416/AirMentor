@@ -12,8 +12,8 @@ import {
 import type { ResolvedPolicy } from '../modules/admin-structure.js'
 import { createId } from './ids.js'
 import { parseJson } from './json.js'
-import { startProofSimulationRun } from './msruas-proof-control-plane.js'
-import { MSRUAS_PROOF_BATCH_ID, PROOF_FACULTY } from './msruas-proof-sandbox.js'
+import { startProofSimulationRun } from '../adapters/simulation/msruas-proof-control-plane.js'
+import { MSRUAS_PROOF_BATCH_ID, PROOF_FACULTY } from '../adapters/simulation/msruas-proof-sandbox.js'
 import { emitOperationalEvent, normalizeTelemetryError } from './telemetry.js'
 
 const WORKER_POLL_MS = 5_000

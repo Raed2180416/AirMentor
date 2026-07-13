@@ -3,28 +3,28 @@ import {
   simulationQuestionTemplates,
   studentCoStates,
   studentQuestionResults,
-} from '../db/schema.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
+} from '../../db/schema.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
 import {
   buildGraphAwarePrerequisiteSummary,
   buildMissingGraphAwarePrerequisiteSummary,
-} from './graph-summary.js'
-import { parseJson } from './json.js'
+} from '../../lib/graph-summary.js'
+import { parseJson } from '../../lib/json.js'
 import type {
   PlaybackStageKey,
   PolicyPhenotype,
   StageCourseProjectionSource,
   StageEvidenceSnapshot,
 } from './msruas-proof-control-plane.js'
-import { nullablePct } from './proof-evidence-normalization.js'
+import { nullablePct } from '../../lib/proof-evidence-normalization.js'
 import {
   applyRealizationToEvidenceSnapshot,
   type EvidenceApplierInterventionInput,
-} from './proof-stage-realization-evidence-applier.js'
+} from '../../lib/proof-stage-realization-evidence-applier.js'
 import type {
   InterventionStageKey,
   StudentLatentProfileForIntervention,
-} from './proof-intervention-response-types.js'
+} from '../../lib/proof-intervention-response-types.js'
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))

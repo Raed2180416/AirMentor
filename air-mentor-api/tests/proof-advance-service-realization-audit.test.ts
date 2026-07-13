@@ -12,7 +12,7 @@ import {
   buildStageRealizationAppliedAuditPayload,
   isStageRealizationAuditEnabled,
   type ProofAdvanceResolution,
-} from '../src/lib/proof-control-plane-advance-service.js'
+} from '../src/adapters/simulation/proof-control-plane-advance-service.js'
 
 function makeResolution(overrides: Partial<ProofAdvanceResolution> = {}): ProofAdvanceResolution {
   return {

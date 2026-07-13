@@ -201,7 +201,7 @@ check('2-SEED', 'Seed 20260320 maps to balanced family',
   `20260320 % 8 = ${20260320 % 8} → index 0 → 'balanced'`)
 
 // Verify semester service builds semesters 1-5 historically and 6 live
-const semesterServiceFile = readFileSync(resolve(apiRoot, 'src/lib/proof-control-plane-seeded-semester-service.ts'), 'utf-8')
+const semesterServiceFile = readFileSync(resolve(apiRoot, 'src/adapters/simulation/proof-control-plane-seeded-semester-service.ts'), 'utf-8')
 check('2-SEED', 'Historical semesters loop is 1-5',
   semesterServiceFile.includes('semesterNumber <= 5'),
   'buildSeededHistoricalSemesterRows loops semesterNumber 1..5')
@@ -287,7 +287,7 @@ check('3-ROLES', 'Queue governance routes cases by role',
   'All 3 roles in queue governance')
 
 // Verify role-based routing in runtime service
-const runtimeServiceFile = readFileSync(resolve(apiRoot, 'src/lib/proof-control-plane-runtime-service.ts'), 'utf-8')
+const runtimeServiceFile = readFileSync(resolve(apiRoot, 'src/adapters/simulation/proof-control-plane-runtime-service.ts'), 'utf-8')
 check('3-ROLES', 'Runtime service resolves faculty by role',
   runtimeServiceFile.includes("courseLeaderFacultyIdByOfferingId") &&
   runtimeServiceFile.includes("mentorFacultyIdByStudentId") &&
@@ -364,17 +364,17 @@ console.log('\n━━━ 5. SIMULATION SEMANTICS ━━━')
 
 // Verify proof sandbox builds complete world
 check('5-SIMULATION', 'Proof sandbox file exists and is substantial',
-  existsSync(resolve(apiRoot, 'src/lib/msruas-proof-sandbox.ts')),
-  `${(readFileSync(resolve(apiRoot, 'src/lib/msruas-proof-sandbox.ts'), 'utf-8').length / 1024).toFixed(0)}KB`)
+  existsSync(resolve(apiRoot, 'src/adapters/simulation/msruas-proof-sandbox.ts')),
+  `${(readFileSync(resolve(apiRoot, 'src/adapters/simulation/msruas-proof-sandbox.ts'), 'utf-8').length / 1024).toFixed(0)}KB`)
 
 // Verify student trajectories are built with archetypes
-const controlPlaneFullText = readFileSync(resolve(apiRoot, 'src/lib/msruas-proof-control-plane.ts'), 'utf-8')
+const controlPlaneFullText = readFileSync(resolve(apiRoot, 'src/adapters/simulation/msruas-proof-control-plane.ts'), 'utf-8')
 check('5-SIMULATION', 'Student archetypes drive simulation diversity',
   controlPlaneFullText.includes('archetype') || controlPlaneFullText.includes('Archetype'),
   'Students have archetype-based profiles')
 
 // Verify terminology is consistent — "simulation" not "simulation game"
-const mainControlPlaneFile = readFileSync(resolve(apiRoot, 'src/lib/msruas-proof-control-plane.ts'), 'utf-8').slice(0, 2000)
+const mainControlPlaneFile = readFileSync(resolve(apiRoot, 'src/adapters/simulation/msruas-proof-control-plane.ts'), 'utf-8').slice(0, 2000)
 check('5-SIMULATION', 'Control plane uses professional terminology',
   mainControlPlaneFile.includes('simulation') || mainControlPlaneFile.includes('proof'),
   'Uses "simulation", "proof run", not game-like language')
@@ -494,15 +494,15 @@ const criticalFiles = [
   'air-mentor-api/src/lib/inference-engine.ts',
   'air-mentor-api/src/lib/learning-dynamics-constants.ts',
   'air-mentor-api/src/lib/proof-risk-model.ts',
-  'air-mentor-api/src/lib/proof-control-plane-advance-service.ts',
-  'air-mentor-api/src/lib/proof-control-plane-runtime-service.ts',
-  'air-mentor-api/src/lib/proof-control-plane-seeded-semester-service.ts',
+  'air-mentor-api/src/adapters/simulation/proof-control-plane-advance-service.ts',
+  'air-mentor-api/src/adapters/simulation/proof-control-plane-runtime-service.ts',
+  'air-mentor-api/src/adapters/simulation/proof-control-plane-seeded-semester-service.ts',
   'air-mentor-api/src/lib/proof-stage-realization-service.ts',
   'air-mentor-api/src/lib/proof-intervention-response-engine.ts',
   'air-mentor-api/src/lib/proof-world-realism-engine.ts',
   'air-mentor-api/src/lib/proof-queue-governance.ts',
-  'air-mentor-api/src/lib/msruas-proof-sandbox.ts',
-  'air-mentor-api/src/lib/msruas-proof-control-plane.ts',
+  'air-mentor-api/src/adapters/simulation/msruas-proof-sandbox.ts',
+  'air-mentor-api/src/adapters/simulation/msruas-proof-control-plane.ts',
   'air-mentor-api/src/lib/monitoring-engine.ts',
   'tests-e2e/fixtures/seeded-run-fixture.ts',
   'src/pages/hod-pages.tsx',
@@ -557,7 +557,7 @@ check('7-SOUNDNESS', 'inferObservableRisk exported correctly',
   'Main inference function is exported')
 
 // Verify advance service handles all modes
-const advanceFile = readFileSync(resolve(apiRoot, 'src/lib/proof-control-plane-advance-service.ts'), 'utf-8')
+const advanceFile = readFileSync(resolve(apiRoot, 'src/adapters/simulation/proof-control-plane-advance-service.ts'), 'utf-8')
 check('7-SOUNDNESS', 'Advance service handles next-day, previous-day, next-stage',
   advanceFile.includes("'next-day'") && advanceFile.includes("'previous-day'") && advanceFile.includes("'next-stage'"),
   'All 3 advance modes implemented')

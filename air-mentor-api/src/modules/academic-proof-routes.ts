@@ -25,7 +25,7 @@ import {
   sendStudentAgentMessage,
   startStudentAgentSession,
   stopProofSimulationRun,
-} from '../lib/msruas-proof-control-plane.js'
+} from '../adapters/simulation/msruas-proof-control-plane.js'
 import { buildCounterfactualReport } from '../lib/proof-counterfactual-reader.js'
 import { fetchCounterfactualSnapshotRows } from '../lib/proof-counterfactual-fetcher.js'
 import { buildSimulatorCounterfactualReport } from '../lib/proof-counterfactual-simulator-aggregator.js'

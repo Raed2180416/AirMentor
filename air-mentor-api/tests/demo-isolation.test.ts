@@ -25,7 +25,7 @@ import {
 import {
   MSRUAS_PROOF_BATCH_ID,
   MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
-} from '../src/lib/msruas-proof-sandbox.js'
+} from '../src/adapters/simulation/msruas-proof-sandbox.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
 

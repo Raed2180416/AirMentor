@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { persistOperationalEvent } from '../src/lib/telemetry.js'
-import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
+import { MSRUAS_PROOF_BATCH_ID } from '../src/adapters/simulation/msruas-proof-sandbox.js'
 import { createTestApp, loginAs } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null

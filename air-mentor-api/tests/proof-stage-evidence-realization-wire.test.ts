@@ -9,7 +9,7 @@
 // bytewise-identical behaviour.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildStageEvidenceSnapshot } from '../src/lib/proof-control-plane-playback-service.js'
+import { buildStageEvidenceSnapshot } from '../src/adapters/simulation/proof-control-plane-playback-service.js'
 import { STAGE_REALIZATION_FLAG_NAME } from '../src/lib/proof-stage-realization-evidence-applier.js'
 import type {
   EvidenceApplierInterventionInput,
@@ -19,7 +19,7 @@ import type {
 } from '../src/lib/proof-intervention-response-types.js'
 import type {
   StageCourseProjectionSource,
-} from '../src/lib/msruas-proof-control-plane.js'
+} from '../src/adapters/simulation/msruas-proof-control-plane.js'
 import type { simulationQuestionTemplates } from '../src/db/schema.js'
 import type { ResolvedPolicy } from '../src/modules/admin-structure.js'
 

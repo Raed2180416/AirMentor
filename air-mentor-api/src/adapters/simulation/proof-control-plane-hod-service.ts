@@ -1,4 +1,4 @@
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import { eq, inArray, isNull } from 'drizzle-orm'
 import {
   academicTerms,
@@ -30,11 +30,11 @@ import {
   teacherAllocations,
   teacherLoadProfiles,
   transcriptTermResults,
-} from '../db/schema.js'
-import { parseJson } from './json.js'
-import { pickMostRecentActiveRun } from './proof-active-run.js'
-import { nullablePct } from './proof-evidence-normalization.js'
-import { parseObservedStateRow } from './proof-observed-state.js'
+} from '../../db/schema.js'
+import { parseJson } from '../../lib/json.js'
+import { pickMostRecentActiveRun } from '../../lib/proof-active-run.js'
+import { nullablePct } from '../../lib/proof-evidence-normalization.js'
+import { parseObservedStateRow } from '../../lib/proof-observed-state.js'
 import {
   filterElectiveRecommendationsForSemester,
   latestElectiveRecommendationForSemester,
@@ -43,7 +43,7 @@ import {
 import {
   buildProofCountProvenance,
   buildUnavailableCountProvenance,
-} from './proof-provenance.js'
+} from '../../lib/proof-provenance.js'
 import {
   canonicalPublicProofQueueStatus,
   queueDecisionTypeFromStatus,

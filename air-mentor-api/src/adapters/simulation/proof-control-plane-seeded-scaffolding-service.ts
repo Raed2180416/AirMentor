@@ -1,12 +1,12 @@
 import { inArray } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import {
   offeringQuestionPapers,
   sectionOfferings,
   simulationQuestionTemplates,
   teacherAllocations,
   worldContextSnapshots,
-} from '../db/schema.js'
+} from '../../db/schema.js'
 import type {
   BlueprintNode,
   RuntimeCourse,

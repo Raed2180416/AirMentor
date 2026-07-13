@@ -1,5 +1,5 @@
-import { simulationQuestionTemplates } from '../db/schema.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
+import { simulationQuestionTemplates } from '../../db/schema.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
 import type {
   PlaybackStageKey,
   StageCourseProjectionSource,

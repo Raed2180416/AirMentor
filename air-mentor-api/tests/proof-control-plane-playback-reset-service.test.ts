@@ -17,7 +17,7 @@ import {
   completeProofSimulationReset,
   resetCurrentProofStage,
   stopProofSimulationRun,
-} from '../src/lib/proof-control-plane-playback-reset-service.js'
+} from '../src/adapters/simulation/proof-control-plane-playback-reset-service.js'
 
 type MockRun = {
   simulationRunId: string

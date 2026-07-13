@@ -7,9 +7,9 @@ import { conflict, notFound } from './http-errors.js'
 import {
   MSRUAS_PROOF_BATCH_ID,
   MSRUAS_PROOF_SIMULATION_RUN_ID,
-} from './msruas-proof-sandbox.js'
-import { rebuildSimulationStagePlayback } from './msruas-proof-control-plane.js'
-import { resetPlaybackStageArtifacts } from './proof-control-plane-playback-reset-service.js'
+} from '../adapters/simulation/msruas-proof-sandbox.js'
+import { rebuildSimulationStagePlayback } from '../adapters/simulation/msruas-proof-control-plane.js'
+import { resetPlaybackStageArtifacts } from '../adapters/simulation/proof-control-plane-playback-reset-service.js'
 import {
   buildDemoScopeName,
   createDemoWorkspaceSchema,

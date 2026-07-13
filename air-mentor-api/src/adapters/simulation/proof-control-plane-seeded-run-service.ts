@@ -1,5 +1,5 @@
 import { and, eq, ne } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import {
   alertDecisions,
   alertOutcomes,
@@ -26,9 +26,9 @@ import {
   transcriptSubjectResults,
   transcriptTermResults,
   worldContextSnapshots,
-} from '../db/schema.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
-import { parseObservedStateRow } from './proof-observed-state.js'
+} from '../../db/schema.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
+import { parseObservedStateRow } from '../../lib/proof-observed-state.js'
 import { buildProofRunStageBoundarySnapshot } from './proof-control-plane-rebuild-context-service.js'
 
 type FacultyLoadAssignment = {

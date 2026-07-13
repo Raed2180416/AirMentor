@@ -32,7 +32,7 @@ import {
   requireAuth,
   requireRole,
 } from './support.js'
-import { buildFacultyProofView } from '../lib/msruas-proof-control-plane.js'
+import { buildFacultyProofView } from '../adapters/simulation/msruas-proof-control-plane.js'
 import { resolveAcademicStageCheckpoint } from './academic.js'
 import type { AuditEmitter } from '../application/use-cases/curriculum-graph/shared.js'
 import { facultyCalendarSaveSchema } from '../application/use-cases/admin-control-plane/faculty-calendar-domain.js'

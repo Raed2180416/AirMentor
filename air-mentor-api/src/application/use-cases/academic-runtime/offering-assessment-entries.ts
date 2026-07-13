@@ -7,7 +7,7 @@
  * policy resolution, scheme/blueprint builders + validators, outcome resolution,
  * runtime-state accessors, audit emit) arrive via the deps bundle.
  *
- * R5: `deps.triggerActiveRunRecompute` (lib/msruas-proof-control-plane
+ * R5: `deps.triggerActiveRunRecompute` (adapters/simulation/msruas-proof-control-plane
  * triggerActiveRunRecomputeIfPresent, context-bound in the controller) fires
  * only AFTER every DB write commits and the audit event is emitted — the exact
  * ordering the legacy handler used. Optimistic-lock / stage-gate checks are

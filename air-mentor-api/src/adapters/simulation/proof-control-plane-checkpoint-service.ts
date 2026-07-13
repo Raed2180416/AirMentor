@@ -4,8 +4,8 @@ import {
   simulationStageQueueCases,
   simulationStageQueueProjections,
   simulationStageStudentProjections,
-} from '../db/schema.js'
-import { parseJson } from './json.js'
+} from '../../db/schema.js'
+import { parseJson } from '../../lib/json.js'
 import type { ProofCheckpointSummaryPayload } from './msruas-proof-control-plane.js'
 
 type QueueCaseTimelineRow = Pick<

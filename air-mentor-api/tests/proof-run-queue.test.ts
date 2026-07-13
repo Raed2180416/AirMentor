@@ -4,7 +4,7 @@ const proofRunQueueMocks = vi.hoisted(() => ({
   startProofSimulationRun: vi.fn(),
 }))
 
-vi.mock('../src/lib/msruas-proof-control-plane.js', () => ({
+vi.mock('../src/adapters/simulation/msruas-proof-control-plane.js', () => ({
   startProofSimulationRun: proofRunQueueMocks.startProofSimulationRun,
 }))
 

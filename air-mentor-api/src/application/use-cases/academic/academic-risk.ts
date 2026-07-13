@@ -14,7 +14,7 @@ import {
   type ObservableSourceRefs,
 } from '../../../lib/proof-risk-model.js'
 import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from '../../../lib/proof-demo-operational-band.js'
-import { getProofRiskModelActive } from '../../../lib/msruas-proof-control-plane.js'
+import { getProofRiskModelActive } from '../../../adapters/simulation/msruas-proof-control-plane.js'
 import { humanLabelForActionCode } from '../../../lib/proof-recommendation-text-generator.js'
 import type { ResolvedPolicy } from '../../../modules/admin-structure.js'
 import type { AssessmentScoreSnapshot } from './academic-contracts.js'

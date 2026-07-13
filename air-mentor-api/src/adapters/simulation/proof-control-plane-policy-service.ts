@@ -1,4 +1,4 @@
-import { parseJson } from './json.js'
+import { parseJson } from '../../lib/json.js'
 import type { PolicyPhenotype } from './msruas-proof-control-plane.js'
 
 const POLICY_PHENOTYPE_ORDER: PolicyPhenotype[] = [

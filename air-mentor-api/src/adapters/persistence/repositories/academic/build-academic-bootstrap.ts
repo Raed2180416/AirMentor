@@ -68,7 +68,7 @@ import {
   isTeacherVisibleActiveProofRunCandidate,
   pickMostRecentActiveRun,
 } from '../../../../lib/proof-active-run.js'
-import { getProofRiskModelActive } from '../../../../lib/msruas-proof-control-plane.js'
+import { getProofRiskModelActive } from '../../../../adapters/simulation/msruas-proof-control-plane.js'
 import {
   buildGraphAwarePrerequisiteSummary,
   buildMissingGraphAwarePrerequisiteSummary,

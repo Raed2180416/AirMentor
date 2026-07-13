@@ -16,7 +16,7 @@ const proofRouteMocks = vi.hoisted(() => ({
   startStudentAgentSession: vi.fn(),
 }))
 
-vi.mock('../src/lib/msruas-proof-control-plane.js', () => ({
+vi.mock('../src/adapters/simulation/msruas-proof-control-plane.js', () => ({
   advanceProofSimulationDay: proofRouteMocks.advanceProofSimulationDay,
   advanceProofSimulationPreviousDay: proofRouteMocks.advanceProofSimulationPreviousDay,
   advanceProofSimulationStage: proofRouteMocks.advanceProofSimulationStage,
@@ -29,7 +29,7 @@ vi.mock('../src/lib/msruas-proof-control-plane.js', () => ({
   startStudentAgentSession: proofRouteMocks.startStudentAgentSession,
 }))
 
-vi.mock('../src/lib/proof-control-plane-advance-service.js', () => ({
+vi.mock('../src/adapters/simulation/proof-control-plane-advance-service.js', () => ({
   advanceProofSimulationDay: proofRouteMocks.advanceProofSimulationDay,
   advanceProofSimulationPreviousDay: proofRouteMocks.advanceProofSimulationPreviousDay,
   advanceProofSimulationStage: proofRouteMocks.advanceProofSimulationStage,

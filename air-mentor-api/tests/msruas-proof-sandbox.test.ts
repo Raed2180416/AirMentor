@@ -29,11 +29,11 @@ import {
   MSRUAS_PROOF_BRANCH_ID,
   MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
   MSRUAS_PROOF_SIMULATION_RUN_ID,
-} from '../src/lib/msruas-proof-sandbox.js'
+} from '../src/adapters/simulation/msruas-proof-sandbox.js'
 import {
   createProofCurriculumImport,
   validateProofCurriculumImport,
-} from '../src/lib/msruas-proof-control-plane.js'
+} from '../src/adapters/simulation/msruas-proof-control-plane.js'
 import { DEFAULT_POLICY } from '../src/modules/admin-structure.js'
 
 const TEST_NOW = '2026-03-31T00:00:00.000Z'

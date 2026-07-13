@@ -1,5 +1,5 @@
-import { electiveRecommendations } from '../db/schema.js'
-import { parseJson } from './json.js'
+import { electiveRecommendations } from '../../db/schema.js'
+import { parseJson } from '../../lib/json.js'
 
 type ElectiveRecommendationRow =
   | typeof electiveRecommendations.$inferInsert

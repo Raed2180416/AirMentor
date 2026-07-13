@@ -152,10 +152,10 @@
   },
   "totals": {
     "trackedFiles": 1375,
-    "ignoredEntriesObserved": 105,
-    "bytes": 15726167,
-    "lines": 330403,
-    "nonEmptyLines": 305939,
+    "ignoredEntriesObserved": 106,
+    "bytes": 15729401,
+    "lines": 330416,
+    "nonEmptyLines": 305952,
     "commentLines": 7477,
     "localDependencyEdges": 898,
     "symbols": 24694,
@@ -269,7 +269,7 @@
       ".tmp-test-postgres": 1,
       ".vscode": 1,
       "adapters": 41,
-      "air-mentor-api": 29,
+      "air-mentor-api": 30,
       "context_main.json": 1,
       "context.json": 1,
       "kernel": 6,
@@ -888,7 +888,7 @@
     },
     {
       "name": "Proof runtime service",
-      "file": "air-mentor-api/src/lib/proof-control-plane-runtime-service.ts",
+      "file": "air-mentor-api/src/adapters/simulation/proof-control-plane-runtime-service.ts",
       "role": "backend",
       "lines": 1380,
       "localImports": 0,
@@ -2144,6 +2144,7 @@
     "air-mentor-api/src/adapters/persistence/repositories/curriculum-graph/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/people/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/students/context.json",
+    "air-mentor-api/src/adapters/simulation/context.json",
     "air-mentor-api/src/application/ports/context.json",
     "air-mentor-api/src/application/use-cases/academic-offerings/context.json",
     "air-mentor-api/src/application/use-cases/academic-runtime/context.json",
@@ -2152,8 +2153,7 @@
     "air-mentor-api/src/application/use-cases/admin-structure/context.json",
     "air-mentor-api/src/application/use-cases/curriculum-graph/context.json",
     "air-mentor-api/src/application/use-cases/people/context.json",
-    "air-mentor-api/src/application/use-cases/students/context.json",
-    "air-mentor-api/src/context.json"
+    "air-mentor-api/src/application/use-cases/students/context.json"
   ],
   "mcpObservations": [
     "CTXO is callable, but the observed overlay was stale relative to current Git state; use it as a hint, not deletion authority.",

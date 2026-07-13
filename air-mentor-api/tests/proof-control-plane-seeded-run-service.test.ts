@@ -5,7 +5,7 @@ import {
   simulationRuns,
   simulationStageCheckpoints,
 } from '../src/db/schema.js'
-import { finalizeSeededProofRun } from '../src/lib/proof-control-plane-seeded-run-service.js'
+import { finalizeSeededProofRun } from '../src/adapters/simulation/proof-control-plane-seeded-run-service.js'
 
 const TEST_NOW = '2026-03-16T00:00:00.000Z'
 

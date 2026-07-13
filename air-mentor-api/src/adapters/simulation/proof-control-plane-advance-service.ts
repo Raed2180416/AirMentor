@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import {
   simulationResetSnapshots,
   simulationRuns,
@@ -7,9 +7,9 @@ import {
   simulationStageQueueCases,
   simulationStageQueueProjections,
   studentInterventions,
-} from '../db/schema.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
-import { parseJson } from './json.js'
+} from '../../db/schema.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
+import { parseJson } from '../../lib/json.js'
 import { buildDeterministicId, playbackCheckpointNowIso } from './proof-control-plane-playback-service.js'
 import {
   buildProofRunStageBoundarySnapshot,
@@ -21,9 +21,9 @@ import {
   stagePolicyStageKeyValues,
   type StagePolicyPayload,
   type StagePolicyStageKey,
-} from './stage-policy.js'
-import { STAGE_REALIZATION_FLAG_NAME } from './proof-stage-realization-evidence-applier.js'
-import { conflict } from './http-errors.js'
+} from '../../lib/stage-policy.js'
+import { STAGE_REALIZATION_FLAG_NAME } from '../../lib/proof-stage-realization-evidence-applier.js'
+import { conflict } from '../../lib/http-errors.js'
 
 // Phase-6c audit payload builder. Exported so unit tests can exercise the payload
 // shape without standing up a full DB mock. persistResolvedAdvance passes the same

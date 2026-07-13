@@ -28,7 +28,7 @@ import {
   transcriptSubjectResults,
   transcriptTermResults,
 } from '../src/db/schema.js'
-import { MSRUAS_PROOF_BATCH_ID, PROOF_TERM_DEFS } from '../src/lib/msruas-proof-sandbox.js'
+import { MSRUAS_PROOF_BATCH_ID, PROOF_TERM_DEFS } from '../src/adapters/simulation/msruas-proof-sandbox.js'
 import { PROOF_CORPUS_MANIFEST } from '../src/lib/proof-risk-model.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 

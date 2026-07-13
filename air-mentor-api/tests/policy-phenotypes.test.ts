@@ -5,11 +5,11 @@ import {
   classifyPolicyPhenotype,
   mergeCoEvidenceDiagnostics,
   mergePolicyDiagnostics,
-} from '../src/lib/msruas-proof-control-plane.js'
+} from '../src/adapters/simulation/msruas-proof-control-plane.js'
 import {
   buildActionPolicyComparison,
   policyActionCatalogForStage,
-} from '../src/lib/proof-control-plane-playback-service.js'
+} from '../src/adapters/simulation/proof-control-plane-playback-service.js'
 
 function buildEvidence(overrides: Partial<Parameters<typeof classifyPolicyPhenotype>[0]['evidence']> = {}) {
   return {

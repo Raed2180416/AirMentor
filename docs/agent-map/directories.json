@@ -752,7 +752,7 @@
   {
     "path": "air-mentor-api/scripts",
     "fileCount": 97,
-    "bytes": 1165688,
+    "bytes": 1165768,
     "lines": 27309,
     "roles": {
       "backend-script": 97
@@ -781,7 +781,7 @@
   {
     "path": "air-mentor-api/src/adapters/persistence/repositories/academic",
     "fileCount": 11,
-    "bytes": 161625,
+    "bytes": 161657,
     "lines": 3614,
     "roles": {
       "backend": 11
@@ -875,6 +875,18 @@
     }
   },
   {
+    "path": "air-mentor-api/src/adapters/simulation",
+    "fileCount": 24,
+    "bytes": 980358,
+    "lines": 22000,
+    "roles": {
+      "backend": 24
+    },
+    "extensions": {
+      ".ts": 24
+    }
+  },
+  {
     "path": "air-mentor-api/src/application/ports",
     "fileCount": 6,
     "bytes": 32589,
@@ -889,7 +901,7 @@
   {
     "path": "air-mentor-api/src/application/use-cases/academic",
     "fileCount": 5,
-    "bytes": 56467,
+    "bytes": 56483,
     "lines": 1524,
     "roles": {
       "backend": 5
@@ -913,7 +925,7 @@
   {
     "path": "air-mentor-api/src/application/use-cases/academic-runtime",
     "fileCount": 11,
-    "bytes": 68129,
+    "bytes": 68145,
     "lines": 1696,
     "roles": {
       "backend": 11
@@ -925,7 +937,7 @@
   {
     "path": "air-mentor-api/src/application/use-cases/admin-control-plane",
     "fileCount": 11,
-    "bytes": 56002,
+    "bytes": 56034,
     "lines": 1613,
     "roles": {
       "backend": 11
@@ -985,7 +997,7 @@
   {
     "path": "air-mentor-api/src/db",
     "fileCount": 4,
-    "bytes": 112615,
+    "bytes": 112631,
     "lines": 2598,
     "roles": {
       "backend": 4
@@ -1032,20 +1044,20 @@
   },
   {
     "path": "air-mentor-api/src/lib",
-    "fileCount": 82,
-    "bytes": 1583805,
-    "lines": 37517,
+    "fileCount": 58,
+    "bytes": 604373,
+    "lines": 15517,
     "roles": {
-      "backend": 82
+      "backend": 58
     },
     "extensions": {
-      ".ts": 82
+      ".ts": 58
     }
   },
   {
     "path": "air-mentor-api/src/modules",
     "fileCount": 21,
-    "bytes": 259649,
+    "bytes": 259729,
     "lines": 6424,
     "roles": {
       "backend": 21
@@ -1069,7 +1081,7 @@
   {
     "path": "air-mentor-api/tests",
     "fileCount": 93,
-    "bytes": 1285852,
+    "bytes": 1286396,
     "lines": 31936,
     "roles": {
       "unit-test": 93
@@ -1105,8 +1117,8 @@
   {
     "path": "docs",
     "fileCount": 20,
-    "bytes": 337281,
-    "lines": 8887,
+    "bytes": 338453,
+    "lines": 8900,
     "roles": {
       "documentation": 20
     },
@@ -1449,7 +1461,7 @@
   {
     "path": "scripts",
     "fileCount": 111,
-    "bytes": 1042603,
+    "bytes": 1042923,
     "lines": 24455,
     "roles": {
       "repo-script": 111

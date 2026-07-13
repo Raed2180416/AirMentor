@@ -4,7 +4,7 @@ import {
   isFacultyProofStudentVisible,
   queueDecisionTypeFromStatus,
   queueReassessmentStatusFromStatus,
-} from '../src/lib/proof-control-plane-access.js'
+} from '../src/adapters/simulation/proof-control-plane-access.js'
 
 describe('proof-control-plane-access', () => {
   it('scopes queue and student visibility by viewer role', () => {

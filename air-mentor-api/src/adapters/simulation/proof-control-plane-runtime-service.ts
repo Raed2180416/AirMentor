@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import {
   academicRuntimeState,
   alertAcknowledgements,
@@ -23,14 +23,14 @@ import {
   studentQuestionResults,
   teacherAllocations,
   teacherLoadProfiles,
-} from '../db/schema.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
-import { buildMissingGraphAwarePrerequisiteSummary } from './graph-summary.js'
-import { parseJson } from './json.js'
-import { buildMonitoringDecision } from './monitoring-engine.js'
+} from '../../db/schema.js'
+import type { ResolvedPolicy } from '../../modules/admin-structure.js'
+import { buildMissingGraphAwarePrerequisiteSummary } from '../../lib/graph-summary.js'
+import { parseJson } from '../../lib/json.js'
+import { buildMonitoringDecision } from '../../lib/monitoring-engine.js'
 import { MSRUAS_PROOF_BRANCH_ID, MSRUAS_PROOF_DEPARTMENT_ID } from './msruas-proof-sandbox.js'
-import { parseObservedStateRow } from './proof-observed-state.js'
-import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from './proof-demo-operational-band.js'
+import { parseObservedStateRow } from '../../lib/proof-observed-state.js'
+import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from '../../lib/proof-demo-operational-band.js'
 import {
   buildObservableFeaturePayload,
   featureHash,
@@ -41,14 +41,14 @@ import {
   type ProductionRiskModelArtifact,
   RISK_FEATURE_SCHEMA_VERSION,
   scoreObservableRiskWithModel,
-} from './proof-risk-model.js'
+} from '../../lib/proof-risk-model.js'
 import {
   governProofQueueStage,
   type ProofQueueCandidate,
   type ProofQueueGovernanceStageKey,
   type ProofQueuePriorCaseState,
   type ProofQueueRole,
-} from './proof-queue-governance.js'
+} from '../../lib/proof-queue-governance.js'
 import type {
   ObservableSourceRefsWithFeatureMetadata,
   PlaybackStageKey,

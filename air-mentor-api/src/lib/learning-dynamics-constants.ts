@@ -278,7 +278,7 @@ export const RISK_BAND_MEDIUM_THRESHOLD = 0.40
 
 // =====================================================================
 // Section B — Scenario engine family fingerprints
-// Code site of consumer: air-mentor-api/src/lib/msruas-proof-control-plane.ts
+// Code site of consumer: air-mentor-api/src/adapters/simulation/msruas-proof-control-plane.ts
 // =====================================================================
 
 /**

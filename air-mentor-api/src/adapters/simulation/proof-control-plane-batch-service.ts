@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import {
   alertAcknowledgements,
   alertDecisions,
@@ -31,9 +31,9 @@ import {
   studentTopicStates,
   teacherLoadProfiles,
   worldContextSnapshots,
-} from '../db/schema.js'
-import { notFound } from './http-errors.js'
-import { parseJson } from './json.js'
+} from '../../db/schema.js'
+import { notFound } from '../../lib/http-errors.js'
+import { parseJson } from '../../lib/json.js'
 import {
   buildCheckpointReadinessDiagnostics,
   buildProofQueueDiagnostics,
@@ -41,7 +41,7 @@ import {
   decorateProofRunsWithOperationalDiagnostics,
 } from './proof-control-plane-dashboard-service.js'
 import { MSRUAS_PROOF_BRANCH_ID, MSRUAS_PROOF_DEPARTMENT_ID } from './msruas-proof-sandbox.js'
-import { pickMostRecentActiveRun } from './proof-active-run.js'
+import { pickMostRecentActiveRun } from '../../lib/proof-active-run.js'
 
 type ProofCheckpointSummaryLike = {
   simulationStageCheckpointId: string

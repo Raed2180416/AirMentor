@@ -6,8 +6,8 @@ import {
   ensureMsruasProofSandboxSeeded,
   MSRUAS_PROOF_BATCH_ID,
   MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
-} from '../air-mentor-api/src/lib/msruas-proof-sandbox.ts'
-import { startProofSimulationRun } from '../air-mentor-api/src/lib/msruas-proof-control-plane.ts'
+} from '../air-mentor-api/src/adapters/simulation/msruas-proof-sandbox.ts'
+import { startProofSimulationRun } from '../air-mentor-api/src/adapters/simulation/msruas-proof-control-plane.ts'
 import { DEFAULT_POLICY } from '../air-mentor-api/src/modules/admin-structure.ts'
 
 const stageOrder = ['pre-tt1', 'post-tt1', 'post-tt2', 'post-assignments', 'post-see']

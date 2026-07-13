@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { MSRUAS_PROOF_BATCH_ID, PROOF_TERM_DEFS } from '../src/lib/msruas-proof-sandbox.js'
+import { MSRUAS_PROOF_BATCH_ID, PROOF_TERM_DEFS } from '../src/adapters/simulation/msruas-proof-sandbox.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null

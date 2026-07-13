@@ -17,7 +17,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { RouteContext } from '../app.js'
 import { forbidden } from '../lib/http-errors.js'
-import { triggerActiveRunRecomputeIfPresent } from '../lib/msruas-proof-control-plane.js'
+import { triggerActiveRunRecomputeIfPresent } from '../adapters/simulation/msruas-proof-control-plane.js'
 import type { AcademicRouteDependencies } from './academic.js'
 import { DEFAULT_POLICY, resolveBatchPolicy } from './admin-structure.js'
 import {

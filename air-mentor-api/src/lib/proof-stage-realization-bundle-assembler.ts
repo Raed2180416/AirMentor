@@ -25,7 +25,7 @@ import {
 } from './proof-stage-realization-data-fetcher.js'
 import type {
   PlaybackGovernanceRealizationData,
-} from './proof-control-plane-playback-governance-service.js'
+} from '../adapters/simulation/proof-control-plane-playback-governance-service.js'
 
 // ---------- Severity context derivation ----------
 

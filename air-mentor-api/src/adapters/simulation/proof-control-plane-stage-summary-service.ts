@@ -4,7 +4,7 @@ import {
   simulationStageOfferingProjections,
   simulationStageQueueProjections,
   simulationStageStudentProjections,
-} from '../db/schema.js'
+} from '../../db/schema.js'
 import type { StageCourseProjectionSource } from './msruas-proof-control-plane.js'
 
 export type ProofControlPlaneStageSummaryServiceDeps = {

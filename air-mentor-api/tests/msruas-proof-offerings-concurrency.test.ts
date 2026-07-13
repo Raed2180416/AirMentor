@@ -4,8 +4,8 @@ import { facultyOfferingOwnerships, sectionOfferings, simulationRuns } from '../
 import {
   ensureProofOfferings,
   readRuntimeCurriculum,
-} from '../src/lib/msruas-proof-control-plane.js'
-import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
+} from '../src/adapters/simulation/msruas-proof-control-plane.js'
+import { MSRUAS_PROOF_BATCH_ID } from '../src/adapters/simulation/msruas-proof-sandbox.js'
 import { createTestApp, TEST_NOW } from './helpers/test-app.js'
 
 /**

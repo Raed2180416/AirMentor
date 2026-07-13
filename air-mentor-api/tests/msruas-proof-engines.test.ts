@@ -7,7 +7,7 @@ import {
   ceMinimumPctForPolicy,
   ceShortfallLabelFromPct,
   stageCourseworkEvidenceForStage,
-} from '../src/lib/msruas-proof-control-plane.js'
+} from '../src/adapters/simulation/msruas-proof-control-plane.js'
 import {
   calculateCgpa,
   calculateSgpa,

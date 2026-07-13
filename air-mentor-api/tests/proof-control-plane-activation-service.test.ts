@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AppDb } from '../src/db/client.js'
 import { batches, simulationRuns, simulationStageCheckpoints } from '../src/db/schema.js'
-import { activateProofOperationalSemester } from '../src/lib/proof-control-plane-activation-service.js'
+import { activateProofOperationalSemester } from '../src/adapters/simulation/proof-control-plane-activation-service.js'
 
 const TEST_NOW = '2026-03-16T00:00:00.000Z'
 

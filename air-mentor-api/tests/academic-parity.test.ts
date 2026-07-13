@@ -16,7 +16,7 @@ import {
   studentEnrollments,
   studentObservedSemesterStates,
 } from '../src/db/schema.js'
-import { activateProofOperationalSemester } from '../src/lib/msruas-proof-control-plane.js'
+import { activateProofOperationalSemester } from '../src/adapters/simulation/msruas-proof-control-plane.js'
 import { createTestApp, loginAs, TEST_NOW, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null

@@ -615,7 +615,7 @@ function entryPointCatalog(fileSummaryByPath) {
     ['Backend app factory', 'air-mentor-api/src/app.ts', 'Fastify app composition, CORS/session/security hooks, and module registration.'],
     ['Backend DB schema', 'air-mentor-api/src/db/schema.ts', 'Database schema source of truth.'],
     ['Backend seeded server', 'air-mentor-api/scripts/start-seeded-server.ts', 'Deterministic demo backend launcher.'],
-    ['Proof runtime service', 'air-mentor-api/src/lib/proof-control-plane-runtime-service.ts', 'Observed evidence recomputation, risk rows, playback rebuild, and checkpoint projection updates.'],
+    ['Proof runtime service', 'air-mentor-api/src/adapters/simulation/proof-control-plane-runtime-service.ts', 'Observed evidence recomputation, risk rows, playback rebuild, and checkpoint projection updates.'],
     ['Proof risk model', 'air-mentor-api/src/lib/proof-risk-model.ts', 'Runtime proof-risk scoring/model contract logic.'],
     ['Proof risk contract bundle', 'air-mentor-api/model-contract/proof-risk-model/risk-model-bundle.json', 'Tracked serving model contract.'],
     ['Proof risk promotion decision', 'air-mentor-api/model-contract/proof-risk-model/promotion-decision.json', 'Governed shadow-vs-serving decision.'],

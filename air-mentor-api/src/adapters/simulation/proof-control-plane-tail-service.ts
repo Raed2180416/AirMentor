@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { and, asc, eq, inArray } from 'drizzle-orm'
-import type { AppDb } from '../db/client.js'
+import type { AppDb } from '../../db/client.js'
 import {
   academicTerms,
   alertAcknowledgements,
@@ -34,12 +34,12 @@ import {
   studentObservedSemesterStates,
   studentQuestionResults,
   studentTopicStates,
-} from '../db/schema.js'
-import { parseJson } from './json.js'
-import { pickMostRecentActiveRun } from './proof-active-run.js'
-import { nullablePct } from './proof-evidence-normalization.js'
-import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from './proof-demo-operational-band.js'
-import { parseObservedStateRow } from './proof-observed-state.js'
+} from '../../db/schema.js'
+import { parseJson } from '../../lib/json.js'
+import { pickMostRecentActiveRun } from '../../lib/proof-active-run.js'
+import { nullablePct } from '../../lib/proof-evidence-normalization.js'
+import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from '../../lib/proof-demo-operational-band.js'
+import { parseObservedStateRow } from '../../lib/proof-observed-state.js'
 import {
   type FacultyProofViewerRole,
   canonicalPublicProofQueueStatus,
@@ -50,7 +50,7 @@ import {
 } from './proof-control-plane-access.js'
 import {
   buildMissingGraphAwarePrerequisiteSummary,
-} from './graph-summary.js'
+} from '../../lib/graph-summary.js'
 import {
   scoreObservableRiskWithModel,
   type CorrelationArtifact,
@@ -58,8 +58,8 @@ import {
   type ObservableFeaturePayload,
   type ProductionRiskModelArtifact,
   type RiskHeadKey,
-} from './proof-risk-model.js'
-import { DEFAULT_POLICY } from '../modules/admin-structure.js'
+} from '../../lib/proof-risk-model.js'
+import { DEFAULT_POLICY } from '../../modules/admin-structure.js'
 import type {
   ObservableSourceRefsWithFeatureMetadata,
   ProofRecoveryState,
@@ -72,7 +72,7 @@ import type {
 import {
   buildProofCountProvenance,
   buildUnavailableCountProvenance,
-} from './proof-provenance.js'
+} from '../../lib/proof-provenance.js'
 import {
   filterElectiveRecommendationsForSemester,
   latestElectiveRecommendationForSemester,
@@ -86,7 +86,7 @@ import {
   computeCePct,
   computeSeeMark,
   evaluateResult,
-} from './grading-formula-config.js'
+} from '../../lib/grading-formula-config.js'
 import { counterfactualAdjustment } from './proof-control-plane-playback-service.js'
 
 const STUDENT_AGENT_CARD_VERSION = 2

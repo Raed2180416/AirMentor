@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { loginRateLimitWindows, userAccounts, userPasswordCredentials } from '../src/db/schema.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createTestApp, loginAs, TEST_NOW, TEST_ORIGIN } from './helpers/test-app.js'
-import { MSRUAS_PROOF_SIMULATION_RUN_ID } from '../src/lib/msruas-proof-sandbox.js'
+import { MSRUAS_PROOF_SIMULATION_RUN_ID } from '../src/adapters/simulation/msruas-proof-sandbox.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
 

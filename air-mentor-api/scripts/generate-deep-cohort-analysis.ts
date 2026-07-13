@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises'
 import { eq, inArray, and } from 'drizzle-orm'
 import { createTestApp } from '../tests/helpers/test-app.js'
-import { startProofSimulationRun } from '../src/lib/msruas-proof-control-plane.js'
-import { MSRUAS_PROOF_BATCH_ID, MSRUAS_PROOF_CURRICULUM_IMPORT_ID } from '../src/lib/msruas-proof-sandbox.js'
+import { startProofSimulationRun } from '../src/adapters/simulation/msruas-proof-control-plane.js'
+import { MSRUAS_PROOF_BATCH_ID, MSRUAS_PROOF_CURRICULUM_IMPORT_ID } from '../src/adapters/simulation/msruas-proof-sandbox.js'
 import { DEFAULT_POLICY } from '../src/modules/admin-structure.js'
 import { simulationStageStudentProjections, students } from '../src/db/schema.js'
 
