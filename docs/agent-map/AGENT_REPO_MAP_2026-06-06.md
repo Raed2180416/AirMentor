@@ -10,16 +10,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 1030 |
-| Tracked bytes | 14.4 MiB |
-| Tracked source/doc lines | 314082 |
-| Non-empty lines | 290921 |
-| Comment lines | 6299 |
+| Tracked files | 1054 |
+| Tracked bytes | 14.6 MiB |
+| Tracked source/doc lines | 318333 |
+| Non-empty lines | 294914 |
+| Comment lines | 6464 |
 | Local dependency edges | 344 |
-| Symbols/blocks discovered | 23502 |
+| Symbols/blocks discovered | 23931 |
 | API route registrations found | 190 |
 | Test cases discovered | 1374 |
-| Atomic references (exports/env/sql/calls/hooks) | 80116 |
+| Atomic references (exports/env/sql/calls/hooks) | 81984 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -131,7 +131,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Role | Files |
 | --- | --- |
-| backend | 187 |
+| backend | 211 |
 | pipeline | 171 |
 | unit-test | 162 |
 | other | 161 |
@@ -149,7 +149,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Extension | Files |
 | --- | --- |
-| .ts | 457 |
+| .ts | 481 |
 | .py | 108 |
 | .yaml | 107 |
 | .tsx | 82 |
@@ -181,7 +181,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Top directory | Tracked files |
 | --- | --- |
-| air-mentor-api | 397 |
+| air-mentor-api | 421 |
 | pipeline | 171 |
 | scripts | 112 |
 | adapters | 98 |
@@ -233,6 +233,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | adapters/web/shared/api | 4 | 174.0 KiB | 4962 | other:4 |
 | air-mentor-api | 14 | 154.5 KiB | 4728 | other:9, build-config:5 |
 | adapters/web/features | 10 | 202.5 KiB | 3912 | other:10 |
+| air-mentor-api/src/adapters/persistence/repositories/admin-structure | 20 | 147.0 KiB | 3541 | backend:20 |
 | air-mentor-api/src/db | 4 | 110.0 KiB | 2598 | backend:4 |
 | adapters/web/simulation | 9 | 91.8 KiB | 2328 | other:9 |
 | forge-audit/forge_audit/engine | 7 | 76.6 KiB | 2259 | forge-audit:7 |
@@ -240,7 +241,6 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | adapters/web/features/admin/sections | 8 | 132.8 KiB | 2040 | other:8 |
 | pipeline/tests | 17 | 71.8 KiB | 1890 | pipeline:17 |
 | air-mentor-api/src/db/migrations | 33 | 67.2 KiB | 1851 | backend:33 |
-| air-mentor-api/model-contract/proof-risk-model | 2 | 52.2 KiB | 1660 | model-contract:2 |
 
 ## High Fan-In Files
 

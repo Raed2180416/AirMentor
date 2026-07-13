@@ -452,6 +452,18 @@
     }
   },
   {
+    "path": "air-mentor-api/src/adapters/persistence/repositories/admin-structure",
+    "fileCount": 20,
+    "bytes": 150540,
+    "lines": 3541,
+    "roles": {
+      "backend": 20
+    },
+    "extensions": {
+      ".ts": 20
+    }
+  },
+  {
     "path": "air-mentor-api/src/adapters/persistence/repositories/curriculum-graph",
     "fileCount": 4,
     "bytes": 25398,
@@ -485,6 +497,18 @@
     },
     "extensions": {
       ".ts": 11
+    }
+  },
+  {
+    "path": "air-mentor-api/src/application/use-cases/admin-structure",
+    "fileCount": 4,
+    "bytes": 26473,
+    "lines": 710,
+    "roles": {
+      "backend": 4
+    },
+    "extensions": {
+      ".ts": 4
     }
   },
   {
