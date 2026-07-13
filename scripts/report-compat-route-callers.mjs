@@ -8,11 +8,13 @@ const assertRuntimeClean = args.has('--assert-runtime-clean')
 
 const trackedRoots = [
   '.github',
+  'adapters',
   'air-mentor-api/src',
   'air-mentor-api/tests',
+  'kernel',
   'scripts',
-  'src',
   'tests',
+  'universities',
 ]
 
 const ignoredNames = new Set([
@@ -48,7 +50,7 @@ const routePatterns = [
 ]
 
 function classifyPath(relativePath) {
-  if (relativePath.startsWith('src/')) return 'first-party-frontend'
+  if (relativePath.startsWith('adapters/web/')) return 'first-party-frontend'
   if (relativePath.startsWith('air-mentor-api/src/')) {
     if (relativePath === 'air-mentor-api/src/modules/academic-runtime-routes.ts') {
       return 'route-definition'
@@ -92,6 +94,9 @@ const findings = routePatterns.map(({ route, snippets }) => {
   for (const [relativePath, content] of fileContents.entries()) {
     const lines = content.split(/\r?\n/)
     lines.forEach((line, index) => {
+      const trimmed = line.trimStart()
+      // A route path mentioned in a comment / JSDoc is documentation, not a runtime caller.
+      if (trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*')) return
       if (!snippets.some(snippet => line.includes(snippet))) return
       references.push({
         path: relativePath,

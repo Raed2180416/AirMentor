@@ -209,8 +209,8 @@
   {
     "path": "adapters/web/features",
     "fileCount": 10,
-    "bytes": 207322,
-    "lines": 3912,
+    "bytes": 108908,
+    "lines": 2332,
     "roles": {
       "other": 10
     },
@@ -272,8 +272,8 @@
   {
     "path": "adapters/web/features/pages",
     "fileCount": 6,
-    "bytes": 393962,
-    "lines": 7147,
+    "bytes": 229470,
+    "lines": 4538,
     "roles": {
       "other": 6
     },
@@ -1062,8 +1062,8 @@
   {
     "path": "scripts",
     "fileCount": 111,
-    "bytes": 1042329,
-    "lines": 24450,
+    "bytes": 1042603,
+    "lines": 24455,
     "roles": {
       "repo-script": 111
     },

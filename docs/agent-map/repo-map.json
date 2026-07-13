@@ -152,17 +152,17 @@
   },
   "totals": {
     "trackedFiles": 1105,
-    "ignoredEntriesObserved": 75,
-    "bytes": 15436696,
-    "lines": 321655,
-    "nonEmptyLines": 297965,
-    "commentLines": 7036,
+    "ignoredEntriesObserved": 81,
+    "bytes": 15174064,
+    "lines": 317471,
+    "nonEmptyLines": 293942,
+    "commentLines": 7037,
     "localDependencyEdges": 344,
-    "symbols": 24156,
+    "symbols": 23844,
     "apiRoutes": 190,
     "testCases": 1379,
     "filesWithTests": 196,
-    "atoms": 82573,
+    "atoms": 81782,
     "anomalies": 0
   },
   "counts": {
@@ -261,7 +261,6 @@
       ".absolute-human": 1,
       ".agents": 1,
       ".audit": 1,
-      ".claude": 1,
       ".devin": 1,
       ".env": 1,
       ".kilo": 7,
@@ -269,7 +268,7 @@
       ".mcp.json": 1,
       ".tmp-test-postgres": 1,
       ".vscode": 1,
-      "adapters": 14,
+      "adapters": 21,
       "air-mentor-api": 25,
       "context_main.json": 1,
       "context.json": 1,
@@ -690,7 +689,7 @@
     "topExternalImports": [
       {
         "key": "@web/shared",
-        "value": 185
+        "value": 174
       },
       {
         "key": "vitest",
@@ -705,12 +704,12 @@
         "value": 126
       },
       {
-        "key": "@web/simulation",
-        "value": 109
-      },
-      {
         "key": "node:path",
         "value": 108
+      },
+      {
+        "key": "@web/simulation",
+        "value": 101
       },
       {
         "key": "__future__",
@@ -718,7 +717,7 @@
       },
       {
         "key": "react",
-        "value": 77
+        "value": 75
       },
       {
         "key": "pathlib",
@@ -726,11 +725,11 @@
       },
       {
         "key": "@kernel/shared",
-        "value": 61
+        "value": 59
       },
       {
         "key": "@web/features",
-        "value": 58
+        "value": 56
       },
       {
         "key": "zod",
@@ -741,12 +740,12 @@
         "value": 41
       },
       {
-        "key": "lucide-react",
-        "value": 36
-      },
-      {
         "key": "argparse",
         "value": 35
+      },
+      {
+        "key": "lucide-react",
+        "value": 32
       },
       {
         "key": "typing",
@@ -1344,29 +1343,6 @@
       ]
     },
     {
-      "file": "adapters/web/features/pages/course-pages.tsx",
-      "role": "other",
-      "lines": 962,
-      "components": [
-        "AssignmentsTab",
-        "AttendanceTab",
-        "COTab",
-        "CourseDetail",
-        "CourseOutcomeControl",
-        "GradeBookTab",
-        "OverviewTab",
-        "QuizzesTab",
-        "RiskTab",
-        "TTTab"
-      ],
-      "hooks": [
-        "useAppSelectors",
-        "useMemo",
-        "useReducedMotion",
-        "useState"
-      ]
-    },
-    {
       "file": "adapters/web/features/academic-session-shell.tsx",
       "role": "other",
       "lines": 469,
@@ -1408,25 +1384,6 @@
       "hooks": []
     },
     {
-      "file": "adapters/web/features/academic-route-pages.tsx",
-      "role": "other",
-      "lines": 1123,
-      "components": [
-        "CLDashboard",
-        "MenteeDetailPage",
-        "MentorView",
-        "OfferingCard",
-        "QueueHistoryPage",
-        "UnlockReviewPage",
-        "YearSection"
-      ],
-      "hooks": [
-        "useAppSelectors",
-        "useMemo",
-        "useState"
-      ]
-    },
-    {
       "file": "adapters/web/app/App.tsx",
       "role": "other",
       "lines": 748,
@@ -1439,24 +1396,6 @@
         "useApiConnectionTarget",
         "useBackendHealthMonitor",
         "useCallback",
-        "useEffect",
-        "useMemo",
-        "useState"
-      ]
-    },
-    {
-      "file": "adapters/web/features/pages/workflow-pages.tsx",
-      "role": "other",
-      "lines": 928,
-      "components": [
-        "AllStudentsPage",
-        "EntryWorkspacePage",
-        "SchemeSetupPage",
-        "StudentHistoryPage",
-        "UploadPage"
-      ],
-      "hooks": [
-        "useAppSelectors",
         "useEffect",
         "useMemo",
         "useState"
@@ -1702,16 +1641,16 @@
       ]
     },
     {
-      "file": "adapters/web/features/pages/hod-pages.tsx",
+      "file": "adapters/web/features/pages/course-pages.tsx",
       "role": "other",
-      "lines": 1170,
+      "lines": 179,
       "components": [
-        "HodView",
-        "PanelLabel",
-        "TableCard"
+        "CourseDetail"
       ],
       "hooks": [
+        "useAppSelectors",
         "useMemo",
+        "useReducedMotion",
         "useState"
       ]
     },
@@ -1794,6 +1733,18 @@
       ]
     },
     {
+      "file": "adapters/web/features/pages/hod-pages.tsx",
+      "role": "other",
+      "lines": 266,
+      "components": [
+        "HodView"
+      ],
+      "hooks": [
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
       "file": "adapters/web/app/action-queue.tsx",
       "role": "other",
       "lines": 250,
@@ -1871,7 +1822,7 @@
     {
       "file": "adapters/web/features/academic-faculty-profile-page.tsx",
       "role": "other",
-      "lines": 730,
+      "lines": 267,
       "components": [
         "FacultyProfilePage"
       ],
@@ -1957,6 +1908,24 @@
         "StudentEditorModals"
       ],
       "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/sections/students-section.tsx",
+      "role": "other",
+      "lines": 594,
+      "components": [
+        "StudentsSection"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-hierarchy-workspace-shell.tsx",
+      "role": "other",
+      "lines": 143,
+      "components": [
+        "SystemAdminHierarchyWorkspaceShell"
+      ],
+      "hooks": []
     }
   ],
   "topAtoms": [
@@ -1974,7 +1943,7 @@
     },
     {
       "key": "get",
-      "value": 1054
+      "value": 1052
     },
     {
       "key": "async",
@@ -1990,7 +1959,7 @@
     },
     {
       "key": "set",
-      "value": 670
+      "value": 668
     },
     {
       "key": "inject",
@@ -2006,7 +1975,7 @@
     },
     {
       "key": "has",
-      "value": 482
+      "value": 481
     },
     {
       "key": "toBeTruthy",
@@ -2014,7 +1983,7 @@
     },
     {
       "key": "round",
-      "value": 423
+      "value": 403
     },
     {
       "key": "toEqual",
@@ -2066,7 +2035,7 @@
     },
     {
       "key": "isArray",
-      "value": 222
+      "value": 221
     },
     {
       "key": "waitForTimeout",
@@ -2086,7 +2055,7 @@
     },
     {
       "key": "fromEntries",
-      "value": 192
+      "value": 191
     },
     {
       "key": "expectVisible",
@@ -2126,7 +2095,6 @@
     ".absolute-human/archive/",
     ".agents/",
     ".audit/",
-    ".claude/scheduled_tasks.lock",
     ".devin/",
     ".env",
     ".kilo/",
@@ -2142,12 +2110,19 @@
     ".vscode/mcp.json",
     "adapters/persistence/repositories/context.json",
     "adapters/web/app/context.json",
+    "adapters/web/features/academic-faculty-profile/context.json",
+    "adapters/web/features/academic-routes/context.json",
     "adapters/web/features/academic/context.json",
     "adapters/web/features/admin/context.json",
     "adapters/web/features/admin/sections/context.json",
     "adapters/web/features/context.json",
     "adapters/web/features/curriculum/context.json",
+    "adapters/web/features/pages/calendar/",
+    "adapters/web/features/pages/calendar/context.json",
     "adapters/web/features/pages/context.json",
+    "adapters/web/features/pages/course/context.json",
+    "adapters/web/features/pages/hod/context.json",
+    "adapters/web/features/pages/workflow/context.json",
     "adapters/web/shared/api/context.json",
     "adapters/web/shared/components/context.json",
     "adapters/web/shared/hooks/context.json",
@@ -2196,8 +2171,7 @@
     "tests-e2e/support/context.json",
     "tests/context.json",
     "tmp/",
-    "universities/iitb/context.json",
-    "universities/msruas/context.json"
+    "universities/iitb/context.json"
   ],
   "mcpObservations": [
     "CTXO is callable, but the observed overlay was stale relative to current Git state; use it as a hint, not deletion authority.",

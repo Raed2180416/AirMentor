@@ -11,15 +11,15 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
 | Tracked files | 1105 |
-| Tracked bytes | 14.7 MiB |
-| Tracked source/doc lines | 321655 |
-| Non-empty lines | 297965 |
-| Comment lines | 7036 |
+| Tracked bytes | 14.5 MiB |
+| Tracked source/doc lines | 317471 |
+| Non-empty lines | 293942 |
+| Comment lines | 7037 |
 | Local dependency edges | 344 |
-| Symbols/blocks discovered | 24156 |
+| Symbols/blocks discovered | 23844 |
 | API route registrations found | 190 |
 | Test cases discovered | 1379 |
-| Atomic references (exports/env/sql/calls/hooks) | 82573 |
+| Atomic references (exports/env/sql/calls/hooks) | 81782 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -220,22 +220,22 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | air-mentor-api/src/lib | 82 | 1.5 MiB | 37507 | backend:82 |
 | air-mentor-api/tests | 93 | 1.2 MiB | 31936 | unit-test:93 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27309 | backend-script:97 |
-| scripts | 111 | 1017.9 KiB | 24450 | repo-script:111 |
+| scripts | 111 | 1018.2 KiB | 24455 | repo-script:111 |
 | tests | 68 | 614.3 KiB | 17898 | unit-test:68 |
 | adapters/web/features/admin | 29 | 769.3 KiB | 16192 | other:29 |
 | . | 25 | 336.4 KiB | 9423 | other:14, build-config:10, agent-config:1 |
 | docs | 20 | 329.4 KiB | 8887 | documentation:20 |
 | air-mentor-api/src/modules | 21 | 306.9 KiB | 7792 | backend:21 |
 | tests-e2e/specs | 36 | 363.8 KiB | 7580 | e2e-test:36 |
-| adapters/web/features/pages | 6 | 384.7 KiB | 7147 | other:6 |
 | adapters/web/app | 14 | 237.8 KiB | 5266 | other:14 |
 | pipeline/orchestrator | 20 | 183.8 KiB | 5163 | pipeline:20 |
 | adapters/web/shared/api | 4 | 174.0 KiB | 4962 | other:4 |
 | air-mentor-api | 14 | 154.5 KiB | 4728 | other:9, build-config:5 |
-| adapters/web/features | 10 | 202.5 KiB | 3912 | other:10 |
+| adapters/web/features/pages | 6 | 224.1 KiB | 4538 | other:6 |
 | air-mentor-api/src/adapters/persistence/repositories/academic | 11 | 157.8 KiB | 3614 | backend:11 |
 | air-mentor-api/src/adapters/persistence/repositories/admin-structure | 20 | 147.0 KiB | 3541 | backend:20 |
 | air-mentor-api/src/db | 4 | 110.0 KiB | 2598 | backend:4 |
+| adapters/web/features | 10 | 106.4 KiB | 2332 | other:10 |
 | adapters/web/simulation | 9 | 91.8 KiB | 2328 | other:9 |
 | forge-audit/forge_audit/engine | 7 | 76.6 KiB | 2259 | forge-audit:7 |
 | air-mentor-api/src/db/seeds | 3 | 2.6 MiB | 2113 | backend:3 |
