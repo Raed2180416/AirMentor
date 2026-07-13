@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 1082,
-    "ignoredEntriesObserved": 72,
-    "bytes": 15404322,
-    "lines": 320798,
-    "nonEmptyLines": 297145,
-    "commentLines": 6842,
+    "trackedFiles": 1098,
+    "ignoredEntriesObserved": 74,
+    "bytes": 15429451,
+    "lines": 321423,
+    "nonEmptyLines": 297751,
+    "commentLines": 7009,
     "localDependencyEdges": 344,
-    "symbols": 24145,
+    "symbols": 24154,
     "apiRoutes": 190,
     "testCases": 1374,
     "filesWithTests": 195,
-    "atoms": 82347,
+    "atoms": 82532,
     "anomalies": 0
   },
   "counts": {
@@ -173,7 +173,7 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".ts": 509,
+      ".ts": 525,
       ".tsx": 82,
       ".css": 2,
       ".example": 1,
@@ -202,7 +202,7 @@
       "ci": 8,
       "model-contract": 3,
       "backend-script": 97,
-      "backend": 239,
+      "backend": 255,
       "unit-test": 162,
       "documentation": 34,
       "forge-audit": 22,
@@ -229,7 +229,7 @@
       ".vscode": 2,
       ".windsurf": 1,
       "adapters": 98,
-      "air-mentor-api": 449,
+      "air-mentor-api": 465,
       "CLAUDE.md": 1,
       "docs": 34,
       "eslint.config.js": 1,
@@ -270,7 +270,7 @@
       ".tmp-test-postgres": 1,
       ".vscode": 1,
       "adapters": 14,
-      "air-mentor-api": 23,
+      "air-mentor-api": 25,
       "context_main.json": 1,
       "context.json": 1,
       "kernel": 5,
@@ -698,7 +698,7 @@
       },
       {
         "key": "drizzle-orm",
-        "value": 127
+        "value": 132
       },
       {
         "key": "node:fs",
@@ -733,12 +733,12 @@
         "value": 58
       },
       {
-        "key": "node:url",
-        "value": 41
+        "key": "zod",
+        "value": 46
       },
       {
-        "key": "zod",
-        "value": 38
+        "key": "node:url",
+        "value": 41
       },
       {
         "key": "lucide-react",
@@ -2161,12 +2161,14 @@
     "air-mentor-api/scripts/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/academic-offerings/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/academic-runtime/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/academic/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/admin-control-plane/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/admin-structure/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/curriculum-graph/context.json",
     "air-mentor-api/src/application/ports/context.json",
     "air-mentor-api/src/application/use-cases/academic-offerings/context.json",
     "air-mentor-api/src/application/use-cases/academic-runtime/context.json",
+    "air-mentor-api/src/application/use-cases/academic/context.json",
     "air-mentor-api/src/application/use-cases/admin-control-plane/context.json",
     "air-mentor-api/src/application/use-cases/admin-structure/context.json",
     "air-mentor-api/src/application/use-cases/curriculum-graph/context.json",

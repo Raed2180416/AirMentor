@@ -10,16 +10,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 1082 |
+| Tracked files | 1098 |
 | Tracked bytes | 14.7 MiB |
-| Tracked source/doc lines | 320798 |
-| Non-empty lines | 297145 |
-| Comment lines | 6842 |
+| Tracked source/doc lines | 321423 |
+| Non-empty lines | 297751 |
+| Comment lines | 7009 |
 | Local dependency edges | 344 |
-| Symbols/blocks discovered | 24145 |
+| Symbols/blocks discovered | 24154 |
 | API route registrations found | 190 |
 | Test cases discovered | 1374 |
-| Atomic references (exports/env/sql/calls/hooks) | 82347 |
+| Atomic references (exports/env/sql/calls/hooks) | 82532 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -131,7 +131,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Role | Files |
 | --- | --- |
-| backend | 239 |
+| backend | 255 |
 | pipeline | 171 |
 | unit-test | 162 |
 | other | 161 |
@@ -149,7 +149,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Extension | Files |
 | --- | --- |
-| .ts | 509 |
+| .ts | 525 |
 | .py | 108 |
 | .yaml | 107 |
 | .tsx | 82 |
@@ -181,7 +181,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Top directory | Tracked files |
 | --- | --- |
-| air-mentor-api | 449 |
+| air-mentor-api | 465 |
 | pipeline | 171 |
 | scripts | 112 |
 | adapters | 98 |
@@ -223,9 +223,9 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | scripts | 111 | 1017.9 KiB | 24450 | repo-script:111 |
 | tests | 68 | 614.3 KiB | 17898 | unit-test:68 |
 | adapters/web/features/admin | 29 | 769.3 KiB | 16192 | other:29 |
-| air-mentor-api/src/modules | 21 | 495.5 KiB | 12306 | backend:21 |
 | . | 25 | 336.4 KiB | 9423 | other:14, build-config:10, agent-config:1 |
-| docs | 20 | 329.3 KiB | 8886 | documentation:20 |
+| docs | 20 | 329.4 KiB | 8887 | documentation:20 |
+| air-mentor-api/src/modules | 21 | 306.9 KiB | 7792 | backend:21 |
 | tests-e2e/specs | 36 | 363.8 KiB | 7580 | e2e-test:36 |
 | adapters/web/features/pages | 6 | 384.7 KiB | 7147 | other:6 |
 | adapters/web/app | 14 | 237.8 KiB | 5266 | other:14 |
@@ -233,6 +233,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | adapters/web/shared/api | 4 | 174.0 KiB | 4962 | other:4 |
 | air-mentor-api | 14 | 154.5 KiB | 4728 | other:9, build-config:5 |
 | adapters/web/features | 10 | 202.5 KiB | 3912 | other:10 |
+| air-mentor-api/src/adapters/persistence/repositories/academic | 11 | 157.8 KiB | 3614 | backend:11 |
 | air-mentor-api/src/adapters/persistence/repositories/admin-structure | 20 | 147.0 KiB | 3541 | backend:20 |
 | air-mentor-api/src/db | 4 | 110.0 KiB | 2598 | backend:4 |
 | adapters/web/simulation | 9 | 91.8 KiB | 2328 | other:9 |
@@ -240,7 +241,6 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | air-mentor-api/src/db/seeds | 3 | 2.6 MiB | 2113 | backend:3 |
 | adapters/web/features/admin/sections | 8 | 132.8 KiB | 2040 | other:8 |
 | pipeline/tests | 17 | 71.8 KiB | 1890 | pipeline:17 |
-| air-mentor-api/src/db/migrations | 33 | 67.2 KiB | 1851 | backend:33 |
 
 ## High Fan-In Files
 

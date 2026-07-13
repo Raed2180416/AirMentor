@@ -440,6 +440,18 @@
     }
   },
   {
+    "path": "air-mentor-api/src/adapters/persistence/repositories/academic",
+    "fileCount": 11,
+    "bytes": 161625,
+    "lines": 3614,
+    "roles": {
+      "backend": 11
+    },
+    "extensions": {
+      ".ts": 11
+    }
+  },
+  {
     "path": "air-mentor-api/src/adapters/persistence/repositories/academic-offerings",
     "fileCount": 2,
     "bytes": 34030,
@@ -509,6 +521,18 @@
     },
     "extensions": {
       ".ts": 4
+    }
+  },
+  {
+    "path": "air-mentor-api/src/application/use-cases/academic",
+    "fileCount": 5,
+    "bytes": 56467,
+    "lines": 1524,
+    "roles": {
+      "backend": 5
+    },
+    "extensions": {
+      ".ts": 5
     }
   },
   {
@@ -634,8 +658,8 @@
   {
     "path": "air-mentor-api/src/modules",
     "fileCount": 21,
-    "bytes": 507358,
-    "lines": 12306,
+    "bytes": 314292,
+    "lines": 7792,
     "roles": {
       "backend": 21
     },
@@ -694,8 +718,8 @@
   {
     "path": "docs",
     "fileCount": 20,
-    "bytes": 337178,
-    "lines": 8886,
+    "bytes": 337281,
+    "lines": 8887,
     "roles": {
       "documentation": 20
     },
