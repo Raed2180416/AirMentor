@@ -10,16 +10,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 1073 |
-| Tracked bytes | 14.6 MiB |
-| Tracked source/doc lines | 318868 |
-| Non-empty lines | 295340 |
-| Comment lines | 6707 |
+| Tracked files | 1082 |
+| Tracked bytes | 14.7 MiB |
+| Tracked source/doc lines | 320798 |
+| Non-empty lines | 297145 |
+| Comment lines | 6842 |
 | Local dependency edges | 344 |
-| Symbols/blocks discovered | 23952 |
+| Symbols/blocks discovered | 24145 |
 | API route registrations found | 190 |
 | Test cases discovered | 1374 |
-| Atomic references (exports/env/sql/calls/hooks) | 81788 |
+| Atomic references (exports/env/sql/calls/hooks) | 82347 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -131,7 +131,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Role | Files |
 | --- | --- |
-| backend | 230 |
+| backend | 239 |
 | pipeline | 171 |
 | unit-test | 162 |
 | other | 161 |
@@ -149,7 +149,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Extension | Files |
 | --- | --- |
-| .ts | 500 |
+| .ts | 509 |
 | .py | 108 |
 | .yaml | 107 |
 | .tsx | 82 |
@@ -181,7 +181,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Top directory | Tracked files |
 | --- | --- |
-| air-mentor-api | 440 |
+| air-mentor-api | 449 |
 | pipeline | 171 |
 | scripts | 112 |
 | adapters | 98 |

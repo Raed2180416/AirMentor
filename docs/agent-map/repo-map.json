@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 1073,
+    "trackedFiles": 1082,
     "ignoredEntriesObserved": 72,
-    "bytes": 15334891,
-    "lines": 318868,
-    "nonEmptyLines": 295340,
-    "commentLines": 6707,
+    "bytes": 15404322,
+    "lines": 320798,
+    "nonEmptyLines": 297145,
+    "commentLines": 6842,
     "localDependencyEdges": 344,
-    "symbols": 23952,
+    "symbols": 24145,
     "apiRoutes": 190,
     "testCases": 1374,
     "filesWithTests": 195,
-    "atoms": 81788,
+    "atoms": 82347,
     "anomalies": 0
   },
   "counts": {
@@ -173,7 +173,7 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".ts": 500,
+      ".ts": 509,
       ".tsx": 82,
       ".css": 2,
       ".example": 1,
@@ -202,7 +202,7 @@
       "ci": 8,
       "model-contract": 3,
       "backend-script": 97,
-      "backend": 230,
+      "backend": 239,
       "unit-test": 162,
       "documentation": 34,
       "forge-audit": 22,
@@ -229,7 +229,7 @@
       ".vscode": 2,
       ".windsurf": 1,
       "adapters": 98,
-      "air-mentor-api": 440,
+      "air-mentor-api": 449,
       "CLAUDE.md": 1,
       "docs": 34,
       "eslint.config.js": 1,
@@ -697,12 +697,12 @@
         "value": 160
       },
       {
-        "key": "node:fs",
-        "value": 126
+        "key": "drizzle-orm",
+        "value": 127
       },
       {
-        "key": "drizzle-orm",
-        "value": 125
+        "key": "node:fs",
+        "value": 126
       },
       {
         "key": "@web/simulation",
@@ -738,7 +738,7 @@
       },
       {
         "key": "zod",
-        "value": 37
+        "value": 38
       },
       {
         "key": "lucide-react",
@@ -754,7 +754,7 @@
       },
       {
         "key": "fastify",
-        "value": 28
+        "value": 29
       },
       {
         "key": "fs",
@@ -1966,15 +1966,15 @@
     },
     {
       "key": "eq",
-      "value": 1194
+      "value": 1216
     },
     {
       "key": "where",
-      "value": 1172
+      "value": 1192
     },
     {
       "key": "get",
-      "value": 1032
+      "value": 1054
     },
     {
       "key": "async",
@@ -1990,7 +1990,7 @@
     },
     {
       "key": "set",
-      "value": 652
+      "value": 670
     },
     {
       "key": "inject",
@@ -1998,7 +1998,7 @@
     },
     {
       "key": "string",
-      "value": 610
+      "value": 611
     },
     {
       "key": "toContain",
@@ -2006,7 +2006,7 @@
     },
     {
       "key": "has",
-      "value": 476
+      "value": 482
     },
     {
       "key": "toBeTruthy",
@@ -2014,7 +2014,7 @@
     },
     {
       "key": "round",
-      "value": 421
+      "value": 423
     },
     {
       "key": "toEqual",
@@ -2030,7 +2030,7 @@
     },
     {
       "key": "object",
-      "value": 309
+      "value": 310
     },
     {
       "key": "loginAs",
@@ -2039,6 +2039,10 @@
     {
       "key": "toMatchObject",
       "value": 274
+    },
+    {
+      "key": "insert",
+      "value": 267
     },
     {
       "key": "parse",
@@ -2051,10 +2055,6 @@
     {
       "key": "optional",
       "value": 248
-    },
-    {
-      "key": "insert",
-      "value": 247
     },
     {
       "key": "toBeNull",
@@ -2074,7 +2074,7 @@
     },
     {
       "key": "all",
-      "value": 211
+      "value": 213
     },
     {
       "key": "num",
@@ -2085,12 +2085,12 @@
       "value": 192
     },
     {
-      "key": "expectVisible",
-      "value": 189
+      "key": "fromEntries",
+      "value": 192
     },
     {
-      "key": "fromEntries",
-      "value": 187
+      "key": "expectVisible",
+      "value": 189
     },
     {
       "key": "number",
@@ -2113,12 +2113,12 @@
       "value": 154
     },
     {
-      "key": "response",
+      "key": "auth",
       "value": 146
     },
     {
-      "key": "auth",
-      "value": 145
+      "key": "response",
+      "value": 146
     }
   ],
   "anomalies": [],

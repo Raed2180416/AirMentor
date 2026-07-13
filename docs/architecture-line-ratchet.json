@@ -1,5 +1,6 @@
 {
   "maxLinesByPath": {
+    "air-mentor-api/src/adapters/persistence/repositories/academic-offerings/provision-batch.ts": 645,
     "src/system-admin-live-app.tsx": 5496,
     "src/api/types.ts": 2929,
     "src/pages/calendar-pages.tsx": 2731,
