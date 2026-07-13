@@ -666,15 +666,39 @@
     }
   },
   {
-    "path": "air-mentor-api/src/application/ports",
+    "path": "air-mentor-api/src/adapters/persistence/repositories/people",
     "fileCount": 4,
-    "bytes": 22364,
-    "lines": 718,
+    "bytes": 14094,
+    "lines": 348,
     "roles": {
       "backend": 4
     },
     "extensions": {
       ".ts": 4
+    }
+  },
+  {
+    "path": "air-mentor-api/src/adapters/persistence/repositories/students",
+    "fileCount": 3,
+    "bytes": 12487,
+    "lines": 319,
+    "roles": {
+      "backend": 3
+    },
+    "extensions": {
+      ".ts": 3
+    }
+  },
+  {
+    "path": "air-mentor-api/src/application/ports",
+    "fileCount": 6,
+    "bytes": 32589,
+    "lines": 1058,
+    "roles": {
+      "backend": 6
+    },
+    "extensions": {
+      ".ts": 6
     }
   },
   {
@@ -747,6 +771,30 @@
     },
     "extensions": {
       ".ts": 11
+    }
+  },
+  {
+    "path": "air-mentor-api/src/application/use-cases/people",
+    "fileCount": 11,
+    "bytes": 48099,
+    "lines": 1354,
+    "roles": {
+      "backend": 11
+    },
+    "extensions": {
+      ".ts": 11
+    }
+  },
+  {
+    "path": "air-mentor-api/src/application/use-cases/students",
+    "fileCount": 8,
+    "bytes": 38856,
+    "lines": 1134,
+    "roles": {
+      "backend": 8
+    },
+    "extensions": {
+      ".ts": 8
     }
   },
   {
