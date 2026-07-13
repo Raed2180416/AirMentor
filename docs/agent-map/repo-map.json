@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 1274,
-    "ignoredEntriesObserved": 100,
-    "bytes": 15634996,
-    "lines": 327676,
-    "nonEmptyLines": 303465,
-    "commentLines": 7340,
-    "localDependencyEdges": 674,
-    "symbols": 24585,
+    "trackedFiles": 1313,
+    "ignoredEntriesObserved": 103,
+    "bytes": 15657679,
+    "lines": 328348,
+    "nonEmptyLines": 304045,
+    "commentLines": 7443,
+    "localDependencyEdges": 746,
+    "symbols": 24600,
     "apiRoutes": 190,
     "testCases": 1379,
     "filesWithTests": 196,
-    "atoms": 83305,
+    "atoms": 83350,
     "anomalies": 0
   },
   "counts": {
@@ -173,8 +173,8 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".ts": 603,
-      ".tsx": 180,
+      ".ts": 637,
+      ".tsx": 185,
       ".css": 2,
       ".example": 1,
       ".toml": 3,
@@ -196,7 +196,7 @@
       ".conf": 2
     },
     "byRole": {
-      "other": 308,
+      "other": 347,
       "build-config": 16,
       "agent-config": 7,
       "ci": 8,
@@ -228,7 +228,7 @@
       ".node-version": 1,
       ".vscode": 2,
       ".windsurf": 1,
-      "adapters": 239,
+      "adapters": 278,
       "air-mentor-api": 494,
       "CLAUDE.md": 1,
       "docs": 34,
@@ -268,7 +268,7 @@
       ".mcp.json": 1,
       ".tmp-test-postgres": 1,
       ".vscode": 1,
-      "adapters": 36,
+      "adapters": 39,
       "air-mentor-api": 29,
       "context_main.json": 1,
       "context.json": 1,
@@ -359,6 +359,11 @@
         "role": "other"
       },
       {
+        "path": "adapters/web/shared/api/types-parts/policy.ts",
+        "importers": 8,
+        "role": "other"
+      },
+      {
         "path": "tests-e2e/helpers/proof-playback.ts",
         "importers": 8,
         "role": "e2e-test"
@@ -390,6 +395,11 @@
       },
       {
         "path": "adapters/web/features/pages/risk-explorer-parts/helpers.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/api/types-parts/session.ts",
         "importers": 6,
         "role": "other"
       },
@@ -472,16 +482,6 @@
         "path": "adapters/web/app/workspace-types.ts",
         "importers": 4,
         "role": "other"
-      },
-      {
-        "path": "adapters/web/features/admin/curriculum-graph-workspace/curriculum-graph-helpers.ts",
-        "importers": 4,
-        "role": "other"
-      },
-      {
-        "path": "adapters/web/features/admin/faculties-workspace/workspace-helpers.ts",
-        "importers": 4,
-        "role": "other"
       }
     ],
     "highFanOut": [
@@ -493,6 +493,11 @@
       {
         "path": "adapters/web/features/admin/live-app-model.ts",
         "localImports": 20,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/api/types.ts",
+        "localImports": 19,
         "role": "other"
       },
       {
@@ -542,6 +547,11 @@
       },
       {
         "path": "adapters/web/features/admin/system-admin-timetable-editor.tsx",
+        "localImports": 8,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-ui.tsx",
         "localImports": 8,
         "role": "other"
       },
@@ -674,26 +684,16 @@
         "path": "tests-e2e/specs/editable-data-recompute.spec.ts",
         "localImports": 5,
         "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/humanised-action-labels.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/intervention-affects-marks.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
       }
     ],
     "topExternalImports": [
       {
         "key": "@web/shared",
-        "value": 373
+        "value": 386
       },
       {
         "key": "@web/simulation",
-        "value": 224
+        "value": 229
       },
       {
         "key": "vitest",
@@ -709,7 +709,7 @@
       },
       {
         "key": "react",
-        "value": 110
+        "value": 114
       },
       {
         "key": "node:path",
@@ -717,7 +717,7 @@
       },
       {
         "key": "@kernel/shared",
-        "value": 93
+        "value": 98
       },
       {
         "key": "@web/features",
@@ -733,7 +733,7 @@
       },
       {
         "key": "lucide-react",
-        "value": 57
+        "value": 59
       },
       {
         "key": "zod",
@@ -1246,32 +1246,6 @@
   ],
   "componentOwnership": [
     {
-      "file": "adapters/web/features/admin/system-admin-ui.tsx",
-      "role": "other",
-      "lines": 567,
-      "components": [
-        "AdminBreadcrumbs",
-        "AdminTopBar",
-        "AuthFeature",
-        "DayToggle",
-        "EmptyState",
-        "EntityButton",
-        "FieldLabel",
-        "HeroBadge",
-        "InfoBanner",
-        "MetricCard",
-        "ModalFrame",
-        "QueueBulkActions",
-        "RestoreBanner",
-        "SearchField",
-        "SectionHeading",
-        "SelectInput",
-        "TextAreaInput",
-        "TextInput"
-      ],
-      "hooks": []
-    },
-    {
       "file": "adapters/web/shared/ui/primitives.tsx",
       "role": "other",
       "lines": 980,
@@ -1587,6 +1561,32 @@
       ]
     },
     {
+      "file": "adapters/web/features/admin/system-admin-ui-parts/field-inputs.tsx",
+      "role": "other",
+      "lines": 83,
+      "components": [
+        "FieldLabel",
+        "SearchField",
+        "SelectInput",
+        "TextAreaInput",
+        "TextInput"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-ui-parts/misc-widgets.tsx",
+      "role": "other",
+      "lines": 110,
+      "components": [
+        "AuthFeature",
+        "DayToggle",
+        "EntityButton",
+        "HeroBadge",
+        "ModalFrame"
+      ],
+      "hooks": []
+    },
+    {
       "file": "adapters/web/features/curriculum/course-config-drawer.tsx",
       "role": "other",
       "lines": 360,
@@ -1768,6 +1768,28 @@
       ]
     },
     {
+      "file": "adapters/web/features/admin/system-admin-ui-parts/banners.tsx",
+      "role": "other",
+      "lines": 103,
+      "components": [
+        "InfoBanner",
+        "QueueBulkActions",
+        "RestoreBanner"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-ui-parts/section-widgets.tsx",
+      "role": "other",
+      "lines": 48,
+      "components": [
+        "EmptyState",
+        "MetricCard",
+        "SectionHeading"
+      ],
+      "hooks": []
+    },
+    {
       "file": "adapters/web/features/hod-counterfactual-panel.tsx",
       "role": "other",
       "lines": 245,
@@ -1911,37 +1933,6 @@
         "CurriculumPanel"
       ],
       "hooks": []
-    },
-    {
-      "file": "adapters/web/features/admin/faculties-workspace/overview-navigator.tsx",
-      "role": "other",
-      "lines": 117,
-      "components": [
-        "OverviewNavigator",
-        "YearEditors"
-      ],
-      "hooks": []
-    },
-    {
-      "file": "adapters/web/features/admin/faculty-calendar-workspace/calendar-workspace-planner.tsx",
-      "role": "other",
-      "lines": 77,
-      "components": [
-        "CalendarTimetablePage",
-        "CalendarWorkspacePlanner"
-      ],
-      "hooks": []
-    },
-    {
-      "file": "adapters/web/features/admin/system-admin-history-workspace.tsx",
-      "role": "other",
-      "lines": 146,
-      "components": [
-        "SystemAdminHistoryWorkspace"
-      ],
-      "hooks": [
-        "useState"
-      ]
     }
   ],
   "topAtoms": [
@@ -2141,6 +2132,7 @@
     "adapters/web/features/admin/sections/context.json",
     "adapters/web/features/admin/sections/faculty-members/context.json",
     "adapters/web/features/admin/sections/students/context.json",
+    "adapters/web/features/admin/system-admin-ui-parts/context.json",
     "adapters/web/features/admin/timetable-editor/context.json",
     "adapters/web/features/context.json",
     "adapters/web/features/curriculum/context.json",
@@ -2152,7 +2144,9 @@
     "adapters/web/features/pages/risk-explorer-parts/context.json",
     "adapters/web/features/pages/student-shell-parts/context.json",
     "adapters/web/features/pages/workflow/context.json",
+    "adapters/web/shared/api/client-parts/context.json",
     "adapters/web/shared/api/context.json",
+    "adapters/web/shared/api/types-parts/context.json",
     "adapters/web/shared/components/context.json",
     "adapters/web/shared/components/obsidian-graph-parts/context.json",
     "adapters/web/shared/hooks/context.json",
@@ -2184,10 +2178,7 @@
     "air-mentor-api/src/application/use-cases/students/context.json",
     "air-mentor-api/src/context.json",
     "air-mentor-api/src/db/context.json",
-    "air-mentor-api/src/lib/context.json",
-    "air-mentor-api/src/modules/context.json",
-    "air-mentor-api/src/types/context.json",
-    "air-mentor-api/tests/helpers/context.json"
+    "air-mentor-api/src/lib/context.json"
   ],
   "mcpObservations": [
     "CTXO is callable, but the observed overlay was stale relative to current Git state; use it as a hint, not deletion authority.",

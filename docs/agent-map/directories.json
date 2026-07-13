@@ -260,8 +260,8 @@
   {
     "path": "adapters/web/features/admin",
     "fileCount": 29,
-    "bytes": 488044,
-    "lines": 10853,
+    "bytes": 468623,
+    "lines": 10339,
     "roles": {
       "other": 29
     },
@@ -385,6 +385,19 @@
     }
   },
   {
+    "path": "adapters/web/features/admin/system-admin-ui-parts",
+    "fileCount": 8,
+    "bytes": 21498,
+    "lines": 592,
+    "roles": {
+      "other": 8
+    },
+    "extensions": {
+      ".tsx": 5,
+      ".ts": 3
+    }
+  },
+  {
     "path": "adapters/web/features/admin/timetable-editor",
     "fileCount": 9,
     "bytes": 49387,
@@ -487,13 +500,37 @@
   {
     "path": "adapters/web/shared/api",
     "fileCount": 4,
-    "bytes": 178134,
-    "lines": 4962,
+    "bytes": 14273,
+    "lines": 471,
     "roles": {
       "other": 4
     },
     "extensions": {
       ".ts": 4
+    }
+  },
+  {
+    "path": "adapters/web/shared/api/client-parts",
+    "fileCount": 12,
+    "bytes": 100291,
+    "lines": 2006,
+    "roles": {
+      "other": 12
+    },
+    "extensions": {
+      ".ts": 12
+    }
+  },
+  {
+    "path": "adapters/web/shared/api/types-parts",
+    "fileCount": 19,
+    "bytes": 84176,
+    "lines": 3079,
+    "roles": {
+      "other": 19
+    },
+    "extensions": {
+      ".ts": 19
     }
   },
   {
