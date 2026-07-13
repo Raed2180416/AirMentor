@@ -260,8 +260,8 @@
   {
     "path": "adapters/web/features/admin",
     "fileCount": 29,
-    "bytes": 539823,
-    "lines": 12007,
+    "bytes": 488044,
+    "lines": 10853,
     "roles": {
       "other": 29
     },
@@ -310,6 +310,30 @@
     }
   },
   {
+    "path": "adapters/web/features/admin/live-app-model-parts",
+    "fileCount": 6,
+    "bytes": 28905,
+    "lines": 642,
+    "roles": {
+      "other": 6
+    },
+    "extensions": {
+      ".ts": 6
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/live-data-parts",
+    "fileCount": 6,
+    "bytes": 26537,
+    "lines": 663,
+    "roles": {
+      "other": 6
+    },
+    "extensions": {
+      ".ts": 6
+    }
+  },
+  {
     "path": "adapters/web/features/admin/proof-dashboard",
     "fileCount": 10,
     "bytes": 69089,
@@ -325,14 +349,39 @@
   {
     "path": "adapters/web/features/admin/sections",
     "fileCount": 8,
-    "bytes": 135940,
-    "lines": 2040,
+    "bytes": 65028,
+    "lines": 1209,
     "roles": {
       "other": 8
     },
     "extensions": {
       ".ts": 1,
       ".tsx": 7
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/sections/faculty-members",
+    "fileCount": 8,
+    "bytes": 53085,
+    "lines": 800,
+    "roles": {
+      "other": 8
+    },
+    "extensions": {
+      ".tsx": 8
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/sections/students",
+    "fileCount": 8,
+    "bytes": 47057,
+    "lines": 782,
+    "roles": {
+      "other": 8
+    },
+    "extensions": {
+      ".tsx": 7,
+      ".ts": 1
     }
   },
   {
@@ -450,13 +499,25 @@
   {
     "path": "adapters/web/shared/components",
     "fileCount": 4,
-    "bytes": 48648,
-    "lines": 1420,
+    "bytes": 21930,
+    "lines": 683,
     "roles": {
       "other": 4
     },
     "extensions": {
       ".tsx": 4
+    }
+  },
+  {
+    "path": "adapters/web/shared/components/obsidian-graph-parts",
+    "fileCount": 5,
+    "bytes": 30499,
+    "lines": 899,
+    "roles": {
+      "other": 5
+    },
+    "extensions": {
+      ".ts": 5
     }
   },
   {
@@ -474,13 +535,25 @@
   {
     "path": "adapters/web/shared/state",
     "fileCount": 6,
-    "bytes": 56478,
-    "lines": 1403,
+    "bytes": 29330,
+    "lines": 759,
     "roles": {
       "other": 6
     },
     "extensions": {
       ".ts": 6
+    }
+  },
+  {
+    "path": "adapters/web/shared/state/calendar-utils-parts",
+    "fileCount": 8,
+    "bytes": 30354,
+    "lines": 750,
+    "roles": {
+      "other": 8
+    },
+    "extensions": {
+      ".ts": 8
     }
   },
   {

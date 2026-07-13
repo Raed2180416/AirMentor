@@ -10,16 +10,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 1233 |
+| Tracked files | 1274 |
 | Tracked bytes | 14.9 MiB |
-| Tracked source/doc lines | 326506 |
-| Non-empty lines | 302388 |
-| Comment lines | 7331 |
-| Local dependency edges | 543 |
-| Symbols/blocks discovered | 24545 |
+| Tracked source/doc lines | 327676 |
+| Non-empty lines | 303465 |
+| Comment lines | 7340 |
+| Local dependency edges | 674 |
+| Symbols/blocks discovered | 24585 |
 | API route registrations found | 190 |
 | Test cases discovered | 1379 |
-| Atomic references (exports/env/sql/calls/hooks) | 83250 |
+| Atomic references (exports/env/sql/calls/hooks) | 83305 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -131,8 +131,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Role | Files |
 | --- | --- |
+| other | 308 |
 | backend | 283 |
-| other | 267 |
 | pipeline | 171 |
 | unit-test | 163 |
 | repo-script | 112 |
@@ -149,8 +149,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Extension | Files |
 | --- | --- |
-| .ts | 577 |
-| .tsx | 165 |
+| .ts | 603 |
+| .tsx | 180 |
 | .py | 108 |
 | .yaml | 107 |
 | .mjs | 59 |
@@ -182,7 +182,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Top directory | Tracked files |
 | --- | --- |
 | air-mentor-api | 494 |
-| adapters | 198 |
+| adapters | 239 |
 | pipeline | 171 |
 | scripts | 112 |
 | tests | 68 |
@@ -222,7 +222,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27309 | backend-script:97 |
 | scripts | 111 | 1018.2 KiB | 24455 | repo-script:111 |
 | tests | 68 | 614.3 KiB | 17898 | unit-test:68 |
-| adapters/web/features/admin | 29 | 527.2 KiB | 12007 | other:29 |
+| adapters/web/features/admin | 29 | 476.6 KiB | 10853 | other:29 |
 | . | 25 | 337.1 KiB | 9435 | other:14, build-config:10, agent-config:1 |
 | docs | 20 | 329.4 KiB | 8887 | documentation:20 |
 | tests-e2e/specs | 36 | 363.8 KiB | 7580 | e2e-test:36 |
@@ -240,7 +240,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | forge-audit/forge_audit/engine | 7 | 76.6 KiB | 2259 | forge-audit:7 |
 | adapters/web/features/admin/faculties-workspace | 10 | 126.0 KiB | 2166 | other:10 |
 | air-mentor-api/src/db/seeds | 3 | 2.6 MiB | 2113 | backend:3 |
-| adapters/web/features/admin/sections | 8 | 132.8 KiB | 2040 | other:8 |
+| pipeline/tests | 17 | 71.8 KiB | 1890 | pipeline:17 |
 
 ## High Fan-In Files
 
@@ -250,34 +250,34 @@ These files are imported by many tracked local files. Treat changes here as high
 | --- | --- | --- |
 | tests-e2e/helpers/login-as.ts | 38 | e2e-test |
 | tests-e2e/support/playwright-runtime.ts | 36 | e2e-test |
+| adapters/web/features/admin/system-admin-ui.tsx | 33 | other |
 | tests-e2e/fixtures/seeded-run-fixture.ts | 33 | e2e-test |
+| adapters/web/features/admin/system-admin-live-data.ts | 29 | other |
 | tests-e2e/helpers/api-url.ts | 28 | e2e-test |
-| adapters/web/features/admin/system-admin-live-data.ts | 20 | other |
-| adapters/web/features/admin/system-admin-ui.tsx | 20 | other |
+| adapters/web/features/admin/live-app-model.ts | 20 | other |
 | tests-e2e/helpers/proof-run-api.ts | 19 | e2e-test |
+| adapters/web/features/admin/live-app-chrome.tsx | 13 | other |
 | adapters/web/features/admin/proof-dashboard/proof-dashboard-types.ts | 9 | other |
 | adapters/web/features/pages/course/stage-helpers.ts | 9 | other |
 | adapters/web/features/pages/hod/hod-helpers.ts | 9 | other |
 | scripts/system-admin-live-auth.mjs | 9 | repo-script |
 | adapters/web/features/admin/faculties-workspace/types.ts | 8 | other |
-| adapters/web/features/admin/live-app-model.ts | 8 | other |
+| adapters/web/features/admin/sections/students/types.ts | 8 | other |
 | tests-e2e/helpers/proof-playback.ts | 8 | e2e-test |
 | adapters/web/features/academic-faculty-profile/profile-helpers.ts | 7 | other |
 | adapters/web/features/pages/hod/hod-shared-components.tsx | 7 | other |
 | adapters/web/features/pages/student-shell-parts/shared.tsx | 7 | other |
 | scripts/proof-risk-semester-walk.mjs | 7 | repo-script |
-| adapters/web/features/admin/live-app-chrome.tsx | 6 | other |
+| adapters/web/features/admin/live-data-parts/types.ts | 6 | other |
 | adapters/web/features/pages/risk-explorer-parts/helpers.ts | 6 | other |
+| adapters/web/shared/components/obsidian-graph-parts/types.ts | 6 | other |
+| adapters/web/shared/state/calendar-utils-parts/constants.ts | 6 | other |
+| adapters/web/shared/state/calendar-utils-parts/time-scalars.ts | 6 | other |
 | adapters/web/features/admin/faculties-workspace/workspace-primitives.tsx | 5 | other |
+| adapters/web/features/admin/live-app-validation.ts | 5 | other |
 | adapters/web/features/admin/proof-dashboard/proof-dashboard-helpers.ts | 5 | other |
 | adapters/web/features/admin/sections/entity-editor-modal-types.ts | 5 | other |
 | adapters/web/features/admin/system-admin-live-app.tsx | 5 | other |
-| adapters/web/features/admin/system-admin-overview-helpers.ts | 5 | other |
-| adapters/web/features/admin/timetable-editor/types.ts | 5 | other |
-| adapters/web/features/pages/workflow-pages.tsx | 5 | other |
-| air-mentor-api/src/db/seeds/msruas-mnc-curriculum.json | 5 | backend |
-| tests-e2e/helpers/automation-flow.ts | 5 | e2e-test |
-| adapters/web/app/workspace-helpers.ts | 4 | other |
 
 ## High Fan-Out Files
 
@@ -286,23 +286,28 @@ These files import many local files. They are useful entry points for understand
 | File | Local imports | Role |
 | --- | --- | --- |
 | adapters/web/features/admin/system-admin-live-app.tsx | 21 | other |
+| adapters/web/features/admin/live-app-model.ts | 20 | other |
 | adapters/web/features/academic-workspace-route-surface.tsx | 15 | other |
-| adapters/web/features/admin/live-app-model.ts | 15 | other |
 | adapters/web/features/admin/system-admin-faculties-workspace.tsx | 14 | other |
 | adapters/web/app/App.tsx | 10 | other |
+| adapters/web/features/admin/sections/faculty-members-section.tsx | 10 | other |
 | adapters/web/features/admin/system-admin-proof-dashboard-workspace.tsx | 10 | other |
 | adapters/web/features/pages/hod-pages.tsx | 10 | other |
+| adapters/web/features/admin/sections/students-section.tsx | 9 | other |
 | adapters/web/features/pages/course-pages.tsx | 9 | other |
 | adapters/web/app/operational-workspace.tsx | 8 | other |
 | adapters/web/features/admin/system-admin-timetable-editor.tsx | 8 | other |
 | adapters/web/features/pages/student-shell.tsx | 8 | other |
+| adapters/web/shared/state/calendar-utils.ts | 8 | other |
 | adapters/web/features/academic-faculty-profile-page.tsx | 7 | other |
-| adapters/web/features/admin/sections/faculty-members-section.tsx | 7 | other |
 | adapters/web/features/pages/risk-explorer.tsx | 7 | other |
 | tests-e2e/specs/complete-realism-audit-2026-06-04.spec.ts | 7 | e2e-test |
 | adapters/web/features/admin/faculties-workspace/batch-overview-card.tsx | 6 | other |
 | adapters/web/features/admin/faculties-workspace/courses-panel.tsx | 6 | other |
 | adapters/web/features/admin/faculties-workspace/types.ts | 6 | other |
+| adapters/web/features/admin/sections/faculty-members/faculty-profile-tab.tsx | 6 | other |
+| adapters/web/features/admin/system-admin-live-data.ts | 6 | other |
+| adapters/web/shared/components/obsidian-graph.tsx | 6 | other |
 | tests-e2e/specs/airmentor-demo-hardening-api-verification.spec.ts | 6 | e2e-test |
 | tests-e2e/specs/airmentor-demo-hardening-verification.spec.ts | 6 | e2e-test |
 | tests-e2e/specs/massive-evaluation-runthrough.spec.ts | 6 | e2e-test |
@@ -310,11 +315,6 @@ These files import many local files. They are useful entry points for understand
 | tests-e2e/specs/multi-semester-carryover.spec.ts | 6 | e2e-test |
 | adapters/web/features/academic-route-pages.tsx | 5 | other |
 | adapters/web/features/admin/faculties-workspace/governance-panels.tsx | 5 | other |
-| adapters/web/features/admin/faculties-workspace/provisioning-panel.tsx | 5 | other |
-| adapters/web/features/admin/sections/entity-editor-modals.tsx | 5 | other |
-| adapters/web/features/admin/sections/students-section.tsx | 5 | other |
-| adapters/web/features/admin/system-admin-faculty-calendar-workspace.tsx | 5 | other |
-| adapters/web/features/pages/workflow-pages.tsx | 5 | other |
 
 ## API Route Registrations
 

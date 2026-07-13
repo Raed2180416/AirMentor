@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 1233,
-    "ignoredEntriesObserved": 92,
-    "bytes": 15595116,
-    "lines": 326506,
-    "nonEmptyLines": 302388,
-    "commentLines": 7331,
-    "localDependencyEdges": 543,
-    "symbols": 24545,
+    "trackedFiles": 1274,
+    "ignoredEntriesObserved": 100,
+    "bytes": 15634996,
+    "lines": 327676,
+    "nonEmptyLines": 303465,
+    "commentLines": 7340,
+    "localDependencyEdges": 674,
+    "symbols": 24585,
     "apiRoutes": 190,
     "testCases": 1379,
     "filesWithTests": 196,
-    "atoms": 83250,
+    "atoms": 83305,
     "anomalies": 0
   },
   "counts": {
@@ -173,8 +173,8 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".ts": 577,
-      ".tsx": 165,
+      ".ts": 603,
+      ".tsx": 180,
       ".css": 2,
       ".example": 1,
       ".toml": 3,
@@ -196,7 +196,7 @@
       ".conf": 2
     },
     "byRole": {
-      "other": 267,
+      "other": 308,
       "build-config": 16,
       "agent-config": 7,
       "ci": 8,
@@ -228,7 +228,7 @@
       ".node-version": 1,
       ".vscode": 2,
       ".windsurf": 1,
-      "adapters": 198,
+      "adapters": 239,
       "air-mentor-api": 494,
       "CLAUDE.md": 1,
       "docs": 34,
@@ -268,7 +268,7 @@
       ".mcp.json": 1,
       ".tmp-test-postgres": 1,
       ".vscode": 1,
-      "adapters": 28,
+      "adapters": 36,
       "air-mentor-api": 29,
       "context_main.json": 1,
       "context.json": 1,
@@ -294,9 +294,19 @@
         "role": "e2e-test"
       },
       {
+        "path": "adapters/web/features/admin/system-admin-ui.tsx",
+        "importers": 33,
+        "role": "other"
+      },
+      {
         "path": "tests-e2e/fixtures/seeded-run-fixture.ts",
         "importers": 33,
         "role": "e2e-test"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-live-data.ts",
+        "importers": 29,
+        "role": "other"
       },
       {
         "path": "tests-e2e/helpers/api-url.ts",
@@ -304,12 +314,7 @@
         "role": "e2e-test"
       },
       {
-        "path": "adapters/web/features/admin/system-admin-live-data.ts",
-        "importers": 20,
-        "role": "other"
-      },
-      {
-        "path": "adapters/web/features/admin/system-admin-ui.tsx",
+        "path": "adapters/web/features/admin/live-app-model.ts",
         "importers": 20,
         "role": "other"
       },
@@ -317,6 +322,11 @@
         "path": "tests-e2e/helpers/proof-run-api.ts",
         "importers": 19,
         "role": "e2e-test"
+      },
+      {
+        "path": "adapters/web/features/admin/live-app-chrome.tsx",
+        "importers": 13,
+        "role": "other"
       },
       {
         "path": "adapters/web/features/admin/proof-dashboard/proof-dashboard-types.ts",
@@ -344,7 +354,7 @@
         "role": "other"
       },
       {
-        "path": "adapters/web/features/admin/live-app-model.ts",
+        "path": "adapters/web/features/admin/sections/students/types.ts",
         "importers": 8,
         "role": "other"
       },
@@ -374,7 +384,7 @@
         "role": "repo-script"
       },
       {
-        "path": "adapters/web/features/admin/live-app-chrome.tsx",
+        "path": "adapters/web/features/admin/live-data-parts/types.ts",
         "importers": 6,
         "role": "other"
       },
@@ -384,7 +394,27 @@
         "role": "other"
       },
       {
+        "path": "adapters/web/shared/components/obsidian-graph-parts/types.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/state/calendar-utils-parts/constants.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/state/calendar-utils-parts/time-scalars.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
         "path": "adapters/web/features/admin/faculties-workspace/workspace-primitives.tsx",
+        "importers": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/live-app-validation.ts",
         "importers": 5,
         "role": "other"
       },
@@ -419,6 +449,11 @@
         "role": "other"
       },
       {
+        "path": "adapters/web/shared/components/obsidian-graph-parts/helpers.ts",
+        "importers": 5,
+        "role": "other"
+      },
+      {
         "path": "air-mentor-api/src/db/seeds/msruas-mnc-curriculum.json",
         "importers": 5,
         "role": "backend"
@@ -447,41 +482,6 @@
         "path": "adapters/web/features/admin/faculties-workspace/workspace-helpers.ts",
         "importers": 4,
         "role": "other"
-      },
-      {
-        "path": "adapters/web/features/admin/live-app-validation.ts",
-        "importers": 4,
-        "role": "other"
-      },
-      {
-        "path": "adapters/web/features/admin/proof-dashboard/proof-dashboard-cards.tsx",
-        "importers": 4,
-        "role": "other"
-      },
-      {
-        "path": "scripts/teaching-password-resolution.mjs",
-        "importers": 4,
-        "role": "repo-script"
-      },
-      {
-        "path": "adapters/web/features/admin/faculty-calendar-workspace/calendar-workspace-helpers.ts",
-        "importers": 3,
-        "role": "other"
-      },
-      {
-        "path": "adapters/web/features/admin/live-app-curriculum-feature-model.ts",
-        "importers": 3,
-        "role": "other"
-      },
-      {
-        "path": "adapters/web/features/admin/live-app-routes-and-scopes.ts",
-        "importers": 3,
-        "role": "other"
-      },
-      {
-        "path": "adapters/web/features/admin/system-admin-proof-dashboard-workspace.tsx",
-        "importers": 3,
-        "role": "other"
       }
     ],
     "highFanOut": [
@@ -491,12 +491,12 @@
         "role": "other"
       },
       {
-        "path": "adapters/web/features/academic-workspace-route-surface.tsx",
-        "localImports": 15,
+        "path": "adapters/web/features/admin/live-app-model.ts",
+        "localImports": 20,
         "role": "other"
       },
       {
-        "path": "adapters/web/features/admin/live-app-model.ts",
+        "path": "adapters/web/features/academic-workspace-route-surface.tsx",
         "localImports": 15,
         "role": "other"
       },
@@ -511,6 +511,11 @@
         "role": "other"
       },
       {
+        "path": "adapters/web/features/admin/sections/faculty-members-section.tsx",
+        "localImports": 10,
+        "role": "other"
+      },
+      {
         "path": "adapters/web/features/admin/system-admin-proof-dashboard-workspace.tsx",
         "localImports": 10,
         "role": "other"
@@ -518,6 +523,11 @@
       {
         "path": "adapters/web/features/pages/hod-pages.tsx",
         "localImports": 10,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/sections/students-section.tsx",
+        "localImports": 9,
         "role": "other"
       },
       {
@@ -541,12 +551,12 @@
         "role": "other"
       },
       {
-        "path": "adapters/web/features/academic-faculty-profile-page.tsx",
-        "localImports": 7,
+        "path": "adapters/web/shared/state/calendar-utils.ts",
+        "localImports": 8,
         "role": "other"
       },
       {
-        "path": "adapters/web/features/admin/sections/faculty-members-section.tsx",
+        "path": "adapters/web/features/academic-faculty-profile-page.tsx",
         "localImports": 7,
         "role": "other"
       },
@@ -572,6 +582,21 @@
       },
       {
         "path": "adapters/web/features/admin/faculties-workspace/types.ts",
+        "localImports": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/sections/faculty-members/faculty-profile-tab.tsx",
+        "localImports": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-live-data.ts",
+        "localImports": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/components/obsidian-graph.tsx",
         "localImports": 6,
         "role": "other"
       },
@@ -616,12 +641,17 @@
         "role": "other"
       },
       {
+        "path": "adapters/web/features/admin/live-data-parts/search.ts",
+        "localImports": 5,
+        "role": "other"
+      },
+      {
         "path": "adapters/web/features/admin/sections/entity-editor-modals.tsx",
         "localImports": 5,
         "role": "other"
       },
       {
-        "path": "adapters/web/features/admin/sections/students-section.tsx",
+        "path": "adapters/web/features/admin/sections/faculty-members/faculty-registry-panel.tsx",
         "localImports": 5,
         "role": "other"
       },
@@ -654,46 +684,16 @@
         "path": "tests-e2e/specs/intervention-affects-marks.spec.ts",
         "localImports": 5,
         "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/manual-edit-verification.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/proof-browser-sentinel-matrix.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/receptivity-differentiation.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/shared-proof-playback-sync.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/teacher-mentor-proof-surface.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
-      },
-      {
-        "path": "tests-e2e/specs/validate-120-trajectories.spec.ts",
-        "localImports": 5,
-        "role": "e2e-test"
       }
     ],
     "topExternalImports": [
       {
         "key": "@web/shared",
-        "value": 344
+        "value": 373
       },
       {
         "key": "@web/simulation",
-        "value": 211
+        "value": 224
       },
       {
         "key": "vitest",
@@ -708,16 +708,16 @@
         "value": 126
       },
       {
+        "key": "react",
+        "value": 110
+      },
+      {
         "key": "node:path",
         "value": 108
       },
       {
-        "key": "react",
-        "value": 105
-      },
-      {
         "key": "@kernel/shared",
-        "value": 88
+        "value": 93
       },
       {
         "key": "@web/features",
@@ -733,7 +733,7 @@
       },
       {
         "key": "lucide-react",
-        "value": 56
+        "value": 57
       },
       {
         "key": "zod",
@@ -1447,7 +1447,7 @@
     {
       "file": "adapters/web/shared/components/obsidian-graph.tsx",
       "role": "other",
-      "lines": 1087,
+      "lines": 350,
       "components": [
         "H",
         "ObsidianGraph"
@@ -2125,6 +2125,8 @@
     ".tmp-test-postgres/",
     ".vscode/mcp.json",
     "adapters/persistence/repositories/context.json",
+    "adapters/web/app/app-parts/",
+    "adapters/web/app/app-parts/context.json",
     "adapters/web/app/context.json",
     "adapters/web/features/academic-faculty-profile/context.json",
     "adapters/web/features/academic-routes/context.json",
@@ -2133,8 +2135,12 @@
     "adapters/web/features/admin/curriculum-graph-workspace/context.json",
     "adapters/web/features/admin/faculties-workspace/context.json",
     "adapters/web/features/admin/faculty-calendar-workspace/context.json",
+    "adapters/web/features/admin/live-app-model-parts/context.json",
+    "adapters/web/features/admin/live-data-parts/context.json",
     "adapters/web/features/admin/proof-dashboard/context.json",
     "adapters/web/features/admin/sections/context.json",
+    "adapters/web/features/admin/sections/faculty-members/context.json",
+    "adapters/web/features/admin/sections/students/context.json",
     "adapters/web/features/admin/timetable-editor/context.json",
     "adapters/web/features/context.json",
     "adapters/web/features/curriculum/context.json",
@@ -2148,7 +2154,9 @@
     "adapters/web/features/pages/workflow/context.json",
     "adapters/web/shared/api/context.json",
     "adapters/web/shared/components/context.json",
+    "adapters/web/shared/components/obsidian-graph-parts/context.json",
     "adapters/web/shared/hooks/context.json",
+    "adapters/web/shared/state/calendar-utils-parts/context.json",
     "adapters/web/shared/state/context.json",
     "adapters/web/shared/ui/context.json",
     "adapters/web/simulation/context.json",
@@ -2179,15 +2187,7 @@
     "air-mentor-api/src/lib/context.json",
     "air-mentor-api/src/modules/context.json",
     "air-mentor-api/src/types/context.json",
-    "air-mentor-api/tests/helpers/context.json",
-    "air-mentor-api/tsconfig.tsbuildinfo",
-    "context_main.json",
-    "context.json",
-    "kernel/context.json",
-    "kernel/grading/context.json",
-    "kernel/identity/context.json",
-    "kernel/policy/context.json",
-    "kernel/risk/context.json"
+    "air-mentor-api/tests/helpers/context.json"
   ],
   "mcpObservations": [
     "CTXO is callable, but the observed overlay was stale relative to current Git state; use it as a hint, not deletion authority.",
