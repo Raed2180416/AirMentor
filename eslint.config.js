@@ -80,6 +80,24 @@ export default defineConfig([
     },
   },
   {
+    // Phase 3+ backend application layer must be framework/persistence-free:
+    // ports + use-cases take repository interfaces, never touch Drizzle schema.
+    // (The legacy air-mentor-api/src/modules still import db/schema directly and
+    // are intentionally left ungated here until they are decomposed; that ban is
+    // flipped on in Phase 6 once data access has moved behind repositories.)
+    files: ['air-mentor-api/src/application/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          {
+            group: ['**/db/schema', '**/db/schema.js', 'drizzle-orm', 'drizzle-orm/*'],
+            message: 'air-mentor-api/src/application/ must stay persistence-free: depend on a repository port, not db/schema or drizzle-orm.',
+          },
+        ],
+      }],
+    },
+  },
+  {
     files: ['tests/**/*.ts', 'tests/**/*.tsx', 'air-mentor-api/tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',

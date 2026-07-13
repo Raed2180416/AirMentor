@@ -7,6 +7,12 @@ const SOURCE_ROOTS = [
   resolve(process.cwd(), 'adapters'),
   resolve(process.cwd(), 'kernel'),
   resolve(process.cwd(), 'universities'),
+  // Phase 3+ backend Clean Architecture layers (api-local, kept out of the web
+  // typecheck/bundle). New files here are held to the 400-line cap; the legacy
+  // air-mentor-api/src/modules and lib monoliths are intentionally NOT scanned
+  // until they are decomposed into these directories.
+  resolve(process.cwd(), 'air-mentor-api/src/application'),
+  resolve(process.cwd(), 'air-mentor-api/src/adapters'),
 ]
 const RATCHET_PATH = resolve(process.cwd(), 'docs/architecture-line-ratchet.json')
 const MAX_NEW_PRODUCTION_FILE_LINES = 400

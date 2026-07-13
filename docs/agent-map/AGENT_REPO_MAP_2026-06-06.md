@@ -12,14 +12,14 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
 | Tracked files | 996 |
 | Tracked bytes | 14.5 MiB |
-| Tracked source/doc lines | 315818 |
-| Non-empty lines | 292619 |
-| Comment lines | 6022 |
+| Tracked source/doc lines | 315842 |
+| Non-empty lines | 292643 |
+| Comment lines | 6031 |
 | Local dependency edges | 344 |
 | Symbols/blocks discovered | 23729 |
 | API route registrations found | 190 |
 | Test cases discovered | 1374 |
-| Atomic references (exports/env/sql/calls/hooks) | 81589 |
+| Atomic references (exports/env/sql/calls/hooks) | 81594 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -220,11 +220,11 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | air-mentor-api/src/lib | 82 | 1.5 MiB | 37890 | backend:82 |
 | air-mentor-api/tests | 92 | 1.2 MiB | 31843 | unit-test:92 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27309 | backend-script:97 |
-| scripts | 111 | 1017.5 KiB | 24444 | repo-script:111 |
+| scripts | 111 | 1017.9 KiB | 24450 | repo-script:111 |
 | air-mentor-api/src/modules | 21 | 816.0 KiB | 20112 | backend:21 |
 | tests | 68 | 614.3 KiB | 17898 | unit-test:68 |
 | adapters/web/features/admin | 29 | 769.3 KiB | 16192 | other:29 |
-| . | 25 | 335.6 KiB | 9405 | other:14, build-config:10, agent-config:1 |
+| . | 25 | 336.4 KiB | 9423 | other:14, build-config:10, agent-config:1 |
 | docs | 20 | 329.2 KiB | 8885 | documentation:20 |
 | tests-e2e/specs | 36 | 363.8 KiB | 7580 | e2e-test:36 |
 | adapters/web/features/pages | 6 | 384.7 KiB | 7147 | other:6 |
