@@ -152,17 +152,17 @@
   },
   "totals": {
     "trackedFiles": 996,
-    "ignoredEntriesObserved": 60,
-    "bytes": 15240210,
-    "lines": 315842,
-    "nonEmptyLines": 292643,
-    "commentLines": 6031,
+    "ignoredEntriesObserved": 63,
+    "bytes": 15203505,
+    "lines": 314904,
+    "nonEmptyLines": 291831,
+    "commentLines": 5996,
     "localDependencyEdges": 344,
-    "symbols": 23729,
+    "symbols": 23632,
     "apiRoutes": 190,
     "testCases": 1374,
     "filesWithTests": 195,
-    "atoms": 81594,
+    "atoms": 81099,
     "anomalies": 0
   },
   "counts": {
@@ -269,7 +269,7 @@
       ".tmp-test-postgres": 1,
       ".vscode": 1,
       "adapters": 14,
-      "air-mentor-api": 12,
+      "air-mentor-api": 15,
       "context_main.json": 1,
       "context.json": 1,
       "kernel": 5,
@@ -709,7 +709,7 @@
       },
       {
         "key": "drizzle-orm",
-        "value": 98
+        "value": 97
       },
       {
         "key": "__future__",
@@ -1965,19 +1965,19 @@
     },
     {
       "key": "eq",
-      "value": 1255
+      "value": 1224
     },
     {
       "key": "where",
-      "value": 1227
-    },
-    {
-      "key": "get",
-      "value": 1054
+      "value": 1200
     },
     {
       "key": "it",
       "value": 1048
+    },
+    {
+      "key": "get",
+      "value": 1040
     },
     {
       "key": "async",
@@ -1993,7 +1993,7 @@
     },
     {
       "key": "set",
-      "value": 673
+      "value": 662
     },
     {
       "key": "inject",
@@ -2001,7 +2001,7 @@
     },
     {
       "key": "string",
-      "value": 611
+      "value": 588
     },
     {
       "key": "toContain",
@@ -2009,7 +2009,7 @@
     },
     {
       "key": "has",
-      "value": 482
+      "value": 473
     },
     {
       "key": "toBeTruthy",
@@ -2033,7 +2033,7 @@
     },
     {
       "key": "object",
-      "value": 310
+      "value": 302
     },
     {
       "key": "loginAs",
@@ -2044,10 +2044,6 @@
       "value": 274
     },
     {
-      "key": "insert",
-      "value": 268
-    },
-    {
       "key": "parse",
       "value": 267
     },
@@ -2056,8 +2052,12 @@
       "value": 259
     },
     {
+      "key": "insert",
+      "value": 257
+    },
+    {
       "key": "optional",
-      "value": 248
+      "value": 242
     },
     {
       "key": "toBeNull",
@@ -2077,7 +2077,7 @@
     },
     {
       "key": "all",
-      "value": 213
+      "value": 212
     },
     {
       "key": "num",
@@ -2096,16 +2096,16 @@
       "value": 189
     },
     {
-      "key": "number",
-      "value": 186
-    },
-    {
       "key": "resolve",
       "value": 183
     },
     {
+      "key": "number",
+      "value": 181
+    },
+    {
       "key": "toISOString",
-      "value": 179
+      "value": 178
     },
     {
       "key": "useCallback",
@@ -2116,8 +2116,8 @@
       "value": 154
     },
     {
-      "key": "and",
-      "value": 148
+      "key": "auth",
+      "value": 146
     }
   ],
   "anomalies": [],
@@ -2157,6 +2157,9 @@
     "air-mentor-api/.eval-db-local/",
     "air-mentor-api/context.json",
     "air-mentor-api/scripts/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/curriculum-graph/context.json",
+    "air-mentor-api/src/application/ports/context.json",
+    "air-mentor-api/src/application/use-cases/curriculum-graph/context.json",
     "air-mentor-api/src/context.json",
     "air-mentor-api/src/db/context.json",
     "air-mentor-api/src/lib/context.json",

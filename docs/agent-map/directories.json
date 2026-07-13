@@ -23,8 +23,8 @@
   {
     "path": ".absolute-human",
     "fileCount": 1,
-    "bytes": 4191,
-    "lines": 121,
+    "bytes": 5448,
+    "lines": 139,
     "roles": {
       "other": 1
     },
@@ -502,8 +502,8 @@
   {
     "path": "air-mentor-api/src/modules",
     "fileCount": 21,
-    "bytes": 835603,
-    "lines": 20112,
+    "bytes": 795842,
+    "lines": 19156,
     "roles": {
       "backend": 21
     },
@@ -538,7 +538,7 @@
   {
     "path": "air-mentor-api/tests/__snapshots__",
     "fileCount": 1,
-    "bytes": 6342,
+    "bytes": 8141,
     "lines": 0,
     "roles": {
       "unit-test": 1
