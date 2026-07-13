@@ -89,6 +89,14 @@ export default defineConfig([
           },
         ],
       }],
+      // React Compiler is NOT part of the build (no babel-plugin-react-compiler);
+      // this rule is advisory for a future adoption. Decomposing a large stateful
+      // component into custom hooks legitimately breaks the compiler's manual-memo
+      // preservation analysis, so it blocks modularity with zero runtime benefit
+      // today. Downgrade to warn — the manual useMemo/useCallback still run exactly
+      // as before, behaviour is unchanged. Correctness rules (refs, purity,
+      // set-state-in-render, rules-of-hooks) remain errors.
+      'react-hooks/preserve-manual-memoization': 'warn',
     },
   },
   {
