@@ -10,16 +10,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 1105 |
-| Tracked bytes | 14.5 MiB |
-| Tracked source/doc lines | 317471 |
-| Non-empty lines | 293942 |
+| Tracked files | 1147 |
+| Tracked bytes | 14.7 MiB |
+| Tracked source/doc lines | 322437 |
+| Non-empty lines | 298681 |
 | Comment lines | 7037 |
-| Local dependency edges | 344 |
-| Symbols/blocks discovered | 23844 |
+| Local dependency edges | 416 |
+| Symbols/blocks discovered | 24238 |
 | API route registrations found | 190 |
 | Test cases discovered | 1379 |
-| Atomic references (exports/env/sql/calls/hooks) | 81782 |
+| Atomic references (exports/env/sql/calls/hooks) | 82657 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -132,8 +132,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Role | Files |
 | --- | --- |
 | backend | 255 |
+| other | 209 |
 | pipeline | 171 |
-| other | 167 |
 | unit-test | 163 |
 | repo-script | 112 |
 | backend-script | 97 |
@@ -149,10 +149,10 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Extension | Files |
 | --- | --- |
-| .ts | 532 |
+| .ts | 537 |
+| .tsx | 119 |
 | .py | 108 |
 | .yaml | 107 |
-| .tsx | 82 |
 | .mjs | 59 |
 | .md | 55 |
 | .sh | 48 |
@@ -183,8 +183,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | air-mentor-api | 466 |
 | pipeline | 171 |
+| adapters | 140 |
 | scripts | 112 |
-| adapters | 98 |
 | tests | 68 |
 | tests-e2e | 50 |
 | docs | 34 |
@@ -255,9 +255,13 @@ These files are imported by many tracked local files. Treat changes here as high
 | tests-e2e/helpers/proof-run-api.ts | 19 | e2e-test |
 | adapters/web/features/admin/system-admin-ui.tsx | 16 | other |
 | adapters/web/features/admin/system-admin-live-data.ts | 14 | other |
+| adapters/web/features/pages/course/stage-helpers.ts | 9 | other |
+| adapters/web/features/pages/hod/hod-helpers.ts | 9 | other |
 | scripts/system-admin-live-auth.mjs | 9 | repo-script |
 | adapters/web/features/admin/live-app-model.ts | 8 | other |
 | tests-e2e/helpers/proof-playback.ts | 8 | e2e-test |
+| adapters/web/features/academic-faculty-profile/profile-helpers.ts | 7 | other |
+| adapters/web/features/pages/hod/hod-shared-components.tsx | 7 | other |
 | scripts/proof-risk-semester-walk.mjs | 7 | repo-script |
 | adapters/web/features/admin/live-app-chrome.tsx | 6 | other |
 | adapters/web/features/admin/sections/entity-editor-modal-types.ts | 5 | other |
@@ -274,10 +278,6 @@ These files are imported by many tracked local files. Treat changes here as high
 | tests-e2e/helpers/demo-seeding-contract.ts | 3 | e2e-test |
 | adapters/web/app/action-queue.tsx | 2 | other |
 | adapters/web/app/portal-routing.ts | 2 | other |
-| adapters/web/app/required-note-modal.tsx | 2 | other |
-| adapters/web/app/session-helpers.ts | 2 | other |
-| adapters/web/app/student-drawer.tsx | 2 | other |
-| adapters/web/app/task-composer-modal.tsx | 2 | other |
 
 ## High Fan-Out Files
 
@@ -289,8 +289,11 @@ These files import many local files. They are useful entry points for understand
 | adapters/web/features/academic-workspace-route-surface.tsx | 15 | other |
 | adapters/web/features/admin/live-app-model.ts | 15 | other |
 | adapters/web/app/App.tsx | 10 | other |
+| adapters/web/features/pages/hod-pages.tsx | 10 | other |
 | adapters/web/features/admin/system-admin-faculties-workspace.tsx | 9 | other |
+| adapters/web/features/pages/course-pages.tsx | 9 | other |
 | adapters/web/app/operational-workspace.tsx | 8 | other |
+| adapters/web/features/academic-faculty-profile-page.tsx | 7 | other |
 | adapters/web/features/admin/sections/faculty-members-section.tsx | 7 | other |
 | tests-e2e/specs/complete-realism-audit-2026-06-04.spec.ts | 7 | e2e-test |
 | tests-e2e/specs/airmentor-demo-hardening-api-verification.spec.ts | 6 | e2e-test |
@@ -298,8 +301,10 @@ These files import many local files. They are useful entry points for understand
 | tests-e2e/specs/massive-evaluation-runthrough.spec.ts | 6 | e2e-test |
 | tests-e2e/specs/massive-evaluation-ui-only.spec.ts | 6 | e2e-test |
 | tests-e2e/specs/multi-semester-carryover.spec.ts | 6 | e2e-test |
+| adapters/web/features/academic-route-pages.tsx | 5 | other |
 | adapters/web/features/admin/sections/entity-editor-modals.tsx | 5 | other |
 | adapters/web/features/admin/sections/students-section.tsx | 5 | other |
+| adapters/web/features/pages/workflow-pages.tsx | 5 | other |
 | tests-e2e/specs/demo-reality-realism-hardening.spec.ts | 5 | e2e-test |
 | tests-e2e/specs/editable-data-recompute.spec.ts | 5 | e2e-test |
 | tests-e2e/specs/humanised-action-labels.spec.ts | 5 | e2e-test |
@@ -310,11 +315,6 @@ These files import many local files. They are useful entry points for understand
 | tests-e2e/specs/shared-proof-playback-sync.spec.ts | 5 | e2e-test |
 | tests-e2e/specs/teacher-mentor-proof-surface.spec.ts | 5 | e2e-test |
 | tests-e2e/specs/validate-120-trajectories.spec.ts | 5 | e2e-test |
-| adapters/web/features/admin/action-queue-rail.tsx | 4 | other |
-| adapters/web/features/admin/sections/overview-section.tsx | 4 | other |
-| scripts/run-fresh-proof-realism-audit.ts | 4 | repo-script |
-| tests-e2e/specs/course-leader-tt-blueprint-sentinel.spec.ts | 4 | e2e-test |
-| tests-e2e/specs/flow-1-fresh-start.spec.ts | 4 | e2e-test |
 
 ## API Route Registrations
 

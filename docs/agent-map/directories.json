@@ -232,6 +232,32 @@
     }
   },
   {
+    "path": "adapters/web/features/academic-faculty-profile",
+    "fileCount": 8,
+    "bytes": 43508,
+    "lines": 813,
+    "roles": {
+      "other": 8
+    },
+    "extensions": {
+      ".tsx": 7,
+      ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/features/academic-routes",
+    "fileCount": 8,
+    "bytes": 66387,
+    "lines": 1160,
+    "roles": {
+      "other": 8
+    },
+    "extensions": {
+      ".tsx": 6,
+      ".ts": 2
+    }
+  },
+  {
     "path": "adapters/web/features/admin",
     "fileCount": 29,
     "bytes": 787769,
@@ -279,6 +305,44 @@
     },
     "extensions": {
       ".tsx": 6
+    }
+  },
+  {
+    "path": "adapters/web/features/pages/course",
+    "fileCount": 10,
+    "bytes": 55852,
+    "lines": 845,
+    "roles": {
+      "other": 10
+    },
+    "extensions": {
+      ".tsx": 9,
+      ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/features/pages/hod",
+    "fileCount": 11,
+    "bytes": 57711,
+    "lines": 1201,
+    "roles": {
+      "other": 11
+    },
+    "extensions": {
+      ".tsx": 10,
+      ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/features/pages/workflow",
+    "fileCount": 5,
+    "bytes": 63482,
+    "lines": 947,
+    "roles": {
+      "other": 5
+    },
+    "extensions": {
+      ".tsx": 5
     }
   },
   {
