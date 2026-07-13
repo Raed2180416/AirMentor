@@ -207,6 +207,18 @@
     }
   },
   {
+    "path": "adapters/web/app/app-parts",
+    "fileCount": 4,
+    "bytes": 28671,
+    "lines": 684,
+    "roles": {
+      "other": 4
+    },
+    "extensions": {
+      ".ts": 4
+    }
+  },
+  {
     "path": "adapters/web/features",
     "fileCount": 10,
     "bytes": 85380,
@@ -258,10 +270,23 @@
     }
   },
   {
+    "path": "adapters/web/features/academic-session-shell-parts",
+    "fileCount": 5,
+    "bytes": 24594,
+    "lines": 485,
+    "roles": {
+      "other": 5
+    },
+    "extensions": {
+      ".tsx": 4,
+      ".ts": 1
+    }
+  },
+  {
     "path": "adapters/web/features/admin",
     "fileCount": 29,
-    "bytes": 437086,
-    "lines": 9636,
+    "bytes": 451080,
+    "lines": 9859,
     "roles": {
       "other": 29
     },
@@ -307,6 +332,18 @@
     "extensions": {
       ".tsx": 4,
       ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/live-app-chrome-parts",
+    "fileCount": 5,
+    "bytes": 18862,
+    "lines": 525,
+    "roles": {
+      "other": 5
+    },
+    "extensions": {
+      ".tsx": 5
     }
   },
   {
@@ -425,13 +462,26 @@
   {
     "path": "adapters/web/features/pages",
     "fileCount": 6,
-    "bytes": 156477,
-    "lines": 3574,
+    "bytes": 52367,
+    "lines": 1234,
     "roles": {
       "other": 6
     },
     "extensions": {
       ".tsx": 6
+    }
+  },
+  {
+    "path": "adapters/web/features/pages/calendar",
+    "fileCount": 18,
+    "bytes": 116762,
+    "lines": 2730,
+    "roles": {
+      "other": 18
+    },
+    "extensions": {
+      ".tsx": 9,
+      ".ts": 9
     }
   },
   {
@@ -604,6 +654,19 @@
     "extensions": {
       ".tsx": 1,
       ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/shared/ui/primitives-parts",
+    "fileCount": 14,
+    "bytes": 35619,
+    "lines": 1023,
+    "roles": {
+      "other": 14
+    },
+    "extensions": {
+      ".tsx": 11,
+      ".ts": 3
     }
   },
   {

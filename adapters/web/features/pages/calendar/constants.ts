@@ -1,0 +1,4 @@
+export const AGENDA_PIXELS_PER_MINUTE = 1.15
+export const DAY_COLUMN_MIN_WIDTH = 180
+export const DRAG_THRESHOLD_PX = 4
+export const SNAP_THRESHOLD_MINUTES = 14
