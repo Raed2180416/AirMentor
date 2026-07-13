@@ -9,11 +9,12 @@
  */
 
 import fastify, { type FastifyRequest } from 'fastify'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import {
   academicTerms,
+  facultyOfferingOwnerships,
   offeringAssessmentSchemes,
   sectionOfferings,
   simulationRuns,
@@ -183,12 +184,18 @@ async function getProofOfferingId(db: Awaited<ReturnType<typeof createTestApp>>[
   const sem6Term = terms.sort((a, b) => b.semesterNumber - a.semesterNumber)[0]
   if (!sem6Term) throw new Error(`No term found for batch ${activeRun.batchId}`)
 
+  // Return an offering owned by devika.shetty (mnc_t1) so GAP-2 ownership checks pass.
   const [offering] = await db
     .select({ offeringId: sectionOfferings.offeringId })
     .from(sectionOfferings)
-    .where(eq(sectionOfferings.termId, sem6Term.termId))
+    .innerJoin(facultyOfferingOwnerships, eq(sectionOfferings.offeringId, facultyOfferingOwnerships.offeringId))
+    .where(and(
+      eq(sectionOfferings.termId, sem6Term.termId),
+      eq(facultyOfferingOwnerships.facultyId, 'mnc_t1'),
+      eq(facultyOfferingOwnerships.status, 'active'),
+    ))
 
-  if (!offering) throw new Error(`No offering found for term ${sem6Term.termId} (sem ${sem6Term.semesterNumber})`)
+  if (!offering) throw new Error(`No offering found for term ${sem6Term.termId} (sem ${sem6Term.semesterNumber}) owned by devika.shetty`)
   return offering.offeringId
 }
 

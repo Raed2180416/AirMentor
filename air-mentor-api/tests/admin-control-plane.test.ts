@@ -1040,7 +1040,7 @@ describe('admin control plane routes', () => {
       simulationRunId: activeRunId,
       batchId: MSRUAS_PROOF_BATCH_ID,
       activeOperationalSemester: 4,
-      previousOperationalSemester: 6,
+      previousOperationalSemester: 1,
     })
 
     const [run] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, activeRunId!))

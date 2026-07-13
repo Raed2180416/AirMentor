@@ -591,7 +591,81 @@ export async function buildFacultyProofView(db: AppDb, input: {
       ...input,
       simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
     }, deps)
-    return checkpointView
+    const queuedStudentIds = new Set(checkpointView.monitoringQueue.map(item => item.studentId))
+    const activeMenteeStudentIds = new Set(
+      mentorRows
+        .filter(row => row.facultyId === facultyId && row.effectiveTo === null)
+        .map(row => row.studentId),
+    )
+    const observedByStudentInScope = new Map(
+      observedRows
+        .filter(row =>
+          (selectedActiveRunId ? row.simulationRunId === selectedActiveRunId : activeRunIds.has(row.simulationRunId))
+          && row.semesterNumber === selectedCurrentSemester,
+        )
+        .map(row => [row.studentId, row]),
+    )
+    const syntheticMenteeItems: FacultyProofViewResult['monitoringQueue'] = []
+    for (const studentId of activeMenteeStudentIds) {
+      if (queuedStudentIds.has(studentId)) continue
+      const observedRow = observedByStudentInScope.get(studentId)
+      if (!observedRow) continue
+      const payload = parseObservedStateRow(observedRow)
+      const offeringId = typeof payload.offeringId === 'string' ? payload.offeringId : null
+      const offering = offeringId ? offeringRows.find(item => item.offeringId === offeringId) : null
+      if (!offering) continue
+      const course = courseRows.find(item => item.courseId === offering.courseId)
+      const term = termRows.find(item => item.termId === offering.termId)
+      const batch = term?.batchId ? batchRows.find(item => item.batchId === term.batchId) : null
+      const branch = batch ? branchRows.find(item => item.branchId === batch.branchId) : null
+      const student = studentRows.find(item => item.studentId === studentId)
+      syntheticMenteeItems.push({
+        riskAssessmentId: `mentee:${operationalCheckpointSummary.simulationStageCheckpointId}:${studentId}:${course?.courseCode ?? 'NA'}`,
+        simulationRunId: selectedActiveRunId ?? '',
+        batchId: batch?.batchId ?? null,
+        batchLabel: batch?.batchLabel ?? null,
+        branchName: branch?.name ?? null,
+        studentId,
+        studentName: student?.name ?? studentId,
+        usn: student?.usn ?? '',
+        offeringId: offeringId ?? `${operationalCheckpointSummary.simulationStageCheckpointId}:${course?.courseCode ?? 'NA'}`,
+        courseCode: course?.courseCode ?? 'NA',
+        courseTitle: course?.title ?? 'Untitled course',
+        sectionCode: offering?.sectionCode ?? null,
+        riskBand: 'Low',
+        riskProbScaled: 0,
+        riskChangeFromPreviousCheckpointScaled: 0,
+        counterfactualLiftScaled: 0,
+        recommendedAction: 'Continue routine monitoring on the current evidence window.',
+        drivers: [],
+        dueAt: null,
+        queueState: 'Open',
+        reassessmentStatus: 'Not Started',
+        decisionType: 'monitoring',
+        decisionNote: null,
+        observedEvidence: {
+          attendancePct: 0,
+          tt1Pct: null,
+          tt2Pct: null,
+          quizPct: null,
+          assignmentPct: null,
+          seePct: null,
+          cgpa: 0,
+          backlogCount: 0,
+          weakCoCount: 0,
+          weakQuestionCount: 0,
+          coEvidenceMode: null,
+          interventionRecoveryStatus: null,
+        },
+        override: null,
+        acknowledgement: null,
+        resolution: null,
+      })
+    }
+    return {
+      ...checkpointView,
+      monitoringQueue: [...checkpointView.monitoringQueue, ...syntheticMenteeItems],
+    }
   }
   const studentsVisibleViaOwnedOfferings = new Set(
     observedRows
@@ -702,6 +776,77 @@ export async function buildFacultyProofView(db: AppDb, input: {
     .filter((item): item is NonNullable<typeof item> => !!item)
     .sort((left, right) => (right.riskProbScaled - left.riskProbScaled) || String(left.dueAt ?? '').localeCompare(String(right.dueAt ?? '')) || left.riskAssessmentId.localeCompare(right.riskAssessmentId))
 
+  const queuedStudentIds = new Set(queueItems.map(item => item.studentId))
+  const observedByStudentInScope = new Map(
+    observedRows
+      .filter(row =>
+        (selectedActiveRunId ? row.simulationRunId === selectedActiveRunId : activeRunIds.has(row.simulationRunId))
+        && row.semesterNumber === selectedCurrentSemester,
+      )
+      .map(row => [row.studentId, row]),
+  )
+  const activeMenteeStudentIds = new Set(
+    mentorRows
+      .filter(row => row.facultyId === facultyId && row.effectiveTo === null)
+      .map(row => row.studentId),
+  )
+  const syntheticMenteeItems: FacultyProofViewResult['monitoringQueue'] = []
+  for (const studentId of activeMenteeStudentIds) {
+    if (queuedStudentIds.has(studentId)) continue
+    const observedRow = observedByStudentInScope.get(studentId)
+    if (!observedRow) continue
+    const payload = parseObservedStateRow(observedRow)
+    const offeringId = typeof payload.offeringId === 'string' ? payload.offeringId : null
+    const offering = offeringId ? offeringRows.find(item => item.offeringId === offeringId) : null
+    const course = offering ? courseById.get(offering.courseId) : null
+    const term = offering ? termById.get(offering.termId) : null
+    const batch = term?.batchId ? batchById.get(term.batchId) : null
+    const branch = batch ? branchById.get(batch.branchId) : null
+    const student = studentById.get(studentId)
+    syntheticMenteeItems.push({
+      riskAssessmentId: `mentee:active:${selectedActiveRunId ?? ''}:${studentId}:${course?.courseCode ?? 'NA'}`,
+      simulationRunId: selectedActiveRunId ?? '',
+      batchId: batch?.batchId ?? null,
+      batchLabel: batch?.batchLabel ?? null,
+      branchName: branch?.name ?? null,
+      studentId,
+      studentName: student?.name ?? studentId,
+      usn: student?.usn ?? '',
+      offeringId: offeringId ?? `active:${selectedActiveRunId ?? ''}:${course?.courseCode ?? 'NA'}`,
+      courseCode: course?.courseCode ?? 'NA',
+      courseTitle: course?.title ?? 'Untitled course',
+      sectionCode: offering?.sectionCode ?? null,
+      riskBand: 'Low',
+      riskProbScaled: 0,
+      riskChangeFromPreviousCheckpointScaled: 0,
+      counterfactualLiftScaled: 0,
+      recommendedAction: 'Continue routine monitoring on the current evidence window.',
+      drivers: [],
+      dueAt: null,
+      queueState: 'Open',
+      reassessmentStatus: 'Not Started',
+      decisionType: 'monitoring',
+      decisionNote: null,
+      observedEvidence: {
+        attendancePct: 0,
+        tt1Pct: null,
+        tt2Pct: null,
+        quizPct: null,
+        assignmentPct: null,
+        seePct: null,
+        cgpa: 0,
+        backlogCount: 0,
+        weakCoCount: 0,
+        weakQuestionCount: 0,
+        coEvidenceMode: null,
+        interventionRecoveryStatus: null,
+      },
+      override: null,
+      acknowledgement: null,
+      resolution: null,
+    })
+  }
+
   const activeElectiveVisible = selectedCurrentSemester >= 6
     && proofStageAllowsElectiveFit(selectedActiveRun?.activeStageKey)
   const electiveFits = activeElectiveVisible
@@ -749,7 +894,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
     activeRunContexts,
     activeRunCheckpoints,
     selectedCheckpoint: null,
-    monitoringQueue: queueItems,
+    monitoringQueue: [...queueItems, ...syntheticMenteeItems],
     electiveFits: electiveFits.slice(0, 12),
   }
 }

@@ -53,6 +53,8 @@ describe('Admin Onboarding E2E Flow', () => {
         departmentId: department.departmentId,
         code: 'SWE_BTECH',
         name: 'Software Engineering (B.Tech)',
+        programLevel: 'B.Tech',
+        semesterCount: 8,
         status: 'active',
       },
     })

@@ -91,41 +91,25 @@ describe('Admin Onboarding Integration', () => {
     const readiness = await request('GET', `/api/admin/batches/${batchId}/setup-readiness`)
     expect(readiness).toBeTruthy()
 
-    // 7. Provision
-    await request('POST', `/api/admin/batches/${batchId}/provision`, {
-      termId,
-      sectionLabels: ['A'],
-      mode: 'live-empty',
-      createStudents: false,
-      createMentors: false
+    // 7. Provision is retired; the API now expects users to start from the canonical demo workspace.
+    const provisionRes = await current!.app.inject({
+      method: 'POST',
+      url: `/api/admin/batches/${batchId}/provision`,
+      headers: { cookie, origin: TEST_ORIGIN },
+      payload: {
+        termId,
+        sectionLabels: ['A'],
+        mode: 'live-empty',
+        createStudents: false,
+        createMentors: false,
+      },
+    })
+    expect(provisionRes.statusCode).toBe(400)
+    expect(provisionRes.json()).toMatchObject({
+      error: 'BAD_REQUEST',
+      message: 'Batch provisioning is retired. Start the canonical demo simulation from the System Admin Proof Dashboard.',
     })
 
-    const offerings = await request('GET', `/api/admin/offerings?batchId=${batchId}&termId=${termId}`)
-    const targetOffering = offerings.items.find((o: any) => o.courseCode === 'CS101')
-    if (targetOffering) {
-      await request('POST', '/api/admin/offering-ownership', { offeringId: targetOffering.offeringId, facultyId: facProfile.facultyId, status: 'active' })
-    }
-
-    // 8. Start Proof Run
-    const versionId = configRes.curriculumImportVersionId
-    if (versionId) {
-      // It might need validation/approval if the import was dirty
-      try {
-        await request('POST', `/api/admin/proof-imports/${versionId}/validate`, {})
-        await request('POST', `/api/admin/proof-imports/${versionId}/approve`, {})
-      } catch (e) {
-        // Ignored if already valid/approved
-      }
-      
-      const runRes = await request('POST', `/api/admin/batches/${batchId}/proof-runs`, {
-        curriculumImportVersionId: versionId,
-        runLabel: 'Test Run',
-        activate: true
-      })
-      
-      expect(runRes.simulationRunId).toBeTruthy()
-    }
-    
     // Check faculty login scopes
     // We can't log in without setting a password token, but we assigned the roles, so we can consider it verified.
   })

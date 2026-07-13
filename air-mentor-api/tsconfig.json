@@ -3,8 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "..",
     "baseUrl": "..",
     "paths": {
       "@kernel/*": ["./kernel/*"],
@@ -15,11 +14,15 @@
       "@universities/*": ["./universities/*"]
     },
     "strict": true,
+    "noEmit": true,
     "noEmitOnError": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "../kernel/**/*.ts", "../adapters/**/*.ts", "../universities/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts"
+  ]
 }

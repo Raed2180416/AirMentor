@@ -37,20 +37,25 @@ describe('GET /api/admin/batches/:batchId/curriculum-graph', () => {
     expect(body.error).toBe('NOT_FOUND')
   })
 
-  it('returns NO_IMPORT for batch without curriculum import', async () => {
+  it('auto-generates a graph from curriculum courses for batch without formal import', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'sysadmin', 'admin1234')
 
-    // batch_branch_cse_btech_2025 exists in seed but has no curriculum import
+    // batch_branch_cse_btech_2025 exists in seed but has no formal curriculum import.
+    // The API now falls back to auto-generating nodes from the batch's curriculum courses.
     const response = await current.app.inject({
       method: 'GET',
       url: '/api/admin/batches/batch_branch_cse_btech_2025/curriculum-graph',
       headers: { cookie: login.cookie },
     })
 
-    expect(response.statusCode).toBe(404)
+    expect(response.statusCode).toBe(200)
     const body = response.json()
-    expect(body.error).toBe('NO_IMPORT')
+    expect(body.batchId).toBe('batch_branch_cse_btech_2025')
+    expect(body.draftStatus).toBe('none')
+    expect(body.nodes).toBeInstanceOf(Array)
+    expect(body.nodes.length).toBeGreaterThan(0)
+    expect(body.edges).toBeInstanceOf(Array)
   })
 
   it('returns graph bundle for seeded MNC batch (no draft yet)', async () => {

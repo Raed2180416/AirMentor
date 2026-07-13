@@ -167,6 +167,16 @@ function addDays(isoString: string, days: number) {
   return date.toISOString()
 }
 
+function classBlocksEqual(
+  left: Array<Record<string, unknown>>,
+  right: Array<Record<string, unknown>>,
+) {
+  if (left.length !== right.length) return false
+  const leftSorted = [...left].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+  const rightSorted = [...right].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+  return JSON.stringify(leftSorted) === JSON.stringify(rightSorted)
+}
+
 async function getRuntimeSlice<T>(context: RouteContext, stateKey: string, fallback: T) {
   const [row] = await context.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, stateKey))
   return row ? parseJson(row.payloadJson, fallback) : fallback
@@ -755,6 +765,16 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
         }),
     }
 
+    const nextDirectEditWindowEndsAt = nextWorkspace.publishedAt ? addDays(nextWorkspace.publishedAt, 14) : null
+    const classEditingLocked = !!nextDirectEditWindowEndsAt && new Date(nextDirectEditWindowEndsAt).getTime() < new Date(context.now()).getTime()
+    if (classEditingLocked) {
+      const currentBlocks = currentTemplate?.classBlocks ?? []
+      const nextBlocks = body.template?.classBlocks ?? []
+      if (!classBlocksEqual(currentBlocks, nextBlocks)) {
+        throw forbidden('Class blocks cannot be edited after the direct-edit window closes')
+      }
+    }
+
     await Promise.all([
       saveFacultyCalendarTemplateProjection(context, params.facultyId, body.template),
       saveFacultyCalendarAdminWorkspaceProjection(context, params.facultyId, nextWorkspace),
@@ -775,18 +795,17 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
         workspace: nextWorkspace,
       },
       metadata: {
-        directEditWindowEndsAt: nextWorkspace.publishedAt ? addDays(nextWorkspace.publishedAt, 14) : null,
-        classEditingLocked: false,
+        directEditWindowEndsAt: nextDirectEditWindowEndsAt,
+        classEditingLocked,
       },
     })
 
-    const nextDirectEditWindowEndsAt = nextWorkspace.publishedAt ? addDays(nextWorkspace.publishedAt, 14) : null
     return {
       facultyId: params.facultyId,
       template: body.template,
       workspace: nextWorkspace,
       directEditWindowEndsAt: nextDirectEditWindowEndsAt,
-      classEditingLocked: !!nextDirectEditWindowEndsAt && new Date(nextDirectEditWindowEndsAt).getTime() < new Date(context.now()).getTime(),
+      classEditingLocked,
     }
   })
 
@@ -1036,26 +1055,27 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
               branchName: branch?.name ?? null,
             }] as const
           }),
-        ...proofView.monitoringQueue.map(item => {
+        ...proofView.monitoringQueue.flatMap(item => {
           const queueOfferingId = readProofQueueString(item, 'offeringId')
           const queueSectionCode = readProofQueueString(item, 'sectionCode')
           const queueBranchName = readProofQueueString(item, 'branchName')
           const queueCourseCode = readProofQueueString(item, 'courseCode') ?? 'NA'
           const queueCourseTitle = readProofQueueString(item, 'courseTitle') ?? 'Untitled course'
           const offering = queueOfferingId ? (proofOfferingRowById[queueOfferingId] ?? offeringRows.find(row => row.offeringId === queueOfferingId) ?? null) : null
-          const branch = offering ? branchById[offering.branchId] : null
+          if (!offering) return []
+          const branch = branchById[offering.branchId]
           const department = branch ? departmentById[branch.departmentId] : null
-          const ownershipRole = offering ? (activeOwnerships.find(ownership => ownership.offeringId === offering.offeringId)?.ownershipRole ?? 'proof-scope') : 'proof-scope'
-          return [queueOfferingId, {
+          const ownershipRole = activeOwnerships.find(ownership => ownership.offeringId === offering.offeringId)?.ownershipRole ?? 'proof-scope'
+          return [[queueOfferingId, {
             offeringId: queueOfferingId,
             courseCode: queueCourseCode,
             title: queueCourseTitle,
-            yearLabel: offering?.yearLabel ?? (proofSemesterNumber != null ? `Semester ${proofSemesterNumber}` : 'Proof scope'),
-            sectionCode: queueSectionCode ?? offering?.sectionCode ?? 'NA',
+            yearLabel: offering.yearLabel ?? (proofSemesterNumber != null ? `Semester ${proofSemesterNumber}` : 'Proof scope'),
+            sectionCode: queueSectionCode ?? offering.sectionCode ?? 'NA',
             ownershipRole,
             departmentName: department?.name ?? null,
-            branchName: branch?.name ?? queueBranchName ?? null,
-          }] as const
+            branchName: (branch?.name ?? queueBranchName ?? null) as string,
+          }] as const]
         }),
       ].filter((entry): entry is [string, {
         offeringId: string
@@ -1065,7 +1085,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
         sectionCode: string
         ownershipRole: string
         departmentName: string | null
-        branchName: string | null
+        branchName: string
       }] => !!entry[0]),
     ).values()).sort((left, right) => left.courseCode.localeCompare(right.courseCode) || left.sectionCode.localeCompare(right.sectionCode))
     const proofMentorStudentIds = Array.from(new Set(activeMentorAssignments

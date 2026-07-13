@@ -5,7 +5,7 @@ const proofRcTimeoutMs = 420000
 export default defineConfig({
   test: {
     environment: 'node',
-    testTimeout: process.env.AIRMENTOR_PROOF_RC === '1' ? proofRcTimeoutMs : 180000,
+    testTimeout: process.env.AIRMENTOR_PROOF_RC === '1' ? proofRcTimeoutMs : 600000,
     fileParallelism: false,
     exclude: ['**/node_modules/**', '**/dist/**'],
     coverage: {

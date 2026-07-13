@@ -100,7 +100,7 @@ describe('evaluate proof risk model helpers', () => {
     const postSee = summaries.find(item => item.stageKey === 'post-see')
     expect(postSee).toMatchObject({
       runCount: 2,
-      threshold: 0.35,
+      threshold: 0.5,
       meanActionableOpenRate: 0.325,
       p95ActionableOpenRate: 0.35,
       maxActionableOpenRate: 0.35,
@@ -219,14 +219,14 @@ describe('evaluate proof risk model helpers', () => {
 
   it('separates operational high urgency from inactive calibrated high threshold', () => {
     const metrics = summarizeOperationalUrgencyMetrics([
-      { label: 1, prob: 0.66 },
-      { label: 1, prob: 0.7 },
-      { label: 0, prob: 0.63 },
+      { label: 1, prob: 0.60 },
+      { label: 1, prob: 0.58 },
       { label: 0, prob: 0.39 },
+      { label: 0, prob: 0.42 },
     ])
 
-    expect(metrics.operationalThresholds).toEqual({ medium: 0.4, high: 0.65 })
-    expect(metrics.calibratedThresholds).toEqual({ medium: 0.4, high: 0.85 })
+    expect(metrics.operationalThresholds).toEqual({ medium: 0.4, high: 0.55 })
+    expect(metrics.calibratedThresholds).toEqual({ medium: 0.4, high: 0.65 })
     expect(metrics.highActive).toBe(true)
     expect(metrics.calibratedHighActive).toBe(false)
     expect(metrics.highThreshold).toMatchObject({
@@ -240,9 +240,9 @@ describe('evaluate proof risk model helpers', () => {
       recall: 0,
     })
     expect(metrics.localCalibrationAtHigh).toMatchObject({
-      center: 0.65,
+      center: 0.55,
       halfWidth: 0.05,
-      support: 3,
+      support: 2,
     })
   })
 })

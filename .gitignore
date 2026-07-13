@@ -15,6 +15,7 @@ node_modules
 # Build outputs
 dist/
 air-mentor-api/dist/
+*.tsbuildinfo
 
 # Runtime/test outputs
 tmp/

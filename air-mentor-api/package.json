@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:seeded": "tsx scripts/start-seeded-server.ts",
-    "start": "node dist/index.js",
+    "start": "node dist/air-mentor-api/src/index.js",
     "build": "tsc -p tsconfig.build.json",
     "test": "node scripts/run-vitest-suite.mjs",
     "test:proof-rc": "AIRMENTOR_BACKEND_SUITE=proof-rc node scripts/run-vitest-suite.mjs",
