@@ -3,8 +3,8 @@ import { createElement, type ComponentProps } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FacultyProfilePage } from '../src/academic-faculty-profile-page'
-import { PROOF_PLAYBACK_SELECTION_STORAGE_KEY } from '../src/proof-playback'
+import { FacultyProfilePage } from '@web/features/academic-faculty-profile-page'
+import { PROOF_PLAYBACK_SELECTION_STORAGE_KEY } from '@web/simulation/proof-playback'
 
 class MemoryStorage implements Storage {
   private values = new Map<string, string>()

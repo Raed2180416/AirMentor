@@ -107,30 +107,30 @@
 {"file":"air-mentor-api/tests/config.test.ts","role":"unit-test","kind":"it","name":"respects explicit cookie overrides","line":28}
 {"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"GET /api/admin/batches/:batchId/curriculum-graph","line":24}
 {"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"returns 404 for unknown batch","line":25}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"returns NO_IMPORT for batch without curriculum import","line":40}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"returns graph bundle for seeded MNC batch (no draft yet)","line":56}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/draft","line":104}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"creates a draft with nodes and edges","line":105}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"records command in history when command provided","line":146}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/validate","line":185}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"validates existing draft and returns errors/warnings","line":186}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"detects self-referential edges","line":219}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"detects prerequisite cycles","line":255}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/undo","line":292}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"undoes the last command and toggles history isUndone flag","line":293}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/redo","line":351}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"redoes the last undone command","line":352}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/publish","line":407}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"publishes a valid draft, creates new import version, and marks draft published","line":408}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"rejects publish when validation errors exist","line":465}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/suggest","line":510}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"generates suggestions and stores them in DB","line":511}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/suggestions/:suggestionId/approve","line":534}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"approves a suggestion","line":535}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/suggestions/:suggestionId/reject","line":574}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"rejects a suggestion","line":575}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"End-to-end graph builder workflow","line":610}
-{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"full lifecycle: load -> draft -> validate -> undo -> redo -> publish","line":611}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"auto-generates a graph from curriculum courses for batch without formal import","line":40}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"returns graph bundle for seeded MNC batch (no draft yet)","line":61}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/draft","line":109}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"creates a draft with nodes and edges","line":110}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"records command in history when command provided","line":151}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/validate","line":190}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"validates existing draft and returns errors/warnings","line":191}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"detects self-referential edges","line":224}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"detects prerequisite cycles","line":260}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/undo","line":297}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"undoes the last command and toggles history isUndone flag","line":298}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/redo","line":356}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"redoes the last undone command","line":357}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/publish","line":412}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"publishes a valid draft, creates new import version, and marks draft published","line":413}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"rejects publish when validation errors exist","line":470}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/suggest","line":515}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"generates suggestions and stores them in DB","line":516}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/suggestions/:suggestionId/approve","line":539}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"approves a suggestion","line":540}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"POST /api/admin/batches/:batchId/curriculum-graph/suggestions/:suggestionId/reject","line":579}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"rejects a suggestion","line":580}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"describe","name":"End-to-end graph builder workflow","line":615}
+{"file":"air-mentor-api/tests/curriculum-graph-routes.test.ts","role":"unit-test","kind":"it","name":"full lifecycle: load -> draft -> validate -> undo -> redo -> publish","line":616}
 {"file":"air-mentor-api/tests/db-client.test.ts","role":"unit-test","kind":"describe","name":"createPool","line":4}
 {"file":"air-mentor-api/tests/db-client.test.ts","role":"unit-test","kind":"it","name":"registers a pool error listener so idle pg disconnects do not crash the process","line":9}
 {"file":"air-mentor-api/tests/demo-isolation.test.ts","role":"unit-test","kind":"describe","name":"demo workspace isolation","line":37}
@@ -173,21 +173,21 @@
 {"file":"air-mentor-api/tests/evaluate-proof-risk-model.test.ts","role":"unit-test","kind":"it","name":"builds stage-specific hard-route plan with current fallback on empty slices","line":138}
 {"file":"air-mentor-api/tests/evaluate-proof-risk-model.test.ts","role":"unit-test","kind":"it","name":"supports custom evaluation output paths for concurrent runs","line":201}
 {"file":"air-mentor-api/tests/evaluate-proof-risk-model.test.ts","role":"unit-test","kind":"it","name":"separates operational high urgency from inactive calibrated high threshold","line":220}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"describe","name":"GAP-5: bootstrap blocks without active proof run","line":29}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"returns 403 NO_ACTIVE_PROOF_RUN when no active simulation run exists","line":37}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"returns 200 when an active simulation run exists","line":90}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"describe","name":"GAP-1: offering assessment scheme gates stage advancement","line":199}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"stage-eligibility reports blocking reason when no scheme row exists for a proof offering","line":200}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"stage-eligibility does not report scheme blocking reason when scheme is Configured","line":228}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"describe","name":"GAP-2: stage gate prevents locking future-stage evidence","line":287}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"rejects locking tt2 when offering is at pre-tt1 stage (stage=1)","line":288}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"allows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1","line":319}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"describe","name":"GAP-3: HOD clear-lock clears the DB lock column","line":369}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"clears tt1Locked DB column and returns cleared:true","line":370}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"returns cleared:false when lock was already cleared (idempotent)","line":415}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"rejects clear-lock when called by Course Leader active role (not HOD)","line":444}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"describe","name":"GAP-4: archiving a proof run invalidates sandbox faculty sessions","line":479}
-{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"sandbox faculty session is rejected after archive","line":480}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"describe","name":"GAP-5: bootstrap blocks without active proof run","line":30}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"returns 403 NO_ACTIVE_PROOF_RUN when no active simulation run exists","line":38}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"returns 200 when an active simulation run exists","line":91}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"describe","name":"GAP-1: offering assessment scheme gates stage advancement","line":206}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"stage-eligibility reports blocking reason when no scheme row exists for a proof offering","line":207}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"stage-eligibility does not report scheme blocking reason when scheme is Configured","line":235}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"describe","name":"GAP-2: stage gate prevents locking future-stage evidence","line":294}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"rejects locking tt2 when offering is at pre-tt1 stage (stage=1)","line":295}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"allows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1","line":326}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"describe","name":"GAP-3: HOD clear-lock clears the DB lock column","line":376}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"clears tt1Locked DB column and returns cleared:true","line":377}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"returns cleared:false when lock was already cleared (idempotent)","line":422}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"rejects clear-lock when called by Course Leader active role (not HOD)","line":451}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"describe","name":"GAP-4: archiving a proof run invalidates sandbox faculty sessions","line":486}
+{"file":"air-mentor-api/tests/gap-closure-intent.test.ts","role":"unit-test","kind":"it","name":"sandbox faculty session is rejected after archive","line":487}
 {"file":"air-mentor-api/tests/hod-proof-analytics.test.ts","role":"unit-test","kind":"describe","name":"hod proof analytics","line":51}
 {"file":"air-mentor-api/tests/hod-proof-analytics.test.ts","role":"unit-test","kind":"it","name":"serves live in-scope HoD analytics and reconciles with dashboard and faculty profile","line":52}
 {"file":"air-mentor-api/tests/hod-proof-analytics.test.ts","role":"unit-test","kind":"it","name":"keeps a department-scoped HoD in scope even when the active proof batch is on a sibling branch","line":181}

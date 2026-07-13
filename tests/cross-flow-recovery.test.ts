@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createAirMentorRepositories } from '../src/repositories'
-import type { AirMentorApiClientLike } from '../src/api/client'
-import type { SharedTask } from '../src/domain'
+import { createAirMentorRepositories } from '@persistence/repositories/air-mentor-repositories'
+import type { AirMentorApiClientLike } from '@web/shared/api/client'
+import type { SharedTask } from '@kernel/shared/domain'
 
 describe('Cross-Flow Recovery Pass', () => {
   it('P11-C04: Partial failure recovery without phantom success UI (saveTasks)', async () => {

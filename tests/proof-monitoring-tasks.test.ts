@@ -3,7 +3,7 @@ import {
   getProofMonitoringTaskId,
   materializeProofMonitoringTasks,
   type ProofMonitoringQueueItem,
-} from '../src/proof-monitoring-tasks'
+} from '@web/simulation/proof-monitoring-tasks'
 
 function buildQueueItem(overrides: Partial<ProofMonitoringQueueItem> = {}): ProofMonitoringQueueItem {
   return {

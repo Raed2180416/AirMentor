@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { QueueBulkActions, RestoreBanner } from '../src/system-admin-ui'
+import { QueueBulkActions, RestoreBanner } from '@web/features/admin/system-admin-ui'
 import {
   ACCESSIBLE_DANGER_ACCENT,
   ACCESSIBLE_PRIMARY_ACCENT,
@@ -9,7 +9,7 @@ import {
   getAccessibleDangerAccent,
   getAccessiblePrimaryAccent,
   getPrimaryActionButtonStyle,
-} from '../src/ui-primitives'
+} from '@web/shared/ui/primitives'
 
 describe('RestoreBanner', () => {
   it('renders explicit restore messaging and a reset action', () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   collectAdminQueueDismissKeys,
   mergeAdminQueueDismissKeys,
-} from '../src/system-admin-action-queue'
+} from '@web/features/admin/system-admin-action-queue'
 
 describe('system-admin action queue helpers', () => {
   it('collects request, reminder, and hidden-item dismiss keys for bulk hide', () => {

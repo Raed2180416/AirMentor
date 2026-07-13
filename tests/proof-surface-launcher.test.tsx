@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ProofSurfaceLauncher } from '../src/proof-surface-shell'
+import { ProofSurfaceLauncher } from '@web/simulation/proof-surface-shell'
 
 afterEach(() => {
   cleanup()

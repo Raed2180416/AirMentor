@@ -2,11 +2,11 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ApiAcademicFacultyProfile } from '../src/api/types'
-import type { Mentee, Offering, Student, StudentHistoryRecord } from '../src/data'
-import type { SharedTask } from '../src/domain'
-import { CLDashboard, MenteeDetailPage, MentorView, QueueHistoryPage } from '../src/academic-route-pages'
-import { AppSelectorsContext, createAppSelectors } from '../src/selectors'
+import type { ApiAcademicFacultyProfile } from '@web/shared/api/types'
+import type { Mentee, Offering, Student, StudentHistoryRecord } from '@web/simulation/fixtures'
+import type { SharedTask } from '@kernel/shared/domain'
+import { CLDashboard, MenteeDetailPage, MentorView, QueueHistoryPage } from '@web/features/academic-route-pages'
+import { AppSelectorsContext, createAppSelectors } from '@web/shared/state/selectors'
 
 function getNativeButton(name: string | RegExp, index = 0) {
   return screen.getAllByRole('button', { name }).filter(element => element.tagName === 'BUTTON')[index]

@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SystemAdminSessionBoundary } from '../src/system-admin-session-shell'
+import { SystemAdminSessionBoundary } from '@web/features/admin/system-admin-session-shell'
 
 afterEach(() => {
   cleanup()

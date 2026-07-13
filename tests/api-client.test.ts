@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AirMentorApiClient, AirMentorApiError } from '../src/api/client'
+import { AirMentorApiClient, AirMentorApiError } from '@web/shared/api/client'
 
 describe('AirMentorApiClient', () => {
   it('binds the default global fetch to the window/global scope', async () => {

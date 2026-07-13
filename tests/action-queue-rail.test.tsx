@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionQueueRail,
   type ActionQueueHiddenItem,
-} from '../src/admin/action-queue-rail'
+} from '@web/features/admin/action-queue-rail'
 
 afterEach(() => {
   cleanup()

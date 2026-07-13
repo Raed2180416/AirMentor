@@ -18,7 +18,7 @@ import {
   listFacultyAssignments,
   searchLiveAdminWorkspace,
   type LiveAdminDataset,
-} from '../src/system-admin-live-data'
+} from '@web/features/admin/system-admin-live-data'
 
 const dataset: LiveAdminDataset = {
   institution: {

@@ -1,9 +1,9 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import type { ApiAdminRequestDetail, ApiAdminRequestSummary } from '../src/api/types'
-import { T } from '../src/data'
-import { SystemAdminRequestWorkspace } from '../src/system-admin-request-workspace'
+import type { ApiAdminRequestDetail, ApiAdminRequestSummary } from '@web/shared/api/types'
+import { T } from '@web/simulation/fixtures'
+import { SystemAdminRequestWorkspace } from '@web/features/admin/system-admin-request-workspace'
 
 function makeRequest(status: ApiAdminRequestSummary['status']): ApiAdminRequestSummary {
   return {

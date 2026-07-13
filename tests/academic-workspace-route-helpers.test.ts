@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { Mentee } from '../src/data'
-import type { FacultyAccount } from '../src/domain'
-import type { ApiAcademicFacultyProfile } from '../src/api/types'
-import { getMenteeScopeIds, resolveAssignedMentees } from '../src/academic-workspace-route-helpers'
+import type { Mentee } from '@web/simulation/fixtures'
+import type { FacultyAccount } from '@kernel/shared/domain'
+import type { ApiAcademicFacultyProfile } from '@web/shared/api/types'
+import { getMenteeScopeIds, resolveAssignedMentees } from '@web/features/academic-workspace-route-helpers'
 
 const mentees: Mentee[] = [
   {

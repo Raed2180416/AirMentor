@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from 'vitest'
-import { buildCurriculumFeaturePayload, readSubmittedField, validateCurriculumFeaturePrerequisites } from '../src/system-admin-live-app'
+import { buildCurriculumFeaturePayload, readSubmittedField, validateCurriculumFeaturePrerequisites } from '@web/features/admin/system-admin-live-app'
 
 describe('system-admin live hierarchy form submission', () => {
   it('reads the current DOM field value instead of a stale fallback', () => {

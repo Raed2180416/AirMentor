@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { HodView } from '../src/pages/hod-pages'
+import { HodView } from '@web/features/pages/hod-pages'
 
 describe('HodView', () => {
   it('renders live proof provenance instead of the old placeholder copy', () => {

@@ -4,7 +4,7 @@ import {
   clearActiveDemoWorkspacePointer,
   readActiveDemoWorkspacePointer,
   writeActiveDemoWorkspacePointer,
-} from '../src/demo-workspace-pointer'
+} from '@web/simulation/demo-workspace-pointer'
 
 class MemoryStorage implements Storage {
   private values = new Map<string, string>()

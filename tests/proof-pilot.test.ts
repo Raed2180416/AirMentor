@@ -7,8 +7,8 @@ import {
   resolveProofDashboardBatchId,
   routeTargetsCanonicalProofHierarchy,
   shouldResolveCanonicalProofRoute,
-} from '../src/proof-pilot'
-import type { LiveAdminDataset, LiveAdminRoute } from '../src/system-admin-live-data'
+} from '@web/simulation/proof-pilot'
+import type { LiveAdminDataset, LiveAdminRoute } from '@web/features/admin/system-admin-live-data'
 
 const dataset: Pick<LiveAdminDataset, 'batches'> = {
   batches: [

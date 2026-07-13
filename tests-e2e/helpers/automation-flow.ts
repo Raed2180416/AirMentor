@@ -6,7 +6,7 @@
  */
 import type { Page } from '@playwright/test'
 import { apiPath } from './api-url'
-import { csrfHeaders, readJson } from './proof-run-api'
+import { csrfHeaders, readJson } from '@web/simulation/proof-'
 
 // ─── Types ───────────────────────────────────────────────────────
 

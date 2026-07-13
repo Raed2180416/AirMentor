@@ -8,8 +8,8 @@ import {
   matchesFacultyScope,
   matchesOfferingScope,
   matchesStudentScope,
-} from '../src/system-admin-overview-helpers'
-import type { LiveAdminDataset } from '../src/system-admin-live-data'
+} from '@web/features/admin/system-admin-overview-helpers'
+import type { LiveAdminDataset } from '@web/features/admin/system-admin-live-data'
 
 const dataset: LiveAdminDataset = {
   institution: {

@@ -1,17 +1,17 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ApiAdminCalendarMarker } from '../src/api/types'
-import type { Offering } from '../src/data'
+import type { ApiAdminCalendarMarker } from '@web/shared/api/types'
+import type { Offering } from '@web/simulation/fixtures'
 import type {
   AcademicMeeting,
   FacultyAccount,
   FacultyTimetableTemplate,
   SharedTask,
   TaskCalendarPlacement,
-} from '../src/domain'
-import { formatMonthLabel, formatShortDate } from '../src/calendar-utils'
-import { CalendarTimetablePage } from '../src/pages/calendar-pages'
+} from '@kernel/shared/domain'
+import { formatMonthLabel, formatShortDate } from '@web/shared/state/calendar-utils'
+import { CalendarTimetablePage } from '@web/features/pages/calendar-pages'
 
 afterEach(() => {
   vi.useRealTimers()

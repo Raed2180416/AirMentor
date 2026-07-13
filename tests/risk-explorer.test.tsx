@@ -1,7 +1,7 @@
 import { createElement, type ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { RiskExplorerPage } from '../src/pages/risk-explorer'
+import { RiskExplorerPage } from '@web/features/pages/risk-explorer'
 
 const completeFeatureCompleteness = {
   graphAvailable: true,

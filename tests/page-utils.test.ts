@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getEntryAccessState, inferKindFromPendingAction, isEntryKindApplicableForStage } from '../src/page-utils'
+import { getEntryAccessState, inferKindFromPendingAction, isEntryKindApplicableForStage } from '@web/shared/state/page-utils'
 
 describe('page utils', () => {
   it('maps pending actions to deterministic entry kinds', () => {

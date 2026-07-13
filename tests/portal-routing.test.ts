@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { ACTIVE_DEMO_WORKSPACE_POINTER_STORAGE_KEY } from '../src/demo-workspace-pointer'
-import { parseAdminRoute } from '../src/admin/live-app-model'
-import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, navigateToPortal, parsePortalRoute, resolvePortalRoute } from '../src/portal-routing'
+import { ACTIVE_DEMO_WORKSPACE_POINTER_STORAGE_KEY } from '@web/simulation/demo-workspace-pointer'
+import { parseAdminRoute } from '@web/features/admin/live-app-model'
+import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, navigateToPortal, parsePortalRoute, resolvePortalRoute } from '@web/app/portal-routing'
 
 describe('portal routing', () => {
   it('parses supported hash routes', () => {

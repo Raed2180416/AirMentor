@@ -35,5 +35,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": false
   },
-  "include": ["src", "kernel", "adapters", "universities"]
+  "include": ["kernel", "adapters", "universities"]
 }

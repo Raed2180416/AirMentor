@@ -7,7 +7,7 @@ import {
   NotificationCountBadge,
   getPrimaryActionButtonStyle,
   getSegmentedButtonStyle,
-} from '../src/ui-primitives'
+} from '@web/shared/ui/primitives'
 
 function hexToRgb(color: string) {
   const normalized = color.length === 4

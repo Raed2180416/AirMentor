@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { emitClientOperationalEvent, normalizeClientTelemetryError, resolveClientTelemetrySinkUrl } from '../src/telemetry'
+import { emitClientOperationalEvent, normalizeClientTelemetryError, resolveClientTelemetrySinkUrl } from '@web/shared/state/telemetry'
 
 describe('client telemetry', () => {
   it('emits structured JSON lines when explicitly enabled', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collectFrontendStartupDiagnostics } from '../src/startup-diagnostics'
+import { collectFrontendStartupDiagnostics } from '@web/shared/state/startup-diagnostics'
 
 describe('collectFrontendStartupDiagnostics', () => {
   it('fails when the API base URL is missing', () => {

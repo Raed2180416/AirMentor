@@ -5,7 +5,7 @@ import {
   readProofPlaybackSelection,
   readSharedProofPlaybackSelection,
   writeProofPlaybackSelection,
-} from '../src/proof-playback'
+} from '@web/simulation/proof-playback'
 
 class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
   private readonly data = new Map<string, string>()

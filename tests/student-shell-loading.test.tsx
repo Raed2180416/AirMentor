@@ -2,8 +2,8 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ApiStudentAgentCard } from '../src/api/types'
-import { StudentShellPage } from '../src/pages/student-shell'
+import type { ApiStudentAgentCard } from '@web/shared/api/types'
+import { StudentShellPage } from '@web/features/pages/student-shell'
 
 afterEach(() => {
   cleanup()

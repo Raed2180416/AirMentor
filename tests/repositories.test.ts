@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createLocalAirMentorRepositories } from '../src/repositories'
-import { FACULTY, OFFERINGS } from '../src/data'
-import type { CalendarAuditEvent, SharedTask, TaskCalendarPlacement } from '../src/domain'
+import { createLocalAirMentorRepositories } from '@persistence/repositories/air-mentor-repositories'
+import { FACULTY, OFFERINGS } from '@web/simulation/fixtures'
+import type { CalendarAuditEvent, SharedTask, TaskCalendarPlacement } from '@kernel/shared/domain'
 
 class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
   private readonly data = new Map<string, string>()

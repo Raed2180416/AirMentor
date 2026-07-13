@@ -12,8 +12,8 @@ import {
   upsertBatchRecord,
   upsertBranchRecord,
   upsertDepartmentRecord,
-} from '../src/system-admin-live-app'
-import type { LiveAdminDataset } from '../src/system-admin-live-data'
+} from '@web/features/admin/system-admin-live-app'
+import type { LiveAdminDataset } from '@web/features/admin/system-admin-live-data'
 
 function makeDataset(): LiveAdminDataset {
   return {

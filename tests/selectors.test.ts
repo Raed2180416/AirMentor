@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { getStudents, OFFERINGS } from '../src/data'
-import { getNextScheduledDate } from '../src/domain'
+import { getStudents, OFFERINGS } from '@web/simulation/fixtures'
+import { getNextScheduledDate } from '@kernel/shared/domain'
 import {
   addBlueprintPart,
   addBlueprintQuestion,
@@ -13,7 +13,7 @@ import {
   removeBlueprintPart,
   removeBlueprintQuestion,
   seedTermTestLeafScores,
-} from '../src/selectors'
+} from '@web/shared/state/selectors'
 
 const cs401a = OFFERINGS.find(offering => offering.code === 'CS401' && offering.section === 'A') ?? OFFERINGS[0]
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canDismissCurrentOccurrence, getNextScheduledDate, isTaskActiveForQueue, toDueLabel, type SharedTask } from '../src/domain'
+import { canDismissCurrentOccurrence, getNextScheduledDate, isTaskActiveForQueue, toDueLabel, type SharedTask } from '@kernel/shared/domain'
 
 function buildTask(overrides: Partial<SharedTask> = {}): SharedTask {
   return {

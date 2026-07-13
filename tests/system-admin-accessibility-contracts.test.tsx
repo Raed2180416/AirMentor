@@ -8,12 +8,12 @@ import {
   buildAdminActiveScopeChain,
   buildAdminSectionScopeId,
   getAdminWorkspaceSnapshotKey,
-} from '../src/system-admin-live-app'
+} from '@web/features/admin/system-admin-live-app'
 import {
   describeGovernanceRollbackMessage,
   describeGovernanceResolutionMessage,
   SystemAdminHierarchyWorkspaceTabs,
-} from '../src/system-admin-faculties-workspace'
+} from '@web/features/admin/system-admin-faculties-workspace'
 
 const institution = {
   institutionId: 'inst_1',

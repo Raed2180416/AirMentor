@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { FACULTY, OFFERINGS } from '../src/data'
-import type { SharedTask } from '../src/domain'
+import { FACULTY, OFFERINGS } from '@web/simulation/fixtures'
+import type { SharedTask } from '@kernel/shared/domain'
 import {
   assignAgendaLanes,
   DEFAULT_TIMETABLE_SLOTS,
@@ -15,7 +15,7 @@ import {
   resolveTimedHoverRange,
   seedFacultyTimetableTemplate,
   startOfWeekISO,
-} from '../src/calendar-utils'
+} from '@web/shared/state/calendar-utils'
 
 const faculty = (() => {
   const resolved = FACULTY.find(item => item.facultyId === 't1') ?? FACULTY[0]

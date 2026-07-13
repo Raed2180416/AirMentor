@@ -4,8 +4,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement } from 'react'
 import { Calendar, History, Users } from 'lucide-react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { FacultyAccount } from '../src/domain'
-import { AcademicWorkspaceSidebar } from '../src/academic-workspace-sidebar'
+import type { FacultyAccount } from '@kernel/shared/domain'
+import { AcademicWorkspaceSidebar } from '@web/features/academic-workspace-sidebar'
 
 const currentTeacher: FacultyAccount = {
   facultyId: 't1',

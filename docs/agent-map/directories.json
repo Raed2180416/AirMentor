@@ -2,8 +2,8 @@
   {
     "path": ".",
     "fileCount": 25,
-    "bytes": 342538,
-    "lines": 9379,
+    "bytes": 343665,
+    "lines": 9405,
     "roles": {
       "other": 14,
       "agent-config": 1,
@@ -23,8 +23,8 @@
   {
     "path": ".absolute-human",
     "fileCount": 1,
-    "bytes": 3684,
-    "lines": 114,
+    "bytes": 4191,
+    "lines": 121,
     "roles": {
       "other": 1
     },
@@ -181,10 +181,185 @@
     }
   },
   {
+    "path": "adapters/persistence/repositories",
+    "fileCount": 1,
+    "bytes": 39433,
+    "lines": 938,
+    "roles": {
+      "other": 1
+    },
+    "extensions": {
+      ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/app",
+    "fileCount": 14,
+    "bytes": 243525,
+    "lines": 5266,
+    "roles": {
+      "other": 14
+    },
+    "extensions": {
+      ".tsx": 8,
+      ".css": 2,
+      ".ts": 4
+    }
+  },
+  {
+    "path": "adapters/web/features",
+    "fileCount": 10,
+    "bytes": 207322,
+    "lines": 3912,
+    "roles": {
+      "other": 10
+    },
+    "extensions": {
+      ".tsx": 9,
+      ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/features/academic",
+    "fileCount": 1,
+    "bytes": 3760,
+    "lines": 97,
+    "roles": {
+      "other": 1
+    },
+    "extensions": {
+      ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/features/admin",
+    "fileCount": 29,
+    "bytes": 787769,
+    "lines": 16192,
+    "roles": {
+      "other": 29
+    },
+    "extensions": {
+      ".tsx": 15,
+      ".ts": 14
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/sections",
+    "fileCount": 8,
+    "bytes": 135940,
+    "lines": 2040,
+    "roles": {
+      "other": 8
+    },
+    "extensions": {
+      ".ts": 1,
+      ".tsx": 7
+    }
+  },
+  {
+    "path": "adapters/web/features/curriculum",
+    "fileCount": 2,
+    "bytes": 32934,
+    "lines": 744,
+    "roles": {
+      "other": 2
+    },
+    "extensions": {
+      ".tsx": 2
+    }
+  },
+  {
+    "path": "adapters/web/features/pages",
+    "fileCount": 6,
+    "bytes": 393962,
+    "lines": 7147,
+    "roles": {
+      "other": 6
+    },
+    "extensions": {
+      ".tsx": 6
+    }
+  },
+  {
+    "path": "adapters/web/shared/api",
+    "fileCount": 4,
+    "bytes": 178134,
+    "lines": 4962,
+    "roles": {
+      "other": 4
+    },
+    "extensions": {
+      ".ts": 4
+    }
+  },
+  {
+    "path": "adapters/web/shared/components",
+    "fileCount": 4,
+    "bytes": 48648,
+    "lines": 1420,
+    "roles": {
+      "other": 4
+    },
+    "extensions": {
+      ".tsx": 4
+    }
+  },
+  {
+    "path": "adapters/web/shared/hooks",
+    "fileCount": 2,
+    "bytes": 4815,
+    "lines": 147,
+    "roles": {
+      "other": 2
+    },
+    "extensions": {
+      ".ts": 2
+    }
+  },
+  {
+    "path": "adapters/web/shared/state",
+    "fileCount": 6,
+    "bytes": 56478,
+    "lines": 1403,
+    "roles": {
+      "other": 6
+    },
+    "extensions": {
+      ".ts": 6
+    }
+  },
+  {
+    "path": "adapters/web/shared/ui",
+    "fileCount": 2,
+    "bytes": 35794,
+    "lines": 1046,
+    "roles": {
+      "other": 2
+    },
+    "extensions": {
+      ".tsx": 1,
+      ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/simulation",
+    "fileCount": 9,
+    "bytes": 93982,
+    "lines": 2328,
+    "roles": {
+      "other": 9
+    },
+    "extensions": {
+      ".tsx": 3,
+      ".ts": 6
+    }
+  },
+  {
     "path": "air-mentor-api",
     "fileCount": 14,
-    "bytes": 158194,
-    "lines": 4723,
+    "bytes": 158193,
+    "lines": 4728,
     "roles": {
       "other": 9,
       "build-config": 5
@@ -315,8 +490,8 @@
   {
     "path": "air-mentor-api/src/lib",
     "fileCount": 82,
-    "bytes": 1595142,
-    "lines": 37899,
+    "bytes": 1596576,
+    "lines": 37890,
     "roles": {
       "backend": 82
     },
@@ -327,8 +502,8 @@
   {
     "path": "air-mentor-api/src/modules",
     "fileCount": 21,
-    "bytes": 834903,
-    "lines": 20092,
+    "bytes": 835603,
+    "lines": 20112,
     "roles": {
       "backend": 21
     },
@@ -351,8 +526,8 @@
   {
     "path": "air-mentor-api/tests",
     "fileCount": 92,
-    "bytes": 1282561,
-    "lines": 31845,
+    "bytes": 1282737,
+    "lines": 31843,
     "roles": {
       "unit-test": 92
     },
@@ -375,7 +550,7 @@
   {
     "path": "air-mentor-api/tests/helpers",
     "fileCount": 1,
-    "bytes": 8080,
+    "bytes": 8134,
     "lines": 247,
     "roles": {
       "unit-test": 1
@@ -506,6 +681,66 @@
     },
     "extensions": {
       ".py": 1
+    }
+  },
+  {
+    "path": "kernel",
+    "fileCount": 1,
+    "bytes": 139,
+    "lines": 5,
+    "roles": {
+      "other": 1
+    },
+    "extensions": {
+      ".ts": 1
+    }
+  },
+  {
+    "path": "kernel/grading",
+    "fileCount": 8,
+    "bytes": 40149,
+    "lines": 1066,
+    "roles": {
+      "other": 8
+    },
+    "extensions": {
+      ".ts": 8
+    }
+  },
+  {
+    "path": "kernel/identity",
+    "fileCount": 4,
+    "bytes": 5753,
+    "lines": 212,
+    "roles": {
+      "other": 4
+    },
+    "extensions": {
+      ".ts": 4
+    }
+  },
+  {
+    "path": "kernel/policy",
+    "fileCount": 3,
+    "bytes": 2135,
+    "lines": 83,
+    "roles": {
+      "other": 3
+    },
+    "extensions": {
+      ".ts": 3
+    }
+  },
+  {
+    "path": "kernel/shared",
+    "fileCount": 4,
+    "bytes": 17734,
+    "lines": 684,
+    "roles": {
+      "other": 4
+    },
+    "extensions": {
+      ".ts": 4
     }
   },
   {
@@ -658,14 +893,14 @@
   },
   {
     "path": "scripts",
-    "fileCount": 108,
-    "bytes": 1019608,
-    "lines": 24024,
+    "fileCount": 111,
+    "bytes": 1041917,
+    "lines": 24444,
     "roles": {
-      "repo-script": 108
+      "repo-script": 111
     },
     "extensions": {
-      ".mjs": 51,
+      ".mjs": 54,
       ".service": 3,
       ".timer": 1,
       ".ts": 10,
@@ -687,110 +922,9 @@
     }
   },
   {
-    "path": "src",
-    "fileCount": 63,
-    "bytes": 1325214,
-    "lines": 28883,
-    "roles": {
-      "frontend": 63
-    },
-    "extensions": {
-      ".tsx": 34,
-      ".ts": 27,
-      ".css": 2
-    }
-  },
-  {
-    "path": "src/admin",
-    "fileCount": 9,
-    "bytes": 83615,
-    "lines": 2129,
-    "roles": {
-      "frontend": 9
-    },
-    "extensions": {
-      ".tsx": 2,
-      ".ts": 7
-    }
-  },
-  {
-    "path": "src/admin/sections",
-    "fileCount": 8,
-    "bytes": 135827,
-    "lines": 2040,
-    "roles": {
-      "frontend": 8
-    },
-    "extensions": {
-      ".ts": 1,
-      ".tsx": 7
-    }
-  },
-  {
-    "path": "src/api",
-    "fileCount": 2,
-    "bytes": 170437,
-    "lines": 4722,
-    "roles": {
-      "frontend": 2
-    },
-    "extensions": {
-      ".ts": 2
-    }
-  },
-  {
-    "path": "src/app",
-    "fileCount": 8,
-    "bytes": 191090,
-    "lines": 3852,
-    "roles": {
-      "frontend": 8
-    },
-    "extensions": {
-      ".tsx": 5,
-      ".ts": 3
-    }
-  },
-  {
-    "path": "src/components",
-    "fileCount": 1,
-    "bytes": 1522,
-    "lines": 54,
-    "roles": {
-      "frontend": 1
-    },
-    "extensions": {
-      ".tsx": 1
-    }
-  },
-  {
-    "path": "src/hooks",
-    "fileCount": 2,
-    "bytes": 4815,
-    "lines": 147,
-    "roles": {
-      "frontend": 2
-    },
-    "extensions": {
-      ".ts": 2
-    }
-  },
-  {
-    "path": "src/pages",
-    "fileCount": 6,
-    "bytes": 393372,
-    "lines": 7147,
-    "roles": {
-      "frontend": 6
-    },
-    "extensions": {
-      ".tsx": 6
-    }
-  },
-  {
     "path": "tests",
     "fileCount": 68,
-    "bytes": 627955,
+    "bytes": 629014,
     "lines": 17898,
     "roles": {
       "unit-test": 68
@@ -840,7 +974,7 @@
   {
     "path": "tests-e2e/helpers",
     "fileCount": 6,
-    "bytes": 48826,
+    "bytes": 48833,
     "lines": 1322,
     "roles": {
       "e2e-test": 6
@@ -883,6 +1017,30 @@
     },
     "extensions": {
       ".ts": 1
+    }
+  },
+  {
+    "path": "universities/iitb",
+    "fileCount": 4,
+    "bytes": 3677,
+    "lines": 121,
+    "roles": {
+      "other": 4
+    },
+    "extensions": {
+      ".ts": 4
+    }
+  },
+  {
+    "path": "universities/msruas",
+    "fileCount": 5,
+    "bytes": 4089,
+    "lines": 132,
+    "roles": {
+      "other": 5
+    },
+    "extensions": {
+      ".ts": 5
     }
   }
 ]

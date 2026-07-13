@@ -1,9 +1,9 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import type { ApiAcademicFacultyProfile } from '../src/api/types'
-import type { FacultyAccount, SharedTask } from '../src/domain'
-import { AcademicWorkspaceRouteSurface } from '../src/academic-workspace-route-surface'
+import type { ApiAcademicFacultyProfile } from '@web/shared/api/types'
+import type { FacultyAccount, SharedTask } from '@kernel/shared/domain'
+import { AcademicWorkspaceRouteSurface } from '@web/features/academic-workspace-route-surface'
 
 const facultyProfile: ApiAcademicFacultyProfile = {
   facultyId: 'mnc_t1',

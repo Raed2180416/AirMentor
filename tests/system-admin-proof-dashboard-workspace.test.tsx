@@ -7,9 +7,9 @@ import type {
   ApiProofDashboard,
   ApiProofRunCheckpointDetail,
   ApiSimulationStageCheckpointSummary,
-} from '../src/api/types'
-import { SystemAdminProofDashboardWorkspace } from '../src/system-admin-proof-dashboard-workspace'
-import { getAccessiblePrimaryAccent } from '../src/ui-primitives'
+} from '@web/shared/api/types'
+import { SystemAdminProofDashboardWorkspace } from '@web/features/admin/system-admin-proof-dashboard-workspace'
+import { getAccessiblePrimaryAccent } from '@web/shared/ui/primitives'
 
 afterEach(() => {
   cleanup()

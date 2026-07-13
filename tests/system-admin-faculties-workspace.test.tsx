@@ -1,14 +1,14 @@
 import { createElement, createRef, type ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { T } from '../src/data'
-import { SystemAdminFacultiesWorkspace } from '../src/system-admin-faculties-workspace'
-import { SystemAdminProofDashboardWorkspace } from '../src/system-admin-proof-dashboard-workspace'
-import { SystemAdminScopedRegistryLaunches } from '../src/system-admin-scoped-registry-launches'
-import type { BatchProvisioningFormState, EntityEditorState, PolicyFormState, StagePolicyFormState } from '../src/system-admin-live-app'
-import type { LiveAdminDataset, LiveAdminRoute } from '../src/system-admin-live-data'
-import type { ApiMentorAssignmentBulkApplyResponse } from '../src/api/types'
-import type { BulkMentorAssignmentFormState } from '../src/system-admin-provisioning-helpers'
+import { T } from '@web/simulation/fixtures'
+import { SystemAdminFacultiesWorkspace } from '@web/features/admin/system-admin-faculties-workspace'
+import { SystemAdminProofDashboardWorkspace } from '@web/features/admin/system-admin-proof-dashboard-workspace'
+import { SystemAdminScopedRegistryLaunches } from '@web/features/admin/system-admin-scoped-registry-launches'
+import type { BatchProvisioningFormState, EntityEditorState, PolicyFormState, StagePolicyFormState } from '@web/features/admin/system-admin-live-app'
+import type { LiveAdminDataset, LiveAdminRoute } from '@web/features/admin/system-admin-live-data'
+import type { ApiMentorAssignmentBulkApplyResponse } from '@web/shared/api/types'
+import type { BulkMentorAssignmentFormState } from '@web/features/admin/system-admin-provisioning-helpers'
 
 const data: LiveAdminDataset = {
   institution: {

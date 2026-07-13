@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveRoleSyncState } from '../src/academic-workspace-route-helpers'
+import { resolveRoleSyncState } from '@web/features/academic-workspace-route-helpers'
 
 describe('academic role sync', () => {
   it('keeps a valid refreshed role on the current page and falls back when the page is no longer allowed', () => {

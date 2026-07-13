@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
-import { ErrorBoundary } from '../src/error-boundary'
+import { ErrorBoundary } from '@web/shared/components/error-boundary'
 
 const BuggyComponent = ({ shouldCrash }: { shouldCrash: boolean }) => {
   if (shouldCrash) {

@@ -7,7 +7,7 @@ import {
   ProofSurfaceLauncher,
   ProofSurfaceTabPanel,
   ProofSurfaceTabs,
-} from '../src/proof-surface-shell'
+} from '@web/simulation/proof-surface-shell'
 
 afterEach(() => {
   cleanup()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getAllAtRiskStudents, getStudents, OFFERINGS } from '../src/data'
+import { getAllAtRiskStudents, getStudents, OFFERINGS } from '@web/simulation/fixtures'
 
 describe('seeded student risk drivers', () => {
   it('never serves Medium or High risk students without an observable driver', () => {

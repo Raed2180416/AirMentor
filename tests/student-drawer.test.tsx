@@ -2,9 +2,9 @@
 import { createElement } from 'react'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { StudentDrawer } from '../src/App'
-import { AppSelectorsContext, createAppSelectors, defaultSchemeForOffering } from '../src/selectors'
-import type { Offering, Student } from '../src/data'
+import { StudentDrawer } from '@web/app/App'
+import { AppSelectorsContext, createAppSelectors, defaultSchemeForOffering } from '@web/shared/state/selectors'
+import type { Offering, Student } from '@web/simulation/fixtures'
 
 afterEach(() => {
   cleanup()

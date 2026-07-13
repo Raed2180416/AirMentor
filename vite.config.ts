@@ -1,5 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { resolve } from 'node:path'
+
+const root = import.meta.dirname ?? process.cwd()
 
 // https://vite.dev/config/
 const repoName = process.env.GITHUB_REPOSITORY?.split('/')[1] ?? ''
@@ -35,13 +38,13 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@kernel': '/kernel',
-      '@adapters': '/adapters',
-      '@web': '/adapters/web',
-      '@http': '/adapters/http',
-      '@persistence': '/adapters/persistence',
-      '@simulation': '/adapters/simulation',
-      '@universities': '/universities',
+      '@kernel': resolve(root, 'kernel'),
+      '@adapters': resolve(root, 'adapters'),
+      '@web': resolve(root, 'adapters/web'),
+      '@http': resolve(root, 'adapters/http'),
+      '@persistence': resolve(root, 'adapters/persistence'),
+      '@simulation': resolve(root, 'adapters/simulation'),
+      '@universities': resolve(root, 'universities'),
     },
   },
   base: pagesBase,
@@ -70,13 +73,13 @@ export default defineConfig({
             return 'icons-vendor'
           }
           if (
-            id.includes('/src/data.ts')
-            || id.includes('/src/domain.ts')
-            || id.includes('/src/selectors.ts')
-            || id.includes('/src/repositories.ts')
-            || id.includes('/src/calendar-utils.ts')
-            || id.includes('/src/page-utils.ts')
-            || id.includes('/src/ui-primitives.tsx')
+            id.includes('/adapters/web/simulation/fixtures.ts')
+            || id.includes('/kernel/shared/domain.ts')
+            || id.includes('/kernel/grading/assessment-weights.ts')
+            || id.includes('/adapters/persistence/repositories/air-mentor-repositories.ts')
+            || id.includes('/adapters/web/shared/state/calendar-utils.ts')
+            || id.includes('/adapters/web/shared/state/page-utils.ts')
+            || id.includes('/adapters/web/shared/ui/primitives.tsx')
           ) {
             return 'app-shared'
           }

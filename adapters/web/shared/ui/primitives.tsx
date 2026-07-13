@@ -1,0 +1,979 @@
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type CSSProperties,
+  type InputHTMLAttributes,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+} from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
+import { T, mono, sora, stageColor } from '@web/simulation/fixtures'
+import type { RiskBand, Stage, ThemeMode } from '@kernel/shared/domain'
+import { isLightTheme } from '@web/shared/ui/theme'
+
+export const UI_EASE = [0.22, 1, 0.36, 1] as const
+export const UI_TRANSITION_FAST = { duration: 0.18, ease: UI_EASE } as const
+export const UI_TRANSITION_MEDIUM = { duration: 0.26, ease: UI_EASE } as const
+export const UI_FONT_SIZES = {
+  micro: 9,
+  eyebrow: 10,
+  meta: 11,
+  body: 12,
+  bodyStrong: 13,
+  title: 16,
+  heading: 18,
+  hero: 28,
+} as const
+export const UI_RADII = {
+  chip: 10,
+  button: 12,
+  field: 14,
+  card: 18,
+  panel: 20,
+  modal: 24,
+  pill: 999,
+} as const
+
+export function getAccessiblePrimaryAccent(tone = T.accent) {
+  return (tone === '#3b82f6' || tone === '#5ea0ff' || tone === '#006DDD' || tone === '#2D8AF0') ? '#1d4ed8' : tone
+}
+
+export function getAccessibleDangerAccent(tone = T.danger) {
+  return tone === '#ef4444' ? '#b91c1c' : tone
+}
+
+export const ACCESSIBLE_PRIMARY_ACCENT = getAccessiblePrimaryAccent()
+export const ACCESSIBLE_DANGER_ACCENT = getAccessibleDangerAccent()
+
+export type SemanticTone = 'accent' | 'success' | 'warning' | 'danger' | 'neutral'
+
+export function getSemanticTone(tone: SemanticTone) {
+  if (tone === 'success') return T.success
+  if (tone === 'warning') return T.warning
+  if (tone === 'danger') return T.danger
+  if (tone === 'neutral') return T.dim
+  return T.accent
+}
+
+type SurfaceRole = 'primary' | 'secondary' | 'field' | 'selected' | 'warning' | 'danger' | 'success' | 'modal'
+
+export function withAlpha(color: string, alpha: string) {
+  if (!color.startsWith('#')) return color
+  if (color.length === 4) {
+    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}${alpha}`
+  }
+  return `${color.slice(0, 7)}${alpha}`
+}
+
+function hexToRgb(color: string) {
+  if (!color.startsWith('#')) return null
+  const normalized = color.length === 4
+    ? `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`
+    : color.slice(0, 7)
+  if (!/^#[0-9a-fA-F]{6}$/.test(normalized)) return null
+  return {
+    r: Number.parseInt(normalized.slice(1, 3), 16),
+    g: Number.parseInt(normalized.slice(3, 5), 16),
+    b: Number.parseInt(normalized.slice(5, 7), 16),
+  }
+}
+
+function rgbToHex({ r, g, b }: { r: number; g: number; b: number }) {
+  const clampChannel = (value: number) => Math.max(0, Math.min(255, Math.round(value)))
+  return `#${clampChannel(r).toString(16).padStart(2, '0')}${clampChannel(g).toString(16).padStart(2, '0')}${clampChannel(b).toString(16).padStart(2, '0')}`
+}
+
+function blendHex(base: string, target: string, weight: number) {
+  const baseRgb = hexToRgb(base)
+  const targetRgb = hexToRgb(target)
+  if (!baseRgb || !targetRgb) return target
+  const normalizedWeight = Math.max(0, Math.min(1, weight))
+  return rgbToHex({
+    r: baseRgb.r + (targetRgb.r - baseRgb.r) * normalizedWeight,
+    g: baseRgb.g + (targetRgb.g - baseRgb.g) * normalizedWeight,
+    b: baseRgb.b + (targetRgb.b - baseRgb.b) * normalizedWeight,
+  })
+}
+
+function relativeLuminance(color: string) {
+  const rgb = hexToRgb(color)
+  if (!rgb) return 0
+  const toLinear = (channel: number) => {
+    const normalized = channel / 255
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4
+  }
+  return (0.2126 * toLinear(rgb.r)) + (0.7152 * toLinear(rgb.g)) + (0.0722 * toLinear(rgb.b))
+}
+
+function contrastRatio(foreground: string, background: string) {
+  const foregroundLuminance = relativeLuminance(foreground)
+  const backgroundLuminance = relativeLuminance(background)
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance)
+  const darker = Math.min(foregroundLuminance, backgroundLuminance)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+function getAccessibleChipPalette(color: string) {
+  const chipSurface = T.surface2
+  const isLightSurface = relativeLuminance(chipSurface) > 0.45
+  const blendTarget = isLightSurface ? '#111827' : '#f8fafc'
+  const backgroundWeight = isLightSurface ? 0.08 : 0.18
+  const borderWeight = isLightSurface ? 0.16 : 0.26
+  const candidateSteps = [0, 0.08, 0.14, 0.2, 0.28, 0.36, 0.44, 0.52, 0.6, 0.68, 0.76, 0.84, 0.92]
+
+  for (const step of candidateSteps) {
+    const tone = step === 0 ? color : blendHex(color, blendTarget, step)
+    const background = blendHex(chipSurface, tone, backgroundWeight)
+    if (contrastRatio(tone, background) >= 4.5) {
+      return {
+        tone,
+        background,
+        border: blendHex(chipSurface, tone, borderWeight),
+      }
+    }
+  }
+
+  const fallbackTone = isLightSurface ? '#1f2937' : '#f8fafc'
+  return {
+    tone: fallbackTone,
+    background: blendHex(chipSurface, fallbackTone, backgroundWeight),
+    border: blendHex(chipSurface, fallbackTone, borderWeight),
+  }
+}
+
+export function getSurfaceStyle(role: SurfaceRole, tone = T.accent): CSSProperties {
+  if (role === 'field') {
+    return {
+      background: T.surface,
+      border: `1px solid ${T.border2}`,
+      boxShadow: `inset 0 1px 0 ${withAlpha(T.surface3, 'f2')}`,
+      borderRadius: UI_RADII.field,
+    }
+  }
+  if (role === 'selected') {
+    return {
+      background: `linear-gradient(180deg, ${withAlpha(tone, '0a')}, ${T.surface})`,
+      border: `1px solid ${withAlpha(tone, '16')}`,
+      boxShadow: `0 0 0 1px ${withAlpha(tone, '06')} inset, 0 8px 18px ${withAlpha(tone, '08')}`,
+      borderRadius: UI_RADII.card,
+    }
+  }
+  if (role === 'warning' || role === 'danger' || role === 'success') {
+    return {
+      background: `linear-gradient(180deg, ${withAlpha(tone, '12')}, ${T.surface})`,
+      border: `1px solid ${withAlpha(tone, '30')}`,
+      boxShadow: `0 18px 40px ${withAlpha(tone, '16')}`,
+      borderRadius: UI_RADII.card,
+    }
+  }
+  if (role === 'secondary') {
+    return {
+      background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`,
+      border: `1px solid ${T.border}`,
+      boxShadow: '0 12px 28px rgba(15, 23, 42, 0.06)',
+      borderRadius: UI_RADII.card,
+    }
+  }
+  if (role === 'modal') {
+    return {
+      background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+      border: `1px solid ${T.border}`,
+      boxShadow: '0 32px 86px rgba(2, 6, 23, 0.32)',
+      borderRadius: UI_RADII.modal,
+    }
+  }
+  return {
+    background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+    border: `1px solid ${T.border}`,
+    boxShadow: '0 12px 30px rgba(15, 23, 42, 0.08)',
+    borderRadius: UI_RADII.card,
+  }
+}
+
+export function getFieldChromeStyle({
+  minHeight = 42,
+  dense = false,
+  tone = 'neutral',
+}: {
+  minHeight?: number
+  dense?: boolean
+  tone?: 'neutral' | 'selected'
+} = {}): CSSProperties {
+  const toneColor = tone === 'selected' ? T.accent : T.border2
+  return {
+    width: '100%',
+    minHeight,
+    ...mono,
+    fontSize: dense ? UI_FONT_SIZES.meta : UI_FONT_SIZES.body,
+    background: T.surface,
+    color: T.text,
+    colorScheme: 'inherit',
+    border: `1px solid ${tone === 'selected' ? withAlpha(T.accent, '55') : toneColor}`,
+    borderRadius: UI_RADII.field,
+    padding: dense ? '8px 10px' : '10px 12px',
+    boxShadow: `inset 0 1px 0 ${withAlpha(T.surface3, 'f2')}`,
+  }
+}
+
+export function getShellBarStyle(themeMode: ThemeMode): CSSProperties {
+  return {
+    position: 'sticky',
+    top: 0,
+    zIndex: 50,
+    display: 'grid',
+    gap: 12,
+    padding: '12px 20px 16px',
+    background: isLightTheme(themeMode) ? 'rgba(247,251,255,0.88)' : 'rgba(9,14,22,0.88)',
+    backdropFilter: 'blur(16px)',
+    borderBottom: `1px solid ${T.border}`,
+    boxShadow: isLightTheme(themeMode) ? '0 12px 28px rgba(15, 23, 42, 0.06)' : '0 16px 34px rgba(2, 6, 23, 0.22)',
+  }
+}
+
+export function getIconButtonStyle({
+  active = false,
+  tone = T.accent,
+  subtle = false,
+  size = 38,
+}: {
+  active?: boolean
+  tone?: string
+  subtle?: boolean
+  size?: number
+} = {}): CSSProperties {
+  return {
+    width: size,
+    height: size,
+    borderRadius: UI_RADII.button,
+    border: `1px solid ${active ? withAlpha(tone, '55') : subtle ? T.border : T.border2}`,
+    background: active
+      ? `linear-gradient(180deg, ${withAlpha(tone, '16')}, ${T.surface})`
+      : subtle
+        ? 'transparent'
+        : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+    color: active ? tone : T.muted,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    boxShadow: active ? `0 12px 28px ${withAlpha(tone, '18')}` : '0 8px 18px rgba(15, 23, 42, 0.05)',
+  }
+}
+
+export function getSegmentedGroupStyle(): CSSProperties {
+  return {
+    display: 'flex',
+    gap: 4,
+    padding: 4,
+    borderRadius: UI_RADII.panel,
+    background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`,
+    border: `1px solid ${T.border}`,
+    boxShadow: `inset 0 1px 0 ${withAlpha(T.surface3, 'f0')}`,
+  }
+}
+
+export function getSegmentedButtonStyle({
+  active,
+  disabled = false,
+  tone = T.accent,
+  compact = false,
+}: {
+  active: boolean
+  disabled?: boolean
+  tone?: string
+  compact?: boolean
+}): CSSProperties {
+  const activeTone = tone === T.accent ? getAccessiblePrimaryAccent(tone) : tone
+  return {
+    ...sora,
+    fontWeight: 700,
+    fontSize: compact ? UI_FONT_SIZES.meta : UI_FONT_SIZES.body,
+    padding: compact ? '7px 12px' : '8px 14px',
+    minHeight: compact ? 34 : 38,
+    borderRadius: UI_RADII.button,
+    border: 'none',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    background: active ? `linear-gradient(180deg, ${activeTone}, ${withAlpha(activeTone, 'd8')})` : 'transparent',
+    color: active ? '#fff' : disabled ? T.dim : T.muted,
+    opacity: disabled ? 0.55 : 1,
+    boxShadow: active ? `0 12px 24px ${withAlpha(activeTone, '26')}` : 'none',
+    whiteSpace: 'nowrap',
+  }
+}
+
+export function BrandMark({ label = 'AM', tone = T.accent, size = 38 }: { label?: string; tone?: string; size?: number }) {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.round(size * 0.3),
+        background: `linear-gradient(160deg, ${tone}, ${withAlpha(tone, 'd8')})`,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#fff',
+        boxShadow: `0 16px 30px ${withAlpha(tone, '2a')}`,
+        ...sora,
+        fontWeight: 800,
+        fontSize: Math.max(12, Math.round(size * 0.34)),
+        flexShrink: 0,
+      }}
+    >
+      {label}
+    </div>
+  )
+}
+
+export function NotificationCountBadge({ count, cap = 99 }: { count: number; cap?: number }) {
+  const background = getAccessibleDangerAccent(T.danger)
+  return (
+    <span
+      data-queue-count-badge="true"
+      style={{
+        position: 'absolute',
+        top: -6,
+        right: -6,
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
+        background,
+        color: '#fff',
+        ...mono,
+        fontSize: UI_FONT_SIZES.eyebrow,
+        fontWeight: 700,
+        lineHeight: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 4px',
+        boxShadow: `0 10px 18px ${withAlpha(background, '24')}`,
+      }}
+    >
+      {Math.min(count, cap)}
+    </span>
+  )
+}
+
+export function getPrimaryActionButtonStyle({
+  disabled = false,
+  fullWidth = false,
+}: {
+  disabled?: boolean
+  fullWidth?: boolean
+} = {}): CSSProperties {
+  const background = getAccessiblePrimaryAccent(T.accent)
+  return {
+    width: fullWidth ? '100%' : undefined,
+    border: 'none',
+    borderRadius: UI_RADII.button,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    background: disabled ? T.surface3 : background,
+    color: disabled ? T.dim : '#fff',
+    padding: '10px 12px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    ...sora,
+    fontWeight: 700,
+    fontSize: UI_FONT_SIZES.body,
+    boxShadow: disabled ? 'none' : `0 14px 28px ${withAlpha(background, '26')}`,
+  }
+}
+
+export function FieldInput(props: InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} style={{ ...getFieldChromeStyle(), ...(props.style ?? {}) }} />
+}
+
+export function FieldSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} style={{ ...getFieldChromeStyle(), ...(props.style ?? {}) }} />
+}
+
+export function FieldTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea {...props} style={{ ...getFieldChromeStyle(), resize: 'vertical', ...(props.style ?? {}) }} />
+}
+
+function getFocusableElements(root: HTMLElement | null) {
+  if (!root) return [] as HTMLElement[]
+  return Array.from(root.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+    .filter(node => !node.hasAttribute('disabled') && node.getAttribute('aria-hidden') !== 'true' && node.dataset.focusGuard !== 'true')
+}
+
+export function ModalWorkspace({
+  eyebrow,
+  title,
+  caption,
+  onClose,
+  footer,
+  children,
+  size = 'md',
+  width,
+  zIndex = 130,
+  bodyStyle,
+}: {
+  eyebrow?: string
+  title: string
+  caption?: string
+  onClose: () => void
+  footer?: ReactNode
+  children: ReactNode
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+  width?: number
+  zIndex?: number
+  bodyStyle?: CSSProperties
+}) {
+  const shouldReduceMotion = useReducedMotion()
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const onCloseRef = useRef(onClose)
+  const [isCompact, setIsCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 860)
+  const focusBoundary = useCallback((boundary: 'first' | 'last') => {
+    const focusables = getFocusableElements(panelRef.current)
+    if (focusables.length === 0) {
+      panelRef.current?.focus()
+      return
+    }
+    const first = closeButtonRef.current && focusables.includes(closeButtonRef.current) ? closeButtonRef.current : focusables[0]
+    const last = focusables[focusables.length - 1]
+    ;(boundary === 'first' ? first : last)?.focus()
+  }, [])
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const onResize = () => setIsCompact(window.innerWidth < 860)
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+    const previousOverflow = document.body.style.overflow
+    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    document.body.style.overflow = 'hidden'
+    const focusTimer = window.setTimeout(() => {
+      focusBoundary('first')
+    }, 0)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusables = getFocusableElements(panelRef.current)
+      if (focusables.length === 0) {
+        event.preventDefault()
+        return
+      }
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      if (!activeElement || !panelRef.current?.contains(activeElement)) {
+        event.preventDefault()
+        focusBoundary(event.shiftKey ? 'last' : 'first')
+        return
+      }
+      if (event.shiftKey && (activeElement === first || activeElement === panelRef.current)) {
+        event.preventDefault()
+        focusBoundary('last')
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault()
+        focusBoundary('first')
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.clearTimeout(focusTimer)
+      document.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = previousOverflow
+      previousActive?.focus?.()
+    }
+  }, [focusBoundary])
+
+  const isFullSize = size === 'full'
+  const sizeWidth = size === 'sm' ? 560 : size === 'lg' ? 880 : size === 'xl' ? 1040 : isFullSize ? 1480 : 720
+  const resolvedWidth = width ?? sizeWidth
+
+  return (
+    <motion.div
+      onClick={onClose}
+      initial={shouldReduceMotion ? false : { opacity: 0 }}
+      animate={shouldReduceMotion ? undefined : { opacity: 1 }}
+      exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+      transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_FAST}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex,
+        background: 'rgba(6, 12, 20, 0.54)',
+        backdropFilter: 'blur(14px)',
+        padding: isCompact ? 0 : isFullSize ? '14px 12px' : '32px 18px',
+        display: 'grid',
+        placeItems: 'center',
+      }}
+    >
+      <motion.div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onClick={event => event.stopPropagation()}
+        initial={shouldReduceMotion ? false : { opacity: 0, y: 28, scale: 0.972 }}
+        animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
+        exit={shouldReduceMotion ? undefined : { opacity: 0, y: 18, scale: 0.985 }}
+        transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_MEDIUM}
+        style={{
+          ...getSurfaceStyle('modal'),
+          width: isCompact ? '100vw' : isFullSize ? `min(calc(100vw - 28px), ${resolvedWidth}px)` : `min(100%, ${resolvedWidth}px)`,
+          maxWidth: isCompact ? '100vw' : isFullSize ? `min(calc(100vw - 28px), ${resolvedWidth}px)` : resolvedWidth,
+          height: isCompact ? '100dvh' : isFullSize ? 'calc(100dvh - 28px)' : 'auto',
+          maxHeight: isCompact ? '100dvh' : isFullSize ? 'calc(100dvh - 28px)' : 'min(88vh, 920px)',
+          borderRadius: isCompact ? 0 : isFullSize ? UI_RADII.modal : undefined,
+          display: 'grid',
+          gridTemplateRows: 'auto minmax(0, 1fr) auto',
+          overflow: 'hidden',
+        }}
+      >
+        <span
+          data-focus-guard="true"
+          tabIndex={0}
+          onFocus={() => focusBoundary('last')}
+          style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 }}
+        />
+        <div style={{ padding: isCompact ? '18px 18px 16px' : '20px 22px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
+          <div style={{ display: 'grid', gap: 4 }}>
+            {eyebrow ? <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div> : null}
+            <div style={{ ...sora, fontSize: isCompact ? 22 : 24, fontWeight: 800, color: T.text, lineHeight: 1.08 }}>{title}</div>
+            {caption ? <div style={{ ...mono, fontSize: UI_FONT_SIZES.meta, color: T.muted, lineHeight: 1.8 }}>{caption}</div> : null}
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            aria-label="Close dialog"
+            title="Close"
+            onClick={onClose}
+            style={{ ...getIconButtonStyle({ subtle: false, size: 38 }) }}
+          >
+            ×
+          </button>
+        </div>
+        <div className="scroll-pane scroll-pane--dense" style={{ overflowY: 'auto', padding: isCompact ? 18 : 20, ...bodyStyle }}>
+          {children}
+        </div>
+        {footer ? (
+          <div style={{ padding: isCompact ? '14px 18px 18px' : '16px 22px 20px', background: withAlpha(T.surface, 'f2') }}>
+            <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${withAlpha(T.border2, '24')} 14%, ${withAlpha(T.border2, '62')} 50%, ${withAlpha(T.border2, '24')} 86%, transparent)`, marginBottom: 12, opacity: 0.88 }} />
+            {footer}
+          </div>
+        ) : null}
+        <span
+          data-focus-guard="true"
+          tabIndex={0}
+          onFocus={() => focusBoundary('first')}
+          style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 }}
+        />
+      </motion.div>
+    </motion.div>
+  )
+}
+
+export const Chip = ({ children, color = T.muted, size = 11 }: { children: ReactNode; color?: string; size?: number }) => {
+  const palette = getAccessibleChipPalette(color)
+  return (
+    <span
+      style={{
+        ...mono,
+        fontSize: size,
+        fontWeight: 600,
+        padding: '3px 8px',
+        borderRadius: UI_RADII.chip,
+        background: palette.background,
+        color: palette.tone,
+        border: `1px solid ${palette.border}`,
+        whiteSpace: 'nowrap' as const,
+        display: 'inline-block',
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+export function HScrollArea({ children, style, vertical = false, dataRosterScroll }: { children: ReactNode; style?: CSSProperties; vertical?: boolean; dataRosterScroll?: string }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const drag = useRef({ pointerId: -1, startX: 0, startScrollLeft: 0, active: false })
+  const [dragging, setDragging] = useState(false)
+
+  const endDrag = useCallback(() => {
+    drag.current.active = false
+    drag.current.pointerId = -1
+    setDragging(false)
+  }, [])
+
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') return
+    if (e.button !== 0) return
+    if ((e.target as HTMLElement).closest('button, input, select, textarea, a, [data-no-drag-scroll="true"]')) return
+    const el = ref.current
+    if (!el) return
+    drag.current = { pointerId: e.pointerId, startX: e.clientX, startScrollLeft: el.scrollLeft, active: true }
+    setDragging(true)
+    el.setPointerCapture(e.pointerId)
+  }, [])
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const el = ref.current
+    if (!el || !drag.current.active || drag.current.pointerId !== e.pointerId) return
+    const delta = e.clientX - drag.current.startX
+    el.scrollLeft = drag.current.startScrollLeft - delta
+  }, [])
+
+  const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const el = ref.current
+    if (!el || drag.current.pointerId !== e.pointerId) return
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
+    endDrag()
+  }, [endDrag])
+
+  const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const el = ref.current
+    if (!el) return
+    if (e.key === 'ArrowRight') {
+      el.scrollBy({ left: 80, behavior: 'smooth' })
+    } else if (e.key === 'ArrowLeft') {
+      el.scrollBy({ left: -80, behavior: 'smooth' })
+    }
+  }, [])
+
+  return (
+    <div
+      ref={ref}
+      className={`scrollable-x scroll-pane scroll-pane--dense${dragging ? ' is-dragging' : ''}`}
+      data-roster-scroll={dataRosterScroll}
+      style={{ overflowX: 'auto', overflowY: vertical ? 'auto' : style?.overflowY, cursor: dragging ? 'grabbing' : 'grab', overscrollBehaviorX: 'contain', ...style }}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={endDrag}
+      onPointerLeave={e => {
+        if (drag.current.active && drag.current.pointerId === e.pointerId) onPointerUp(e)
+      }}
+      onKeyDown={onKeyDown}
+    >
+      {children}
+    </div>
+  )
+}
+
+export const Bar = ({ val, max = 100, color, h = 5 }: { val: number; max?: number; color: string; h?: number }) => {
+  const shouldReduceMotion = useReducedMotion()
+  const width = `${Math.max(0, Math.min(100, (val / max) * 100))}%`
+
+  return (
+    <div style={{ width: '100%', height: h, background: T.surface3, borderRadius: 999, overflow: 'hidden' }}>
+      <motion.div
+        initial={false}
+        animate={{ width }}
+        transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 180, damping: 24, mass: 0.55 }}
+        style={{ height: '100%', background: color }}
+      />
+    </div>
+  )
+}
+
+type CardProps = {
+  children: ReactNode
+  style?: CSSProperties
+  glow?: string
+  surface?: 'panel' | 'launch' | 'selected'
+  onClick?: () => void
+} & Omit<
+  HTMLAttributes<HTMLDivElement>,
+  'onAnimationEnd'
+  | 'onAnimationEndCapture'
+  | 'onAnimationIteration'
+  | 'onAnimationIterationCapture'
+  | 'onAnimationStart'
+  | 'onAnimationStartCapture'
+  | 'onDrag'
+  | 'onDragCapture'
+  | 'onDragEnd'
+  | 'onDragEndCapture'
+  | 'onDragStart'
+  | 'onDragStartCapture'
+>
+
+function getCardSurfaceStyle(surface: NonNullable<CardProps['surface']>, tone: string): CSSProperties {
+  if (surface === 'selected') {
+    return getSurfaceStyle('selected', tone)
+  }
+  if (surface === 'launch') {
+    return {
+      background: `linear-gradient(160deg, ${withAlpha(tone, '0a')} 0%, ${withAlpha(tone, '03')} 20%, ${T.surface} 100%)`,
+      border: `1px solid ${withAlpha(tone, '12')}`,
+      boxShadow: `0 8px 18px ${withAlpha(tone, '06')}`,
+      borderRadius: UI_RADII.card,
+    }
+  }
+  return getSurfaceStyle('primary', tone)
+}
+
+export const Card = ({ children, style = {}, glow, surface, onClick, ...rest }: CardProps) => {
+  const shouldReduceMotion = useReducedMotion()
+  const interactive = typeof onClick === 'function'
+  const tone = glow ?? T.accent
+  const variant = surface ?? (glow ? 'selected' : 'panel')
+  const cardSurface = getCardSurfaceStyle(variant, tone)
+  const baseShadow = style.boxShadow ?? cardSurface.boxShadow ?? '0 10px 28px rgba(15, 23, 42, 0.07)'
+  const hoverShadow = style.boxShadow
+    ? style.boxShadow
+    : variant === 'launch'
+      ? `0 12px 26px ${withAlpha(tone, '08')}`
+      : variant === 'selected'
+        ? `0 12px 26px ${withAlpha(tone, '0a')}`
+        : '0 14px 32px rgba(15, 23, 42, 0.09)'
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!interactive) return
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      onClick?.()
+    }
+  }
+
+  return (
+    <motion.div
+      {...rest}
+      data-surface={variant}
+      data-interactive={interactive ? 'true' : undefined}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+      initial={false}
+      whileHover={interactive && !shouldReduceMotion ? {
+        boxShadow: hoverShadow,
+        opacity: 0.998,
+      } : undefined}
+      whileTap={interactive && !shouldReduceMotion ? { opacity: 0.985 } : undefined}
+      transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_MEDIUM}
+      style={{
+        ...cardSurface,
+        padding: 16,
+        boxShadow: baseShadow,
+        cursor: interactive ? 'pointer' : style.cursor,
+        ...style,
+      }}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+export const PageShell = ({ size, children, style = {} }: { size: 'wide' | 'standard' | 'narrow'; children: ReactNode; style?: CSSProperties }) => {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.div
+      className={`page-shell page-shell--${size}`}
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
+      animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+      exit={shouldReduceMotion ? undefined : { opacity: 0, y: 10 }}
+      transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_MEDIUM}
+      style={style}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+export const PageBackButton = ({
+  onClick,
+  label = 'Back',
+  dataProofAction,
+}: {
+  onClick: () => void
+  label?: string
+  dataProofAction?: string
+}) => {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.button
+      type="button"
+      data-pressable="true"
+      data-proof-action={dataProofAction}
+      onClick={onClick}
+      whileHover={!shouldReduceMotion ? { x: -4 } : undefined}
+      whileTap={!shouldReduceMotion ? { scale: 0.98 } : undefined}
+      transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_FAST}
+      style={{
+        ...mono,
+        fontSize: 11,
+        color: T.accent,
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        padding: 0,
+        marginBottom: 12,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      <span aria-hidden="true">←</span>
+      <span>{label}</span>
+    </motion.button>
+  )
+}
+
+export const Btn = ({
+  children,
+  onClick,
+  variant = 'primary',
+  size = 'md',
+  type = 'button',
+  disabled = false,
+  dataProofAction,
+  dataProofEntityId,
+  ariaLabel,
+  ariaControls,
+  ariaSelected,
+  tabIndex,
+  id,
+  role,
+  title,
+  style: styleOverride,
+}: {
+  children: ReactNode
+  onClick?: () => void
+  variant?: string
+  size?: string
+  type?: 'button' | 'submit' | 'reset'
+  disabled?: boolean
+  dataProofAction?: string
+  dataProofEntityId?: string
+  ariaLabel?: string
+  ariaControls?: string
+  ariaSelected?: boolean
+  tabIndex?: number
+  id?: string
+  role?: string
+  title?: string
+  style?: CSSProperties
+}) => {
+  const shouldReduceMotion = useReducedMotion()
+  const pad = size === 'sm' ? '8px 12px' : size === 'lg' ? '12px 18px' : '10px 14px'
+  const fs = size === 'sm' ? 11 : size === 'lg' ? 14 : 12
+  const accessiblePrimaryAccent = getAccessiblePrimaryAccent(T.accent)
+  const accessibleDangerAccent = getAccessibleDangerAccent(T.danger)
+  const v = variant === 'ghost'
+    ? { bg: 'transparent', border: T.border2, color: T.text }
+    : variant === 'danger'
+      ? { bg: accessibleDangerAccent, border: accessibleDangerAccent, color: '#fff' }
+      : { bg: accessiblePrimaryAccent, border: accessiblePrimaryAccent, color: '#fff' }
+  const baseShadow = disabled
+    ? 'none'
+    : variant === 'ghost'
+      ? '0 8px 20px rgba(15, 23, 42, 0.04)'
+      : `0 14px 28px ${v.border}24`
+  const hoverShadow = disabled
+    ? 'none'
+    : variant === 'ghost'
+      ? '0 14px 28px rgba(15, 23, 42, 0.08)'
+      : `0 18px 36px ${v.border}34`
+
+  return (
+    <motion.button
+      id={id}
+      type={type}
+      disabled={disabled}
+      data-pressable="true"
+      data-proof-action={dataProofAction}
+      data-proof-entity-id={dataProofEntityId}
+      role={role}
+      aria-label={ariaLabel}
+      aria-controls={ariaControls}
+      aria-selected={ariaSelected}
+      tabIndex={tabIndex}
+      title={title}
+      onClick={onClick}
+      initial={false}
+      whileHover={!disabled && !shouldReduceMotion ? { boxShadow: hoverShadow, opacity: 0.998 } : undefined}
+      whileTap={!disabled && !shouldReduceMotion ? { opacity: 0.985 } : undefined}
+      transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_FAST}
+      style={{
+        borderRadius: 9,
+        padding: pad,
+        border: `1px solid ${v.border}`,
+        background: disabled ? T.surface3 : variant === 'ghost' ? `linear-gradient(180deg, ${T.surface}, ${T.surface2})` : v.bg,
+        color: disabled ? T.dim : v.color,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        boxShadow: baseShadow,
+        ...mono,
+        fontSize: fs,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        ...styleOverride,
+      }}
+    >
+      {children}
+    </motion.button>
+  )
+}
+
+export const Tooltip = ({ label, children }: { label: string; children: ReactNode }) => (
+  <span title={label} style={{ borderBottom: `1px dashed currentColor`, cursor: 'help', textDecoration: 'none' }}>{children}</span>
+)
+
+export const TH = ({ children }: { children: ReactNode }) => (
+  <th style={{ textAlign: 'left', padding: '11px 12px', borderBottom: `1px solid ${T.border}`, ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, fontWeight: 600, whiteSpace: 'nowrap' }}>{children}</th>
+)
+
+export const TD = ({ children, style = {}, ...rest }: { children: ReactNode; style?: CSSProperties; colSpan?: number }) => (
+  <td {...rest} style={{ padding: '11px 12px', borderBottom: `1px solid ${T.border}`, verticalAlign: 'middle', ...style }}>{children}</td>
+)
+
+export const RiskBadge = ({ band, prob }: { band: RiskBand | null; prob: number | null }) => {
+  const c = band === 'High' ? T.danger : band === 'Medium' ? T.warning : band === 'Low' ? T.success : T.dim
+  return <Chip color={c}>{band ? `${band}${prob !== null ? ` · ${Math.round(prob * 100)}%` : ''}` : 'No Score'}</Chip>
+}
+
+export const StagePips = ({ current }: { current: Stage }) => {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {[1, 2, 3, 4, 5, 6].map(s => (
+        <motion.div
+          key={s}
+          initial={false}
+          animate={{
+            scale: s <= current ? 1 : 0.92,
+            background: s <= current ? stageColor(s as Stage) : T.border2,
+            boxShadow: s <= current ? `0 0 10px ${stageColor(s as Stage)}44` : 'none',
+          }}
+          transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_FAST}
+          style={{ width: 7, height: 7, borderRadius: 2 }}
+        />
+      ))}
+    </div>
+  )
+}

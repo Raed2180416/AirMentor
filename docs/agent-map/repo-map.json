@@ -110,7 +110,7 @@
       "scripts": {
         "dev": "tsx watch src/index.ts",
         "dev:seeded": "tsx scripts/start-seeded-server.ts",
-        "start": "node dist/index.js",
+        "start": "node dist/air-mentor-api/src/index.js",
         "build": "tsc -p tsconfig.build.json",
         "test": "node scripts/run-vitest-suite.mjs",
         "test:proof-rc": "AIRMENTOR_BACKEND_SUITE=proof-rc node scripts/run-vitest-suite.mjs",
@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 965,
-    "ignoredEntriesObserved": 45,
-    "bytes": 15181307,
-    "lines": 314380,
-    "nonEmptyLines": 291318,
-    "commentLines": 6004,
-    "localDependencyEdges": 761,
-    "symbols": 23610,
+    "trackedFiles": 996,
+    "ignoredEntriesObserved": 59,
+    "bytes": 15238959,
+    "lines": 315818,
+    "nonEmptyLines": 292619,
+    "commentLines": 6022,
+    "localDependencyEdges": 344,
+    "symbols": 23729,
     "apiRoutes": 190,
     "testCases": 1374,
     "filesWithTests": 195,
-    "atoms": 81255,
+    "atoms": 81589,
     "anomalies": 0
   },
   "counts": {
@@ -173,13 +173,15 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
+      ".ts": 423,
+      ".tsx": 82,
+      ".css": 2,
       ".example": 1,
-      ".ts": 395,
       ".toml": 3,
       ".txt": 7,
       ".py": 108,
       ".cjs": 1,
-      ".mjs": 56,
+      ".mjs": 59,
       ".sh": 48,
       ".js": 2,
       ".sql": 34,
@@ -191,12 +193,10 @@
       ".svg": 1,
       ".service": 3,
       ".timer": 1,
-      ".conf": 2,
-      ".tsx": 82,
-      ".css": 2
+      ".conf": 2
     },
     "byRole": {
-      "other": 34,
+      "other": 161,
       "build-config": 16,
       "agent-config": 7,
       "ci": 8,
@@ -207,8 +207,7 @@
       "documentation": 34,
       "forge-audit": 22,
       "pipeline": 171,
-      "repo-script": 109,
-      "frontend": 99,
+      "repo-script": 112,
       "e2e-test": 50
     },
     "byTopDirectory": {
@@ -229,6 +228,7 @@
       ".node-version": 1,
       ".vscode": 2,
       ".windsurf": 1,
+      "adapters": 98,
       "air-mentor-api": 363,
       "CLAUDE.md": 1,
       "docs": 34,
@@ -239,20 +239,21 @@
       "HEARTBEAT.md": 1,
       "index.html": 1,
       "jsconfig.json": 1,
+      "kernel": 20,
       "knip.json": 1,
       "package-lock.json": 1,
       "package.json": 1,
       "pipeline": 171,
       "public": 1,
-      "scripts": 109,
+      "scripts": 112,
       "skills-lock.json": 1,
-      "src": 99,
       "tests-e2e": 50,
       "tests": 68,
       "tsconfig.app.json": 1,
       "tsconfig.json": 1,
       "tsconfig.node.json": 1,
       "tsconfig.tests.json": 1,
+      "universities": 9,
       "vite.config.ts": 1,
       "vitest.config.ts": 1
     },
@@ -267,39 +268,21 @@
       ".mcp.json": 1,
       ".tmp-test-postgres": 1,
       ".vscode": 1,
-      "air-mentor-api": 10,
+      "adapters": 14,
+      "air-mentor-api": 11,
       "context_main.json": 1,
       "context.json": 1,
+      "kernel": 5,
       "output": 1,
       "scripts": 1,
-      "src": 8,
       "tests-e2e": 5,
       "tests": 1,
-      "tmp": 1
+      "tmp": 1,
+      "universities": 2
     }
   },
   "graph": {
     "highFanIn": [
-      {
-        "path": "src/data.ts",
-        "importers": 74,
-        "role": "frontend"
-      },
-      {
-        "path": "src/api/types.ts",
-        "importers": 59,
-        "role": "frontend"
-      },
-      {
-        "path": "src/domain.ts",
-        "importers": 54,
-        "role": "frontend"
-      },
-      {
-        "path": "src/ui-primitives.tsx",
-        "importers": 49,
-        "role": "frontend"
-      },
       {
         "path": "tests-e2e/helpers/login-as.ts",
         "importers": 38,
@@ -321,39 +304,19 @@
         "role": "e2e-test"
       },
       {
-        "path": "src/system-admin-ui.tsx",
-        "importers": 26,
-        "role": "frontend"
-      },
-      {
-        "path": "src/system-admin-live-data.ts",
-        "importers": 20,
-        "role": "frontend"
-      },
-      {
         "path": "tests-e2e/helpers/proof-run-api.ts",
-        "importers": 20,
+        "importers": 19,
         "role": "e2e-test"
       },
       {
-        "path": "src/selectors.ts",
-        "importers": 12,
-        "role": "frontend"
+        "path": "adapters/web/features/admin/system-admin-ui.tsx",
+        "importers": 16,
+        "role": "other"
       },
       {
-        "path": "src/api/client.ts",
-        "importers": 10,
-        "role": "frontend"
-      },
-      {
-        "path": "src/calendar-utils.ts",
-        "importers": 10,
-        "role": "frontend"
-      },
-      {
-        "path": "src/theme.ts",
-        "importers": 10,
-        "role": "frontend"
+        "path": "adapters/web/features/admin/system-admin-live-data.ts",
+        "importers": 14,
+        "role": "other"
       },
       {
         "path": "scripts/system-admin-live-auth.mjs",
@@ -361,19 +324,9 @@
         "role": "repo-script"
       },
       {
-        "path": "src/admin/live-app-model.ts",
-        "importers": 9,
-        "role": "frontend"
-      },
-      {
-        "path": "src/repositories.ts",
-        "importers": 9,
-        "role": "frontend"
-      },
-      {
-        "path": "src/proof-surface-shell.tsx",
+        "path": "adapters/web/features/admin/live-app-model.ts",
         "importers": 8,
-        "role": "frontend"
+        "role": "other"
       },
       {
         "path": "tests-e2e/helpers/proof-playback.ts",
@@ -386,29 +339,24 @@
         "role": "repo-script"
       },
       {
-        "path": "src/action-code-humaniser.ts",
-        "importers": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/proof-provenance.ts",
-        "importers": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/admin/live-app-chrome.tsx",
+        "path": "adapters/web/features/admin/live-app-chrome.tsx",
         "importers": 6,
-        "role": "frontend"
+        "role": "other"
       },
       {
-        "path": "src/pages/workflow-pages.tsx",
-        "importers": 6,
-        "role": "frontend"
+        "path": "adapters/web/features/admin/sections/entity-editor-modal-types.ts",
+        "importers": 5,
+        "role": "other"
       },
       {
-        "path": "src/system-admin-live-app.tsx",
-        "importers": 6,
-        "role": "frontend"
+        "path": "adapters/web/features/admin/system-admin-overview-helpers.ts",
+        "importers": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/workflow-pages.tsx",
+        "importers": 5,
+        "role": "other"
       },
       {
         "path": "air-mentor-api/src/db/seeds/msruas-mnc-curriculum.json",
@@ -416,39 +364,24 @@
         "role": "backend"
       },
       {
-        "path": "src/admin/sections/entity-editor-modal-types.ts",
-        "importers": 5,
-        "role": "frontend"
-      },
-      {
-        "path": "src/demo-workspace-pointer.ts",
-        "importers": 5,
-        "role": "frontend"
-      },
-      {
-        "path": "src/page-utils.ts",
-        "importers": 5,
-        "role": "frontend"
-      },
-      {
-        "path": "src/proof-playback.ts",
-        "importers": 5,
-        "role": "frontend"
-      },
-      {
-        "path": "src/system-admin-overview-helpers.ts",
-        "importers": 5,
-        "role": "frontend"
-      },
-      {
-        "path": "src/telemetry.ts",
-        "importers": 5,
-        "role": "frontend"
-      },
-      {
         "path": "tests-e2e/helpers/automation-flow.ts",
         "importers": 5,
         "role": "e2e-test"
+      },
+      {
+        "path": "adapters/web/app/workspace-helpers.ts",
+        "importers": 4,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/app/workspace-types.ts",
+        "importers": 4,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/live-app-validation.ts",
+        "importers": 4,
+        "role": "other"
       },
       {
         "path": "scripts/teaching-password-resolution.mjs",
@@ -456,171 +389,141 @@
         "role": "repo-script"
       },
       {
-        "path": "src/academic-session-shell.tsx",
-        "importers": 4,
-        "role": "frontend"
+        "path": "adapters/web/features/admin/live-app-curriculum-feature-model.ts",
+        "importers": 3,
+        "role": "other"
       },
       {
-        "path": "src/admin/live-app-validation.ts",
-        "importers": 4,
-        "role": "frontend"
+        "path": "adapters/web/features/admin/live-app-routes-and-scopes.ts",
+        "importers": 3,
+        "role": "other"
       },
       {
-        "path": "src/app/workspace-helpers.ts",
-        "importers": 4,
-        "role": "frontend"
+        "path": "tests-e2e/helpers/demo-seeding-contract.ts",
+        "importers": 3,
+        "role": "e2e-test"
       },
       {
-        "path": "src/app/workspace-types.ts",
-        "importers": 4,
-        "role": "frontend"
+        "path": "adapters/web/app/action-queue.tsx",
+        "importers": 2,
+        "role": "other"
       },
       {
-        "path": "src/proof-pilot.ts",
-        "importers": 4,
-        "role": "frontend"
+        "path": "adapters/web/app/portal-routing.ts",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/app/required-note-modal.tsx",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/app/session-helpers.ts",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/app/student-drawer.tsx",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/app/task-composer-modal.tsx",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/batch-setup-readiness.ts",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/live-app-editor-forms.ts",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/live-app-stage-policy-model.ts",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-live-app.tsx",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-proof-dashboard-workspace.tsx",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-provisioning-helpers.ts",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/calendar-pages.tsx",
+        "importers": 2,
+        "role": "other"
+      },
+      {
+        "path": "air-mentor-api/src/lib/demo-seeding-contract.ts",
+        "importers": 2,
+        "role": "backend"
+      },
+      {
+        "path": "air-mentor-api/tests/helpers/test-app.ts",
+        "importers": 2,
+        "role": "unit-test"
+      },
+      {
+        "path": "adapters/web/app/App.css",
+        "importers": 1,
+        "role": "other"
       }
     ],
     "highFanOut": [
       {
-        "path": "src/system-admin-live-app.tsx",
-        "localImports": 36,
-        "role": "frontend"
+        "path": "adapters/web/features/admin/system-admin-live-app.tsx",
+        "localImports": 21,
+        "role": "other"
       },
       {
-        "path": "src/App.tsx",
-        "localImports": 24,
-        "role": "frontend"
-      },
-      {
-        "path": "src/app/operational-workspace.tsx",
-        "localImports": 23,
-        "role": "frontend"
-      },
-      {
-        "path": "src/admin/live-app-model.ts",
-        "localImports": 18,
-        "role": "frontend"
-      },
-      {
-        "path": "src/academic-workspace-route-surface.tsx",
-        "localImports": 17,
-        "role": "frontend"
-      },
-      {
-        "path": "src/system-admin-faculties-workspace.tsx",
+        "path": "adapters/web/features/academic-workspace-route-surface.tsx",
         "localImports": 15,
-        "role": "frontend"
+        "role": "other"
       },
       {
-        "path": "src/admin/sections/faculty-members-section.tsx",
-        "localImports": 12,
-        "role": "frontend"
+        "path": "adapters/web/features/admin/live-app-model.ts",
+        "localImports": 15,
+        "role": "other"
       },
       {
-        "path": "src/academic-faculty-profile-page.tsx",
-        "localImports": 11,
-        "role": "frontend"
-      },
-      {
-        "path": "src/admin/sections/students-section.tsx",
+        "path": "adapters/web/app/App.tsx",
         "localImports": 10,
-        "role": "frontend"
+        "role": "other"
       },
       {
-        "path": "src/pages/hod-pages.tsx",
-        "localImports": 10,
-        "role": "frontend"
-      },
-      {
-        "path": "src/pages/risk-explorer.tsx",
+        "path": "adapters/web/features/admin/system-admin-faculties-workspace.tsx",
         "localImports": 9,
-        "role": "frontend"
+        "role": "other"
       },
       {
-        "path": "src/pages/student-shell.tsx",
-        "localImports": 9,
-        "role": "frontend"
-      },
-      {
-        "path": "src/system-admin-proof-dashboard-workspace.tsx",
-        "localImports": 9,
-        "role": "frontend"
-      },
-      {
-        "path": "src/academic-route-pages.tsx",
+        "path": "adapters/web/app/operational-workspace.tsx",
         "localImports": 8,
-        "role": "frontend"
+        "role": "other"
       },
       {
-        "path": "src/system-admin-faculty-calendar-workspace.tsx",
-        "localImports": 8,
-        "role": "frontend"
-      },
-      {
-        "path": "tests/system-admin-faculties-workspace.test.tsx",
-        "localImports": 8,
-        "role": "unit-test"
-      },
-      {
-        "path": "src/admin/action-queue-rail.tsx",
+        "path": "adapters/web/features/admin/sections/faculty-members-section.tsx",
         "localImports": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/admin/live-app-chrome.tsx",
-        "localImports": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/app/student-drawer.tsx",
-        "localImports": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/app/task-composer-modal.tsx",
-        "localImports": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/repositories.ts",
-        "localImports": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/system-admin-app.tsx",
-        "localImports": 7,
-        "role": "frontend"
-      },
-      {
-        "path": "src/system-admin-curriculum-graph.tsx",
-        "localImports": 7,
-        "role": "frontend"
+        "role": "other"
       },
       {
         "path": "tests-e2e/specs/complete-realism-audit-2026-06-04.spec.ts",
         "localImports": 7,
         "role": "e2e-test"
-      },
-      {
-        "path": "src/admin/sections/overview-section.tsx",
-        "localImports": 6,
-        "role": "frontend"
-      },
-      {
-        "path": "src/pages/calendar-pages.tsx",
-        "localImports": 6,
-        "role": "frontend"
-      },
-      {
-        "path": "src/pages/workflow-pages.tsx",
-        "localImports": 6,
-        "role": "frontend"
-      },
-      {
-        "path": "src/system-admin-timetable-editor.tsx",
-        "localImports": 6,
-        "role": "frontend"
       },
       {
         "path": "tests-e2e/specs/airmentor-demo-hardening-api-verification.spec.ts",
@@ -648,53 +551,161 @@
         "role": "e2e-test"
       },
       {
-        "path": "src/academic-workspace-topbar.tsx",
+        "path": "adapters/web/features/admin/sections/entity-editor-modals.tsx",
         "localImports": 5,
-        "role": "frontend"
+        "role": "other"
       },
       {
-        "path": "src/admin/sections/entity-editor-modals.tsx",
+        "path": "adapters/web/features/admin/sections/students-section.tsx",
         "localImports": 5,
-        "role": "frontend"
+        "role": "other"
       },
       {
-        "path": "src/admin/sections/faculty-editor-modals.tsx",
+        "path": "tests-e2e/specs/demo-reality-realism-hardening.spec.ts",
         "localImports": 5,
-        "role": "frontend"
+        "role": "e2e-test"
       },
       {
-        "path": "src/curriculum-graph-workspace.tsx",
+        "path": "tests-e2e/specs/editable-data-recompute.spec.ts",
         "localImports": 5,
-        "role": "frontend"
+        "role": "e2e-test"
       },
       {
-        "path": "src/pages/course-pages.tsx",
+        "path": "tests-e2e/specs/humanised-action-labels.spec.ts",
         "localImports": 5,
-        "role": "frontend"
+        "role": "e2e-test"
       },
       {
-        "path": "src/portal-entry.tsx",
+        "path": "tests-e2e/specs/intervention-affects-marks.spec.ts",
         "localImports": 5,
-        "role": "frontend"
+        "role": "e2e-test"
       },
       {
-        "path": "src/system-admin-history-workspace.tsx",
+        "path": "tests-e2e/specs/manual-edit-verification.spec.ts",
         "localImports": 5,
-        "role": "frontend"
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/proof-browser-sentinel-matrix.spec.ts",
+        "localImports": 5,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/receptivity-differentiation.spec.ts",
+        "localImports": 5,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/shared-proof-playback-sync.spec.ts",
+        "localImports": 5,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/teacher-mentor-proof-surface.spec.ts",
+        "localImports": 5,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/validate-120-trajectories.spec.ts",
+        "localImports": 5,
+        "role": "e2e-test"
+      },
+      {
+        "path": "adapters/web/features/admin/action-queue-rail.tsx",
+        "localImports": 4,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/sections/overview-section.tsx",
+        "localImports": 4,
+        "role": "other"
+      },
+      {
+        "path": "scripts/run-fresh-proof-realism-audit.ts",
+        "localImports": 4,
+        "role": "repo-script"
+      },
+      {
+        "path": "tests-e2e/specs/course-leader-tt-blueprint-sentinel.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/flow-1-fresh-start.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/flow-10-completion-counterfactual.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/flow-11-stop.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/flow-2-evidence-reaction.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/flow-4-scheduled-nextday.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/flow-5-boundary-cross.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/flow-6-nextstage-autoresolve.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/flow-8-reopen.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/flow-9-hod-cycle.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/full-demo-ladder.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/performance-baseline.spec.ts",
+        "localImports": 4,
+        "role": "e2e-test"
       }
     ],
     "topExternalImports": [
+      {
+        "key": "@web/shared",
+        "value": 185
+      },
       {
         "key": "vitest",
         "value": 160
       },
       {
         "key": "node:fs",
-        "value": 123
+        "value": 126
+      },
+      {
+        "key": "@web/simulation",
+        "value": 109
       },
       {
         "key": "node:path",
-        "value": 103
+        "value": 108
       },
       {
         "key": "drizzle-orm",
@@ -711,6 +722,14 @@
       {
         "key": "pathlib",
         "value": 72
+      },
+      {
+        "key": "@kernel/shared",
+        "value": 61
+      },
+      {
+        "key": "@web/features",
+        "value": 58
       },
       {
         "key": "node:url",
@@ -809,6 +828,10 @@
         "value": 9
       },
       {
+        "key": "@persistence/repositories",
+        "value": 8
+      },
+      {
         "key": "@playwright/test",
         "value": 7
       },
@@ -823,66 +846,10 @@
       {
         "key": "numpy",
         "value": 6
-      },
-      {
-        "key": "textwrap",
-        "value": 6
-      },
-      {
-        "key": "playwright",
-        "value": 5
-      },
-      {
-        "key": "sklearn.isotonic",
-        "value": 5
-      },
-      {
-        "key": "slot_ledger",
-        "value": 5
-      },
-      {
-        "key": "@xyflow/react",
-        "value": 4
       }
     ]
   },
   "entryPoints": [
-    {
-      "name": "Frontend app shell",
-      "file": "src/App.tsx",
-      "role": "frontend",
-      "lines": 748,
-      "localImports": 24,
-      "symbols": 83,
-      "note": "Main academic/demo frontend shell and route switchboard."
-    },
-    {
-      "name": "Frontend live admin shell",
-      "file": "src/system-admin-live-app.tsx",
-      "role": "frontend",
-      "lines": 5497,
-      "localImports": 36,
-      "symbols": 624,
-      "note": "Live System Admin surface and proof playback/admin control entry."
-    },
-    {
-      "name": "Frontend API client",
-      "file": "src/api/client.ts",
-      "role": "frontend",
-      "lines": 1792,
-      "localImports": 0,
-      "symbols": 74,
-      "note": "Browser-to-backend contract wrapper. High risk for runtime parity."
-    },
-    {
-      "name": "Frontend domain model",
-      "file": "src/domain.ts",
-      "role": "frontend",
-      "lines": 505,
-      "localImports": 0,
-      "symbols": 74,
-      "note": "Shared frontend domain types/helpers imported across UI surfaces."
-    },
     {
       "name": "Backend server entry",
       "file": "air-mentor-api/src/index.ts",
@@ -1279,8 +1246,8 @@
   ],
   "componentOwnership": [
     {
-      "file": "src/system-admin-ui.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/system-admin-ui.tsx",
+      "role": "other",
       "lines": 567,
       "components": [
         "AdminBreadcrumbs",
@@ -1305,8 +1272,8 @@
       "hooks": []
     },
     {
-      "file": "src/ui-primitives.tsx",
-      "role": "frontend",
+      "file": "adapters/web/shared/ui/primitives.tsx",
+      "role": "other",
       "lines": 980,
       "components": [
         "BrandMark",
@@ -1330,54 +1297,8 @@
       ]
     },
     {
-      "file": "src/pages/calendar-pages.tsx",
-      "role": "frontend",
-      "lines": 2732,
-      "components": [
-        "AgendaBoard",
-        "BlockDetailsSheet",
-        "CalendarTimetablePage",
-        "ClassTimingSheet",
-        "DetailRow",
-        "ExtraClassSheet",
-        "TaskActionStrip",
-        "TaskPlacementSheet",
-        "TimedEventBlock"
-      ],
-      "hooks": [
-        "useCallback",
-        "useEffect",
-        "useMemo",
-        "useRef",
-        "useState"
-      ]
-    },
-    {
-      "file": "src/pages/course-pages.tsx",
-      "role": "frontend",
-      "lines": 962,
-      "components": [
-        "AssignmentsTab",
-        "AttendanceTab",
-        "COTab",
-        "CourseDetail",
-        "CourseOutcomeControl",
-        "GradeBookTab",
-        "OverviewTab",
-        "QuizzesTab",
-        "RiskTab",
-        "TTTab"
-      ],
-      "hooks": [
-        "useAppSelectors",
-        "useMemo",
-        "useReducedMotion",
-        "useState"
-      ]
-    },
-    {
-      "file": "src/system-admin-curriculum-graph.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/system-admin-curriculum-graph.tsx",
+      "role": "other",
       "lines": 1004,
       "components": [
         "CourseBubbleNode",
@@ -1399,8 +1320,54 @@
       ]
     },
     {
-      "file": "src/academic-session-shell.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/pages/calendar-pages.tsx",
+      "role": "other",
+      "lines": 2732,
+      "components": [
+        "AgendaBoard",
+        "BlockDetailsSheet",
+        "CalendarTimetablePage",
+        "ClassTimingSheet",
+        "DetailRow",
+        "ExtraClassSheet",
+        "TaskActionStrip",
+        "TaskPlacementSheet",
+        "TimedEventBlock"
+      ],
+      "hooks": [
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useRef",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/pages/course-pages.tsx",
+      "role": "other",
+      "lines": 962,
+      "components": [
+        "AssignmentsTab",
+        "AttendanceTab",
+        "COTab",
+        "CourseDetail",
+        "CourseOutcomeControl",
+        "GradeBookTab",
+        "OverviewTab",
+        "QuizzesTab",
+        "RiskTab",
+        "TTTab"
+      ],
+      "hooks": [
+        "useAppSelectors",
+        "useMemo",
+        "useReducedMotion",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/academic-session-shell.tsx",
+      "role": "other",
       "lines": 469,
       "components": [
         "AcademicAuthPageShell",
@@ -1421,8 +1388,8 @@
       ]
     },
     {
-      "file": "src/academic-workspace-route-surface.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/academic-workspace-route-surface.tsx",
+      "role": "other",
       "lines": 380,
       "components": [
         "AcademicWorkspaceRouteSurface",
@@ -1440,8 +1407,8 @@
       "hooks": []
     },
     {
-      "file": "src/academic-route-pages.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/academic-route-pages.tsx",
+      "role": "other",
       "lines": 1123,
       "components": [
         "CLDashboard",
@@ -1459,8 +1426,8 @@
       ]
     },
     {
-      "file": "src/App.tsx",
-      "role": "frontend",
+      "file": "adapters/web/app/App.tsx",
+      "role": "other",
       "lines": 748,
       "components": [
         "App",
@@ -1477,8 +1444,8 @@
       ]
     },
     {
-      "file": "src/pages/workflow-pages.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/pages/workflow-pages.tsx",
+      "role": "other",
       "lines": 928,
       "components": [
         "AllStudentsPage",
@@ -1495,8 +1462,8 @@
       ]
     },
     {
-      "file": "src/admin/live-app-chrome.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/live-app-chrome.tsx",
+      "role": "other",
       "lines": 502,
       "components": [
         "ActionQueueCard",
@@ -1511,8 +1478,8 @@
       "hooks": []
     },
     {
-      "file": "src/backend-health-indicator.tsx",
-      "role": "frontend",
+      "file": "adapters/web/shared/components/backend-health-indicator.tsx",
+      "role": "other",
       "lines": 210,
       "components": [
         "ApiFallbackIndicator",
@@ -1528,40 +1495,8 @@
       ]
     },
     {
-      "file": "src/obsidian-graph.tsx",
-      "role": "frontend",
-      "lines": 1087,
-      "components": [
-        "H",
-        "ObsidianGraph"
-      ],
-      "hooks": [
-        "useCallback",
-        "useEffect",
-        "useMemo",
-        "useRef",
-        "useState"
-      ]
-    },
-    {
-      "file": "src/pages/student-shell.tsx",
-      "role": "frontend",
-      "lines": 660,
-      "components": [
-        "CitationList",
-        "MessageBubble",
-        "PanelLabel",
-        "StudentShellPage"
-      ],
-      "hooks": [
-        "useEffect",
-        "useMemo",
-        "useState"
-      ]
-    },
-    {
-      "file": "src/system-admin-faculties-workspace.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/system-admin-faculties-workspace.tsx",
+      "role": "other",
       "lines": 1954,
       "components": [
         "AdminMiniStat",
@@ -1576,8 +1511,8 @@
       ]
     },
     {
-      "file": "src/system-admin-live-app.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/system-admin-live-app.tsx",
+      "role": "other",
       "lines": 5497,
       "components": [
         "SystemAdminLiveApp"
@@ -1592,8 +1527,40 @@
       ]
     },
     {
-      "file": "src/app/operational-workspace.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/pages/student-shell.tsx",
+      "role": "other",
+      "lines": 660,
+      "components": [
+        "CitationList",
+        "MessageBubble",
+        "PanelLabel",
+        "StudentShellPage"
+      ],
+      "hooks": [
+        "useEffect",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/shared/components/obsidian-graph.tsx",
+      "role": "other",
+      "lines": 1087,
+      "components": [
+        "H",
+        "ObsidianGraph"
+      ],
+      "hooks": [
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useRef",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/app/operational-workspace.tsx",
+      "role": "other",
       "lines": 2667,
       "components": [
         "OperationalWorkspace"
@@ -1607,23 +1574,8 @@
       ]
     },
     {
-      "file": "src/proof-surface-shell.tsx",
-      "role": "frontend",
-      "lines": 396,
-      "components": [
-        "ProofSurfaceHero",
-        "ProofSurfaceLauncher",
-        "ProofSurfaceTabPanel",
-        "ProofSurfaceTabs"
-      ],
-      "hooks": [
-        "useReducedMotion",
-        "useState"
-      ]
-    },
-    {
-      "file": "src/system-admin-timetable-editor.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/system-admin-timetable-editor.tsx",
+      "role": "other",
       "lines": 1264,
       "components": [
         "FieldLabel",
@@ -1637,8 +1589,23 @@
       ]
     },
     {
-      "file": "src/app/task-composer-modal.tsx",
-      "role": "frontend",
+      "file": "adapters/web/simulation/proof-surface-shell.tsx",
+      "role": "other",
+      "lines": 396,
+      "components": [
+        "ProofSurfaceHero",
+        "ProofSurfaceLauncher",
+        "ProofSurfaceTabPanel",
+        "ProofSurfaceTabs"
+      ],
+      "hooks": [
+        "useReducedMotion",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/app/task-composer-modal.tsx",
+      "role": "other",
       "lines": 298,
       "components": [
         "TaskComposerModal"
@@ -1651,63 +1618,8 @@
       ]
     },
     {
-      "file": "src/course-config-drawer.tsx",
-      "role": "frontend",
-      "lines": 360,
-      "components": [
-        "CourseConfigDrawer",
-        "FormInput",
-        "FormSection",
-        "FormSelect",
-        "TabButton"
-      ],
-      "hooks": []
-    },
-    {
-      "file": "src/curriculum-graph-workspace.tsx",
-      "role": "frontend",
-      "lines": 384,
-      "components": [
-        "CurriculumGraphWorkspace"
-      ],
-      "hooks": [
-        "useCallback",
-        "useEffect",
-        "useMemo",
-        "useState"
-      ]
-    },
-    {
-      "file": "src/pages/hod-pages.tsx",
-      "role": "frontend",
-      "lines": 1170,
-      "components": [
-        "HodView",
-        "PanelLabel",
-        "TableCard"
-      ],
-      "hooks": [
-        "useMemo",
-        "useState"
-      ]
-    },
-    {
-      "file": "src/pages/risk-explorer.tsx",
-      "role": "frontend",
-      "lines": 695,
-      "components": [
-        "DriverList",
-        "HeadCard",
-        "RiskExplorerPage"
-      ],
-      "hooks": [
-        "useEffect",
-        "useState"
-      ]
-    },
-    {
-      "file": "src/system-admin-app.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/system-admin-app.tsx",
+      "role": "other",
       "lines": 104,
       "components": [
         "SystemAdminApp"
@@ -1720,8 +1632,8 @@
       ]
     },
     {
-      "file": "src/system-admin-faculty-calendar-workspace.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/system-admin-faculty-calendar-workspace.tsx",
+      "role": "other",
       "lines": 635,
       "components": [
         "CalendarTimetablePage",
@@ -1734,8 +1646,8 @@
       ]
     },
     {
-      "file": "src/system-admin-proof-dashboard-workspace.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/system-admin-proof-dashboard-workspace.tsx",
+      "role": "other",
       "lines": 1207,
       "components": [
         "CompactStatCard",
@@ -1748,8 +1660,8 @@
       ]
     },
     {
-      "file": "src/system-admin-session-shell.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/system-admin-session-shell.tsx",
+      "role": "other",
       "lines": 193,
       "components": [
         "SystemAdminAuthPageShell",
@@ -1758,6 +1670,61 @@
         "SystemAdminSessionBoundary"
       ],
       "hooks": [
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/curriculum/course-config-drawer.tsx",
+      "role": "other",
+      "lines": 360,
+      "components": [
+        "CourseConfigDrawer",
+        "FormInput",
+        "FormSection",
+        "FormSelect",
+        "TabButton"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/curriculum/curriculum-graph-workspace.tsx",
+      "role": "other",
+      "lines": 384,
+      "components": [
+        "CurriculumGraphWorkspace"
+      ],
+      "hooks": [
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/pages/hod-pages.tsx",
+      "role": "other",
+      "lines": 1170,
+      "components": [
+        "HodView",
+        "PanelLabel",
+        "TableCard"
+      ],
+      "hooks": [
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/pages/risk-explorer.tsx",
+      "role": "other",
+      "lines": 695,
+      "components": [
+        "DriverList",
+        "HeadCard",
+        "RiskExplorerPage"
+      ],
+      "hooks": [
+        "useEffect",
         "useState"
       ]
     },
@@ -1776,8 +1743,8 @@
       ]
     },
     {
-      "file": "src/app/student-drawer.tsx",
-      "role": "frontend",
+      "file": "adapters/web/app/student-drawer.tsx",
+      "role": "other",
       "lines": 337,
       "components": [
         "StudentDrawer"
@@ -1802,8 +1769,8 @@
       ]
     },
     {
-      "file": "src/hod-counterfactual-panel.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/hod-counterfactual-panel.tsx",
+      "role": "other",
       "lines": 245,
       "components": [
         "HodCounterfactualPanel"
@@ -1814,8 +1781,8 @@
       ]
     },
     {
-      "file": "src/hod-counterfactual-simulator-panel.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/hod-counterfactual-simulator-panel.tsx",
+      "role": "other",
       "lines": 316,
       "components": [
         "HodCounterfactualSimulatorPanel"
@@ -1826,19 +1793,8 @@
       ]
     },
     {
-      "file": "src/academic-workspace-topbar.tsx",
-      "role": "frontend",
-      "lines": 165,
-      "components": [
-        "AcademicWorkspaceTopbar"
-      ],
-      "hooks": [
-        "useState"
-      ]
-    },
-    {
-      "file": "src/app/action-queue.tsx",
-      "role": "frontend",
+      "file": "adapters/web/app/action-queue.tsx",
+      "role": "other",
       "lines": 250,
       "components": [
         "ActionQueue"
@@ -1848,8 +1804,18 @@
       ]
     },
     {
-      "file": "src/app/required-note-modal.tsx",
-      "role": "frontend",
+      "file": "adapters/web/app/portal-entry.tsx",
+      "role": "other",
+      "lines": 138,
+      "components": [
+        "PortalCard",
+        "PortalEntryScreen"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/app/required-note-modal.tsx",
+      "role": "other",
       "lines": 43,
       "components": [
         "RequiredNoteModal"
@@ -1859,18 +1825,19 @@
       ]
     },
     {
-      "file": "src/portal-entry.tsx",
-      "role": "frontend",
-      "lines": 138,
+      "file": "adapters/web/features/academic-workspace-topbar.tsx",
+      "role": "other",
+      "lines": 165,
       "components": [
-        "PortalCard",
-        "PortalEntryScreen"
+        "AcademicWorkspaceTopbar"
       ],
-      "hooks": []
+      "hooks": [
+        "useState"
+      ]
     },
     {
-      "file": "src/system-admin-history-workspace.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/system-admin-history-workspace.tsx",
+      "role": "other",
       "lines": 146,
       "components": [
         "SystemAdminHistoryWorkspace"
@@ -1901,8 +1868,8 @@
       ]
     },
     {
-      "file": "src/academic-faculty-profile-page.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/academic-faculty-profile-page.tsx",
+      "role": "other",
       "lines": 730,
       "components": [
         "FacultyProfilePage"
@@ -1910,8 +1877,8 @@
       "hooks": []
     },
     {
-      "file": "src/academic-workspace-content-shell.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/academic-workspace-content-shell.tsx",
+      "role": "other",
       "lines": 51,
       "components": [
         "AcademicWorkspaceContentShell"
@@ -1919,8 +1886,8 @@
       "hooks": []
     },
     {
-      "file": "src/academic-workspace-sidebar.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/academic-workspace-sidebar.tsx",
+      "role": "other",
       "lines": 334,
       "components": [
         "AcademicWorkspaceSidebar"
@@ -1928,8 +1895,8 @@
       "hooks": []
     },
     {
-      "file": "src/admin/action-queue-rail.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/action-queue-rail.tsx",
+      "role": "other",
       "lines": 168,
       "components": [
         "ActionQueueRail"
@@ -1937,8 +1904,8 @@
       "hooks": []
     },
     {
-      "file": "src/admin/sections/entity-editor-modals.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/sections/entity-editor-modals.tsx",
+      "role": "other",
       "lines": 21,
       "components": [
         "EntityEditorModals"
@@ -1946,8 +1913,8 @@
       "hooks": []
     },
     {
-      "file": "src/admin/sections/faculty-editor-modals.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/sections/faculty-editor-modals.tsx",
+      "role": "other",
       "lines": 175,
       "components": [
         "FacultyEditorModals"
@@ -1955,8 +1922,8 @@
       "hooks": []
     },
     {
-      "file": "src/admin/sections/faculty-members-section.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/sections/faculty-members-section.tsx",
+      "role": "other",
       "lines": 677,
       "components": [
         "FacultyMembersSection"
@@ -1964,8 +1931,8 @@
       "hooks": []
     },
     {
-      "file": "src/admin/sections/hierarchy-editor-modals.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/sections/hierarchy-editor-modals.tsx",
+      "role": "other",
       "lines": 111,
       "components": [
         "HierarchyEditorModals"
@@ -1973,8 +1940,8 @@
       "hooks": []
     },
     {
-      "file": "src/admin/sections/overview-section.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/sections/overview-section.tsx",
+      "role": "other",
       "lines": 174,
       "components": [
         "OverviewSection"
@@ -1982,8 +1949,8 @@
       "hooks": []
     },
     {
-      "file": "src/admin/sections/student-editor-modals.tsx",
-      "role": "frontend",
+      "file": "adapters/web/features/admin/sections/student-editor-modals.tsx",
+      "role": "other",
       "lines": 153,
       "components": [
         "StudentEditorModals"
@@ -1994,23 +1961,23 @@
   "topAtoms": [
     {
       "key": "toBe",
-      "value": 2410
+      "value": 2412
     },
     {
       "key": "eq",
-      "value": 1252
+      "value": 1255
     },
     {
       "key": "where",
       "value": 1227
     },
     {
-      "key": "it",
-      "value": 1048
+      "key": "get",
+      "value": 1054
     },
     {
-      "key": "get",
-      "value": 1047
+      "key": "it",
+      "value": 1048
     },
     {
       "key": "async",
@@ -2022,7 +1989,7 @@
     },
     {
       "key": "stringify",
-      "value": 791
+      "value": 793
     },
     {
       "key": "set",
@@ -2030,7 +1997,7 @@
     },
     {
       "key": "inject",
-      "value": 636
+      "value": 637
     },
     {
       "key": "string",
@@ -2042,11 +2009,11 @@
     },
     {
       "key": "has",
-      "value": 475
+      "value": 482
     },
     {
       "key": "toBeTruthy",
-      "value": 442
+      "value": 441
     },
     {
       "key": "round",
@@ -2074,7 +2041,7 @@
     },
     {
       "key": "toMatchObject",
-      "value": 273
+      "value": 274
     },
     {
       "key": "insert",
@@ -2086,7 +2053,7 @@
     },
     {
       "key": "toBeGreaterThan",
-      "value": 258
+      "value": 259
     },
     {
       "key": "optional",
@@ -2133,6 +2100,10 @@
       "value": 186
     },
     {
+      "key": "resolve",
+      "value": 181
+    },
+    {
       "key": "toISOString",
       "value": 179
     },
@@ -2145,12 +2116,8 @@
       "value": 154
     },
     {
-      "key": "resolve",
-      "value": 148
-    },
-    {
       "key": "and",
-      "value": 147
+      "value": 148
     }
   ],
   "anomalies": [],
@@ -2171,6 +2138,21 @@
     ".mcp.json",
     ".tmp-test-postgres/",
     ".vscode/mcp.json",
+    "adapters/persistence/repositories/context.json",
+    "adapters/web/app/context.json",
+    "adapters/web/features/academic/context.json",
+    "adapters/web/features/admin/context.json",
+    "adapters/web/features/admin/sections/context.json",
+    "adapters/web/features/context.json",
+    "adapters/web/features/curriculum/context.json",
+    "adapters/web/features/pages/context.json",
+    "adapters/web/shared/api/context.json",
+    "adapters/web/shared/components/context.json",
+    "adapters/web/shared/hooks/context.json",
+    "adapters/web/shared/state/context.json",
+    "adapters/web/shared/ui/context.json",
+    "adapters/web/simulation/context.json",
+    "air-mentor-api/.airmentor-test-tmp/",
     "air-mentor-api/.env",
     "air-mentor-api/.eval-db-local/",
     "air-mentor-api/context.json",
@@ -2183,23 +2165,22 @@
     "air-mentor-api/tests/helpers/context.json",
     "context_main.json",
     "context.json",
+    "kernel/context.json",
+    "kernel/grading/context.json",
+    "kernel/identity/context.json",
+    "kernel/policy/context.json",
+    "kernel/shared/context.json",
     "output/",
     "scripts/context.json",
-    "src/admin/context.json",
-    "src/admin/sections/context.json",
-    "src/api/context.json",
-    "src/app/context.json",
-    "src/components/context.json",
-    "src/context.json",
-    "src/hooks/context.json",
-    "src/pages/context.json",
     "tests-e2e/context.json",
     "tests-e2e/fixtures/context.json",
     "tests-e2e/helpers/context.json",
     "tests-e2e/scripts/context.json",
     "tests-e2e/support/context.json",
     "tests/context.json",
-    "tmp/"
+    "tmp/",
+    "universities/iitb/context.json",
+    "universities/msruas/context.json"
   ],
   "mcpObservations": [
     "CTXO is callable, but the observed overlay was stale relative to current Git state; use it as a hint, not deletion authority.",

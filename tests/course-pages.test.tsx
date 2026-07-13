@@ -2,9 +2,9 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CourseDetail } from '../src/pages/course-pages'
-import { AppSelectorsContext, createAppSelectors, defaultSchemeForOffering } from '../src/selectors'
-import type { CoAttainmentRow, Offering, Student } from '../src/data'
+import { CourseDetail } from '@web/features/pages/course-pages'
+import { AppSelectorsContext, createAppSelectors, defaultSchemeForOffering } from '@web/shared/state/selectors'
+import type { CoAttainmentRow, Offering, Student } from '@web/simulation/fixtures'
 
 afterEach(() => {
   cleanup()

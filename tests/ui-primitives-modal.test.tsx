@@ -3,7 +3,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { createElement, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ModalWorkspace } from '../src/ui-primitives'
+import { ModalWorkspace } from '@web/shared/ui/primitives'
 
 function ModalHarness() {
   const [open, setOpen] = useState(true)

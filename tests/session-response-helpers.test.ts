@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ApiSessionResponse } from '../src/api/types'
-import { areSessionResponsesEquivalent } from '../src/session-response-helpers'
+import type { ApiSessionResponse } from '@web/shared/api/types'
+import { areSessionResponsesEquivalent } from '@web/shared/api/session-response-helpers'
 
 function makeSession(overrides: Partial<ApiSessionResponse> = {}): ApiSessionResponse {
   return {

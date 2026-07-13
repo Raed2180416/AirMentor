@@ -33,7 +33,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['src/ui-primitives.tsx', 'src/system-admin-ui.tsx'],
+    files: ['adapters/web/shared/ui/primitives.tsx', 'adapters/web/features/admin/system-admin-ui.tsx'],
     rules: {
       'react-refresh/only-export-components': 'off',
     },
@@ -44,8 +44,19 @@ export default defineConfig([
       'no-restricted-imports': ['error', {
         patterns: [
           {
-            group: ['../adapters/**', '../universities/**', '**/adapters/**', '**/universities/**'],
-            message: 'kernel/ must not import from adapters/ or universities/',
+            group: [
+              '../adapters/**',
+              '../universities/**',
+              '**/adapters/**',
+              '**/universities/**',
+              '@web/**',
+              '@adapters/**',
+              '@universities/**',
+              '@persistence/**',
+              '@http/**',
+              '@simulation/**',
+            ],
+            message: 'kernel/ must not import from adapters/ or universities/ (use @kernel/* instead)',
           },
           {
             group: ['react', 'react-dom', 'framer-motion', 'fastify', 'drizzle-orm', 'embedded-postgres'],

@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { StudentShellPage } from '../src/pages/student-shell'
+import { StudentShellPage } from '@web/features/pages/student-shell'
 
 describe('StudentShellPage', () => {
   it('renders deterministic disclaimer, panel labels, and bounded chat citations', () => {

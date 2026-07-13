@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useApiConnectionTarget } from '../src/api-connection'
+import { useApiConnectionTarget } from '@web/shared/api/api-connection'
 
 function SnapshotProbe({ primaryBaseUrl }: { primaryBaseUrl: string }) {
   const snapshot = useApiConnectionTarget(primaryBaseUrl, {

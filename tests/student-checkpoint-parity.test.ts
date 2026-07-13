@@ -4,14 +4,14 @@ import type {
   ApiStudentAgentCard,
   ApiStudentRiskExplorer,
   ApiFacultyProofOperations,
-} from '../src/api/types'
+} from '@web/shared/api/types'
 import {
   coreMetricsFromFacultyQueueItem,
   coreMetricsFromHodStudentWatch,
   coreMetricsFromRiskExplorer,
   coreMetricsFromStudentCard,
   type StudentCheckpointCoreMetrics,
-} from '../src/student-checkpoint-parity'
+} from '@web/features/academic/student-checkpoint-parity'
 
 // One canonical fixture — same student, same checkpoint window.
 const CANONICAL: StudentCheckpointCoreMetrics = {

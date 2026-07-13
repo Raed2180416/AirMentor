@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const appSource = readFileSync('src/app/operational-workspace.tsx', 'utf8')
+const appSource = readFileSync('adapters/web/app/operational-workspace.tsx', 'utf8')
 
 describe('HoD counterfactual simulator wiring', () => {
   it('passes the simulator loader from OperationalWorkspace props into route-surface selectors', () => {

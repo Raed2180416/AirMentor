@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ApiAdminRequestDetail, ApiAdminRequestSummary } from '../src/api/types'
-import { resolveSelectedAdminRequest } from '../src/admin-request-selection'
+import type { ApiAdminRequestDetail, ApiAdminRequestSummary } from '@web/shared/api/types'
+import { resolveSelectedAdminRequest } from '@web/features/admin/admin-request-selection'
 
 function makeSummary(overrides: Partial<ApiAdminRequestSummary> = {}): ApiAdminRequestSummary {
   return {
