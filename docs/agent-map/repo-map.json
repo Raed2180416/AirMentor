@@ -1,0 +1,2163 @@
+{
+  "schemaVersion": "airmentor-agent-repo-map-v2",
+  "repoRoot": "/home/raed/Projects/air-mentor-ui",
+  "generationPolicy": "Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits.",
+  "git": {
+    "branch": "main"
+  },
+  "outputs": {
+    "summary": "docs/agent-map/repo-map.json",
+    "files": "docs/agent-map/files.jsonl",
+    "symbols": "docs/agent-map/symbols.jsonl",
+    "imports": "docs/agent-map/imports.jsonl",
+    "routes": "docs/agent-map/routes.jsonl",
+    "tests": "docs/agent-map/tests.jsonl",
+    "atoms": "docs/agent-map/atoms.jsonl",
+    "directories": "docs/agent-map/directories.json",
+    "markdown": "docs/agent-map/AGENT_REPO_MAP_2026-06-06.md",
+    "strategy": "docs/agent-map/CODEBASE_MAPPING_STRATEGY_2026-06-06.md"
+  },
+  "packages": {
+    "root": {
+      "name": "air-mentor-ui",
+      "version": "0.0.0",
+      "type": "module",
+      "workspaces": [
+        "air-mentor-api"
+      ],
+      "scripts": {
+        "dev": "vite",
+        "dev:live": "bash scripts/dev-live.sh",
+        "dev:local-backend": "VITE_AIRMENTOR_API_BASE_URL=http://127.0.0.1:4000 npm run dev",
+        "dev:live-with-fallback": "VITE_AIRMENTOR_API_BASE_URL=https://api-production-ab72.up.railway.app VITE_AIRMENTOR_API_FALLBACK_BASE_URLS=http://127.0.0.1:4000 npm run dev",
+        "backend:dev:seeded": "bash scripts/run-local-backend-for-testing.sh",
+        "backend:autostart:setup": "bash scripts/setup-local-backend-autostart.sh",
+        "backend:autostart:disable": "bash scripts/disable-local-backend-autostart.sh",
+        "backend:sync:railway-db": "bash scripts/sync-local-backend-db-from-railway.sh",
+        "backend:drift:check": "bash scripts/check-local-railway-db-alignment.sh",
+        "build:api": "npm --workspace air-mentor-api run build",
+        "build": "tsc -b && vite build",
+        "lint": "eslint .",
+        "architecture:check": "node scripts/check-architecture-boundaries.mjs",
+        "agent:map": "node scripts/generate-agent-repo-map.mjs",
+        "inventory:compat-routes": "node scripts/report-compat-route-callers.mjs",
+        "test:api": "npm --workspace air-mentor-api test",
+        "evaluate:proof-risk-model": "npm --workspace air-mentor-api run evaluate:proof-risk-model",
+        "verify:proof-closure": "npm --workspace air-mentor-api run build && npm run build && npm --workspace air-mentor-api test -- --reporter=dot && npm test -- --reporter=dot && bash scripts/playwright-admin-live-proof-risk-smoke.sh",
+        "verify:proof-closure:proof-rc": "npm run verify:proof-closure && npm --workspace air-mentor-api run test:proof-rc",
+        "verify:proof-closure:live": "AIRMENTOR_LIVE_STACK=1 bash scripts/playwright-admin-live-proof-risk-smoke.sh",
+        "verify:proof-closure:teaching-live": "AIRMENTOR_LIVE_STACK=1 AIRMENTOR_PROOF_COVERAGE_TARGET=teacher bash scripts/playwright-admin-live-proof-risk-smoke.sh",
+        "verify:final-closeout": "bash scripts/verify-final-closeout.sh",
+        "verify:final-closeout:live": "bash scripts/verify-final-closeout-live.sh",
+        "diagnostics:all": "npx tsc -p tsconfig.app.json --noEmit || true; npx tsc -p tsconfig.node.json --noEmit || true; npx tsc -p tests/tsconfig.json --noEmit || true; npx tsc -p air-mentor-api/tsconfig.json --noEmit || true; npm run -s lint || true",
+        "e2e": "playwright test --config=tests-e2e/playwright.config.ts",
+        "e2e:attached": "AIRMENTOR_PW_SKIP_WEBSERVER=1 AIRMENTOR_PW_REUSE_SERVER=1 playwright test --config=tests-e2e/playwright.config.ts",
+        "e2e:install": "playwright install firefox chromium",
+        "test": "vitest run --maxWorkers=2",
+        "preview": "vite preview",
+        "playwright:version": "playwright --version",
+        "playwright:smoke": "bash scripts/playwright-smoke.sh",
+        "playwright:firefox:acceptance": "bash scripts/playwright-firefox-acceptance.sh",
+        "playwright:admin-live:acceptance": "bash scripts/playwright-admin-live-acceptance.sh",
+        "playwright:admin-live:accessibility-regression": "bash scripts/playwright-admin-live-accessibility-regression.sh",
+        "playwright:admin-live:keyboard-regression": "bash scripts/playwright-admin-live-keyboard-regression.sh",
+        "playwright:admin-live:proof-risk": "bash scripts/playwright-admin-live-proof-risk-smoke.sh",
+        "playwright:admin-live:teacher-proof": "AIRMENTOR_PROOF_COVERAGE_TARGET=teacher bash scripts/playwright-admin-live-proof-risk-smoke.sh",
+        "playwright:admin-live:request-flow": "bash scripts/playwright-admin-live-request-flow.sh",
+        "playwright:admin-live:session-security": "bash scripts/playwright-admin-live-session-security.sh",
+        "playwright:admin-live:teaching-parity": "bash scripts/playwright-admin-live-teaching-parity.sh"
+      },
+      "dependencies": [
+        "@xyflow/react",
+        "d3",
+        "d3-force",
+        "framer-motion",
+        "lucide-react",
+        "react",
+        "react-dom"
+      ],
+      "devDependencies": [
+        "@eslint/js",
+        "@playwright/test",
+        "@testing-library/react",
+        "@types/d3",
+        "@types/d3-force",
+        "@types/node",
+        "@types/react",
+        "@types/react-dom",
+        "@vitejs/plugin-react",
+        "axe-core",
+        "eslint",
+        "eslint-plugin-react-hooks",
+        "eslint-plugin-react-refresh",
+        "globals",
+        "jsdom",
+        "knip",
+        "typescript",
+        "typescript-eslint",
+        "vite",
+        "vitest"
+      ],
+      "engines": {
+        "node": ">=20"
+      }
+    },
+    "api": {
+      "name": "air-mentor-api",
+      "version": "0.1.0",
+      "type": "module",
+      "workspaces": [],
+      "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "dev:seeded": "tsx scripts/start-seeded-server.ts",
+        "start": "node dist/air-mentor-api/src/index.js",
+        "build": "tsc -p tsconfig.build.json",
+        "test": "node scripts/run-vitest-suite.mjs",
+        "test:proof-rc": "AIRMENTOR_BACKEND_SUITE=proof-rc node scripts/run-vitest-suite.mjs",
+        "test:all": "npm run test && npm run test:proof-rc",
+        "evaluate:proof-risk-model": "cross-env NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/evaluate-proof-risk-model.ts",
+        "deploy:railway:preflight": "node ../scripts/check-railway-deploy-readiness.mjs preflight",
+        "verify:live-session-contract": "node ../scripts/check-railway-deploy-readiness.mjs session-contract",
+        "db:migrate": "tsx src/db/migrate.ts",
+        "db:seed": "tsx src/db/seed.ts"
+      },
+      "dependencies": [
+        "@fastify/cookie",
+        "@fastify/cors",
+        "@fastify/swagger",
+        "argon2",
+        "drizzle-orm",
+        "fastify",
+        "nodemailer",
+        "pg",
+        "xlsx",
+        "zod"
+      ],
+      "devDependencies": [
+        "@types/node",
+        "@types/nodemailer",
+        "@types/pg",
+        "cross-env",
+        "drizzle-kit",
+        "embedded-postgres",
+        "esbuild",
+        "tsx",
+        "typescript",
+        "vitest"
+      ],
+      "engines": {
+        "node": ">=20"
+      }
+    }
+  },
+  "totals": {
+    "trackedFiles": 1374,
+    "ignoredEntriesObserved": 107,
+    "bytes": 15724991,
+    "lines": 330366,
+    "nonEmptyLines": 305906,
+    "commentLines": 7463,
+    "localDependencyEdges": 898,
+    "symbols": 24691,
+    "apiRoutes": 190,
+    "testCases": 1379,
+    "filesWithTests": 196,
+    "atoms": 83476,
+    "anomalies": 0
+  },
+  "counts": {
+    "byExtension": {
+      ".md": 55,
+      "[no-ext]": 14,
+      ".json": 32,
+      ".yaml": 107,
+      ".yml": 5,
+      ".kiro": 1,
+      ".ts": 669,
+      ".tsx": 214,
+      ".css": 2,
+      ".example": 1,
+      ".toml": 3,
+      ".txt": 7,
+      ".py": 108,
+      ".cjs": 1,
+      ".mjs": 59,
+      ".sh": 48,
+      ".js": 2,
+      ".sql": 34,
+      ".snap": 1,
+      ".bib": 1,
+      ".lock": 1,
+      ".nix": 1,
+      ".html": 1,
+      ".svg": 1,
+      ".service": 3,
+      ".timer": 1,
+      ".conf": 2
+    },
+    "byRole": {
+      "other": 408,
+      "build-config": 16,
+      "agent-config": 7,
+      "ci": 8,
+      "model-contract": 3,
+      "backend-script": 97,
+      "backend": 283,
+      "unit-test": 163,
+      "documentation": 34,
+      "forge-audit": 22,
+      "pipeline": 171,
+      "repo-script": 112,
+      "e2e-test": 50
+    },
+    "byTopDirectory": {
+      ".absolute-human": 1,
+      ".antigravityrules": 1,
+      ".arctic": 4,
+      ".cgcignore": 1,
+      ".claude": 3,
+      ".clauderules": 1,
+      ".codex": 1,
+      ".ctxo": 1,
+      ".cursorrules": 1,
+      ".githooks": 1,
+      ".github": 8,
+      ".gitignore": 1,
+      ".hintrc": 1,
+      ".kiro": 2,
+      ".node-version": 1,
+      ".vscode": 2,
+      ".windsurf": 1,
+      "adapters": 339,
+      "air-mentor-api": 494,
+      "CLAUDE.md": 1,
+      "docs": 34,
+      "eslint.config.js": 1,
+      "flake.lock": 1,
+      "flake.nix": 1,
+      "forge-audit": 22,
+      "HEARTBEAT.md": 1,
+      "index.html": 1,
+      "jsconfig.json": 1,
+      "kernel": 26,
+      "knip.json": 1,
+      "package-lock.json": 1,
+      "package.json": 1,
+      "pipeline": 171,
+      "public": 1,
+      "scripts": 112,
+      "skills-lock.json": 1,
+      "tests-e2e": 50,
+      "tests": 68,
+      "tsconfig.app.json": 1,
+      "tsconfig.json": 1,
+      "tsconfig.node.json": 1,
+      "tsconfig.tests.json": 1,
+      "universities": 9,
+      "vite.config.ts": 1,
+      "vitest.config.ts": 1
+    },
+    "ignoredByTopDirectory": {
+      ".absolute-human": 1,
+      ".agents": 1,
+      ".audit": 1,
+      ".devin": 1,
+      ".env": 1,
+      ".kilo": 7,
+      ".kiro": 1,
+      ".mcp.json": 1,
+      ".tmp-test-postgres": 1,
+      ".vscode": 1,
+      "adapters": 43,
+      "air-mentor-api": 29,
+      "context_main.json": 1,
+      "context.json": 1,
+      "kernel": 6,
+      "output": 1,
+      "scripts": 1,
+      "tests-e2e": 5,
+      "tests": 1,
+      "tmp": 1,
+      "universities": 2
+    }
+  },
+  "graph": {
+    "highFanIn": [
+      {
+        "path": "adapters/web/features/admin/system-admin-live-data.ts",
+        "importers": 43,
+        "role": "other"
+      },
+      {
+        "path": "tests-e2e/helpers/login-as.ts",
+        "importers": 38,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/support/playwright-runtime.ts",
+        "importers": 36,
+        "role": "e2e-test"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-ui.tsx",
+        "importers": 33,
+        "role": "other"
+      },
+      {
+        "path": "tests-e2e/fixtures/seeded-run-fixture.ts",
+        "importers": 33,
+        "role": "e2e-test"
+      },
+      {
+        "path": "adapters/web/features/admin/live-app-model.ts",
+        "importers": 32,
+        "role": "other"
+      },
+      {
+        "path": "tests-e2e/helpers/api-url.ts",
+        "importers": 28,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/helpers/proof-run-api.ts",
+        "importers": 19,
+        "role": "e2e-test"
+      },
+      {
+        "path": "adapters/web/features/admin/live-app-chrome.tsx",
+        "importers": 13,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/calendar/types.ts",
+        "importers": 13,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/ui/primitives-parts/tokens.ts",
+        "importers": 10,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/proof-dashboard/proof-dashboard-types.ts",
+        "importers": 9,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/course/stage-helpers.ts",
+        "importers": 9,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/hod/hod-helpers.ts",
+        "importers": 9,
+        "role": "other"
+      },
+      {
+        "path": "scripts/system-admin-live-auth.mjs",
+        "importers": 9,
+        "role": "repo-script"
+      },
+      {
+        "path": "adapters/web/features/admin/faculties-workspace/types.ts",
+        "importers": 8,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/sections/students/types.ts",
+        "importers": 8,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/calendar/styles.ts",
+        "importers": 8,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/api/types-parts/policy.ts",
+        "importers": 8,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/ui/primitives-parts/color.ts",
+        "importers": 8,
+        "role": "other"
+      },
+      {
+        "path": "tests-e2e/helpers/proof-playback.ts",
+        "importers": 8,
+        "role": "e2e-test"
+      },
+      {
+        "path": "adapters/web/features/academic-faculty-profile/profile-helpers.ts",
+        "importers": 7,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/hod/hod-shared-components.tsx",
+        "importers": 7,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/student-shell-parts/shared.tsx",
+        "importers": 7,
+        "role": "other"
+      },
+      {
+        "path": "scripts/proof-risk-semester-walk.mjs",
+        "importers": 7,
+        "role": "repo-script"
+      },
+      {
+        "path": "adapters/web/app/workspace-types.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/live-data-parts/types.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-overview-helpers.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/calendar/calendar-helpers.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/risk-explorer-parts/helpers.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/api/types-parts/session.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/components/obsidian-graph-parts/types.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/state/calendar-utils-parts/constants.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/state/calendar-utils-parts/time-scalars.ts",
+        "importers": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/faculties-workspace/workspace-primitives.tsx",
+        "importers": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/live-app-validation.ts",
+        "importers": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/proof-dashboard/proof-dashboard-helpers.ts",
+        "importers": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/sections/entity-editor-modal-types.ts",
+        "importers": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-live-app.tsx",
+        "importers": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/timetable-editor/types.ts",
+        "importers": 5,
+        "role": "other"
+      }
+    ],
+    "highFanOut": [
+      {
+        "path": "adapters/web/features/admin/system-admin-live-app.tsx",
+        "localImports": 36,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/live-app-model.ts",
+        "localImports": 20,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/api/types.ts",
+        "localImports": 19,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/academic-workspace-route-surface.tsx",
+        "localImports": 15,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/ui/primitives.tsx",
+        "localImports": 15,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-faculties-workspace.tsx",
+        "localImports": 14,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/app/App.tsx",
+        "localImports": 13,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/sections/faculty-members-section.tsx",
+        "localImports": 10,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-proof-dashboard-workspace.tsx",
+        "localImports": 10,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/calendar-pages.tsx",
+        "localImports": 10,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/hod-pages.tsx",
+        "localImports": 10,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/sections/students-section.tsx",
+        "localImports": 9,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/course-pages.tsx",
+        "localImports": 9,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/app/operational-workspace.tsx",
+        "localImports": 8,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-timetable-editor.tsx",
+        "localImports": 8,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-ui.tsx",
+        "localImports": 8,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/student-shell.tsx",
+        "localImports": 8,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/state/calendar-utils.ts",
+        "localImports": 8,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/academic-faculty-profile-page.tsx",
+        "localImports": 7,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/risk-explorer.tsx",
+        "localImports": 7,
+        "role": "other"
+      },
+      {
+        "path": "tests-e2e/specs/complete-realism-audit-2026-06-04.spec.ts",
+        "localImports": 7,
+        "role": "e2e-test"
+      },
+      {
+        "path": "adapters/web/features/admin/faculties-workspace/batch-overview-card.tsx",
+        "localImports": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/faculties-workspace/courses-panel.tsx",
+        "localImports": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/faculties-workspace/types.ts",
+        "localImports": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/sections/faculty-members/faculty-profile-tab.tsx",
+        "localImports": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/system-admin-live-data.ts",
+        "localImports": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/pages/calendar/agenda-board.tsx",
+        "localImports": 6,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/shared/components/obsidian-graph.tsx",
+        "localImports": 6,
+        "role": "other"
+      },
+      {
+        "path": "tests-e2e/specs/airmentor-demo-hardening-api-verification.spec.ts",
+        "localImports": 6,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/airmentor-demo-hardening-verification.spec.ts",
+        "localImports": 6,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/massive-evaluation-runthrough.spec.ts",
+        "localImports": 6,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/massive-evaluation-ui-only.spec.ts",
+        "localImports": 6,
+        "role": "e2e-test"
+      },
+      {
+        "path": "tests-e2e/specs/multi-semester-carryover.spec.ts",
+        "localImports": 6,
+        "role": "e2e-test"
+      },
+      {
+        "path": "adapters/web/features/academic-route-pages.tsx",
+        "localImports": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/faculties-workspace/governance-panels.tsx",
+        "localImports": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/faculties-workspace/provisioning-panel.tsx",
+        "localImports": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/live-app-chrome.tsx",
+        "localImports": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/live-data-parts/search.ts",
+        "localImports": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/sections/entity-editor-modals.tsx",
+        "localImports": 5,
+        "role": "other"
+      },
+      {
+        "path": "adapters/web/features/admin/sections/faculty-members/faculty-registry-panel.tsx",
+        "localImports": 5,
+        "role": "other"
+      }
+    ],
+    "topExternalImports": [
+      {
+        "key": "@web/shared",
+        "value": 449
+      },
+      {
+        "key": "@web/simulation",
+        "value": 265
+      },
+      {
+        "key": "vitest",
+        "value": 161
+      },
+      {
+        "key": "react",
+        "value": 151
+      },
+      {
+        "key": "drizzle-orm",
+        "value": 134
+      },
+      {
+        "key": "node:fs",
+        "value": 126
+      },
+      {
+        "key": "node:path",
+        "value": 108
+      },
+      {
+        "key": "@kernel/shared",
+        "value": 106
+      },
+      {
+        "key": "@web/features",
+        "value": 88
+      },
+      {
+        "key": "__future__",
+        "value": 79
+      },
+      {
+        "key": "pathlib",
+        "value": 72
+      },
+      {
+        "key": "lucide-react",
+        "value": 67
+      },
+      {
+        "key": "zod",
+        "value": 47
+      },
+      {
+        "key": "node:url",
+        "value": 41
+      },
+      {
+        "key": "framer-motion",
+        "value": 36
+      },
+      {
+        "key": "argparse",
+        "value": 35
+      },
+      {
+        "key": "typing",
+        "value": 32
+      },
+      {
+        "key": "fastify",
+        "value": 29
+      },
+      {
+        "key": "fs",
+        "value": 22
+      },
+      {
+        "key": "pipeline.orchestrator",
+        "value": 22
+      },
+      {
+        "key": "dataclasses",
+        "value": 18
+      },
+      {
+        "key": "node:os",
+        "value": 18
+      },
+      {
+        "key": "sklearn.linear_model",
+        "value": 18
+      },
+      {
+        "key": "json",
+        "value": 17
+      },
+      {
+        "key": "@testing-library/react",
+        "value": 16
+      },
+      {
+        "key": "node:assert",
+        "value": 16
+      },
+      {
+        "key": "node:crypto",
+        "value": 16
+      },
+      {
+        "key": "datetime",
+        "value": 15
+      },
+      {
+        "key": "node:child_process",
+        "value": 14
+      },
+      {
+        "key": "react-dom",
+        "value": 14
+      },
+      {
+        "key": "sklearn.metrics",
+        "value": 14
+      },
+      {
+        "key": "embedded-postgres",
+        "value": 12
+      },
+      {
+        "key": "node:net",
+        "value": 12
+      },
+      {
+        "key": "pg",
+        "value": 12
+      },
+      {
+        "key": "@persistence/repositories",
+        "value": 9
+      },
+      {
+        "key": "@xyflow/react",
+        "value": 9
+      },
+      {
+        "key": "path",
+        "value": 9
+      },
+      {
+        "key": "@playwright/test",
+        "value": 7
+      },
+      {
+        "key": "catboost",
+        "value": 7
+      },
+      {
+        "key": "lightgbm",
+        "value": 6
+      }
+    ]
+  },
+  "entryPoints": [
+    {
+      "name": "Backend server entry",
+      "file": "air-mentor-api/src/index.ts",
+      "role": "backend",
+      "lines": 60,
+      "localImports": 0,
+      "symbols": 8,
+      "note": "API process entrypoint."
+    },
+    {
+      "name": "Backend app factory",
+      "file": "air-mentor-api/src/app.ts",
+      "role": "backend",
+      "lines": 222,
+      "localImports": 0,
+      "symbols": 20,
+      "note": "Fastify app composition, CORS/session/security hooks, and module registration."
+    },
+    {
+      "name": "Backend DB schema",
+      "file": "air-mentor-api/src/db/schema.ts",
+      "role": "backend",
+      "lines": 1540,
+      "localImports": 0,
+      "symbols": 103,
+      "note": "Database schema source of truth."
+    },
+    {
+      "name": "Backend seeded server",
+      "file": "air-mentor-api/scripts/start-seeded-server.ts",
+      "role": "backend-script",
+      "lines": 153,
+      "localImports": 0,
+      "symbols": 24,
+      "note": "Deterministic demo backend launcher."
+    },
+    {
+      "name": "Proof runtime service",
+      "file": "air-mentor-api/src/lib/proof-control-plane-runtime-service.ts",
+      "role": "backend",
+      "lines": 1380,
+      "localImports": 0,
+      "symbols": 170,
+      "note": "Observed evidence recomputation, risk rows, playback rebuild, and checkpoint projection updates."
+    },
+    {
+      "name": "Proof risk model",
+      "file": "air-mentor-api/src/lib/proof-risk-model.ts",
+      "role": "backend",
+      "lines": 2811,
+      "localImports": 0,
+      "symbols": 442,
+      "note": "Runtime proof-risk scoring/model contract logic."
+    },
+    {
+      "name": "Proof risk contract bundle",
+      "file": "air-mentor-api/model-contract/proof-risk-model/risk-model-bundle.json",
+      "role": "model-contract",
+      "lines": 1628,
+      "localImports": 0,
+      "symbols": 0,
+      "note": "Tracked serving model contract."
+    },
+    {
+      "name": "Proof risk promotion decision",
+      "file": "air-mentor-api/model-contract/proof-risk-model/promotion-decision.json",
+      "role": "model-contract",
+      "lines": 32,
+      "localImports": 0,
+      "symbols": 0,
+      "note": "Governed shadow-vs-serving decision."
+    },
+    {
+      "name": "E2E config",
+      "file": "tests-e2e/playwright.config.ts",
+      "role": "e2e-test",
+      "lines": 126,
+      "localImports": 1,
+      "symbols": 18,
+      "note": "Browser proof harness configuration."
+    },
+    {
+      "name": "Root package scripts",
+      "file": "package.json",
+      "role": "build-config",
+      "lines": 86,
+      "localImports": 0,
+      "symbols": 0,
+      "note": "Primary command registry."
+    },
+    {
+      "name": "API package scripts",
+      "file": "air-mentor-api/package.json",
+      "role": "build-config",
+      "lines": 48,
+      "localImports": 0,
+      "symbols": 0,
+      "note": "Backend command registry."
+    }
+  ],
+  "routeOwnership": [
+    {
+      "file": "air-mentor-api/src/modules/admin-structure.ts",
+      "routeCount": 32,
+      "methods": {
+        "GET": 12,
+        "POST": 12,
+        "PATCH": 6,
+        "PUT": 2
+      },
+      "examples": [
+        "GET /api/admin/academic-faculties",
+        "POST /api/admin/academic-faculties",
+        "PATCH /api/admin/academic-faculties/:academicFacultyId",
+        "GET /api/admin/batches",
+        "POST /api/admin/batches",
+        "PATCH /api/admin/batches/:batchId",
+        "GET /api/admin/batches/:batchId/setup-readiness",
+        "GET /api/admin/curriculum-courses"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/admin-proof-sandbox.ts",
+      "routeCount": 23,
+      "methods": {
+        "GET": 9,
+        "POST": 14
+      },
+      "examples": [
+        "GET /api/admin/batches/:batchId/proof-dashboard",
+        "GET /api/admin/proof-models/active",
+        "GET /api/admin/proof-models/evaluation",
+        "GET /api/admin/proof-models/correlations",
+        "GET /api/admin/proof-runs/:simulationRunId/checkpoints",
+        "GET /api/admin/proof-runs/:simulationRunId/checkpoints/:checkpointId",
+        "GET /api/admin/proof-runs/:simulationRunId/checkpoints/:checkpointId/students",
+        "GET /api/admin/proof-runs/:simulationRunId/checkpoints/:checkpointId/students/:studentId"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/academic-runtime-routes.ts",
+      "routeCount": 20,
+      "methods": {
+        "PUT": 11,
+        "GET": 3,
+        "POST": 4,
+        "DELETE": 1,
+        "PATCH": 1
+      },
+      "examples": [
+        "PUT /api/academic/runtime/:stateKey",
+        "PUT /api/academic/tasks/sync",
+        "GET /api/academic/tasks",
+        "PUT /api/academic/tasks/:taskId",
+        "POST /api/academic/unlock-requests/:taskId/transition",
+        "PUT /api/academic/task-placements/sync",
+        "GET /api/academic/task-placements",
+        "PUT /api/academic/task-placements/:taskId"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/academic-admin-offerings-routes.ts",
+      "routeCount": 18,
+      "methods": {
+        "GET": 5,
+        "POST": 10,
+        "PATCH": 3
+      },
+      "examples": [
+        "GET /api/admin/course-outcomes",
+        "POST /api/admin/course-outcomes",
+        "PATCH /api/admin/course-outcomes/:courseOutcomeOverrideId",
+        "GET /api/admin/offerings/:offeringId/resolved-course-outcomes",
+        "GET /api/admin/offerings/:offeringId/stage-eligibility",
+        "POST /api/admin/offerings/:offeringId/advance-stage",
+        "POST /api/admin/batches/:batchId/provision",
+        "GET /api/admin/offerings"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/academic-proof-routes.ts",
+      "routeCount": 18,
+      "methods": {
+        "GET": 11,
+        "POST": 7
+      },
+      "examples": [
+        "GET /api/academic/hod/proof-summary",
+        "GET /api/academic/hod/proof-bundle",
+        "GET /api/academic/hod/proof-courses",
+        "GET /api/academic/hod/proof-faculty",
+        "GET /api/academic/hod/proof-students",
+        "GET /api/academic/hod/proof-reassessments",
+        "GET /api/academic/hod/proof-counterfactual",
+        "GET /api/academic/hod/proof-counterfactual-simulator"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/admin-requests.ts",
+      "routeCount": 11,
+      "methods": {
+        "GET": 3,
+        "POST": 8
+      },
+      "examples": [
+        "GET /api/admin/requests",
+        "POST /api/admin/requests",
+        "GET /api/admin/requests/:requestId",
+        "POST /api/admin/requests/:requestId/assign",
+        "POST /api/admin/requests/:requestId/request-info",
+        "POST /api/admin/requests/:requestId/approve",
+        "POST /api/admin/requests/:requestId/reject",
+        "POST /api/admin/requests/:requestId/mark-implemented"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/institution.ts",
+      "routeCount": 11,
+      "methods": {
+        "GET": 4,
+        "PATCH": 4,
+        "POST": 3
+      },
+      "examples": [
+        "GET /api/admin/institution",
+        "PATCH /api/admin/institution",
+        "GET /api/admin/departments",
+        "POST /api/admin/departments",
+        "PATCH /api/admin/departments/:departmentId",
+        "GET /api/admin/branches",
+        "POST /api/admin/branches",
+        "PATCH /api/admin/branches/:branchId"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/admin-control-plane.ts",
+      "routeCount": 9,
+      "methods": {
+        "GET": 6,
+        "POST": 1,
+        "PATCH": 1,
+        "PUT": 1
+      },
+      "examples": [
+        "GET /api/admin/search",
+        "GET /api/admin/audit-events",
+        "GET /api/admin/audit-events/recent",
+        "GET /api/admin/reminders",
+        "POST /api/admin/reminders",
+        "PATCH /api/admin/reminders/:reminderId",
+        "GET /api/admin/faculty-calendar/:facultyId",
+        "PUT /api/admin/faculty-calendar/:facultyId"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/curriculum-graph-routes.ts",
+      "routeCount": 9,
+      "methods": {
+        "GET": 1,
+        "POST": 8
+      },
+      "examples": [
+        "GET /api/admin/batches/:batchId/curriculum-graph",
+        "POST /api/admin/batches/:batchId/curriculum-graph/draft",
+        "POST /api/admin/batches/:batchId/curriculum-graph/validate",
+        "POST /api/admin/batches/:batchId/curriculum-graph/publish",
+        "POST /api/admin/batches/:batchId/curriculum-graph/undo",
+        "POST /api/admin/batches/:batchId/curriculum-graph/redo",
+        "POST /api/admin/batches/:batchId/curriculum-graph/suggest",
+        "POST /api/admin/batches/:batchId/curriculum-graph/suggestions/:suggestionId/approve"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/session.ts",
+      "routeCount": 9,
+      "methods": {
+        "GET": 3,
+        "POST": 4,
+        "DELETE": 1,
+        "PATCH": 1
+      },
+      "examples": [
+        "GET /api/session",
+        "POST /api/session/login",
+        "POST /api/session/password-setup/request",
+        "GET /api/session/password-setup/:token",
+        "POST /api/session/password-setup/redeem",
+        "DELETE /api/session",
+        "POST /api/session/role-context",
+        "GET /api/preferences/ui"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/people.ts",
+      "routeCount": 8,
+      "methods": {
+        "GET": 1,
+        "POST": 4,
+        "PATCH": 3
+      },
+      "examples": [
+        "GET /api/admin/faculty",
+        "POST /api/admin/faculty",
+        "PATCH /api/admin/faculty/:facultyId",
+        "POST /api/admin/faculty/:facultyId/password-setup",
+        "POST /api/admin/faculty/:facultyId/appointments",
+        "PATCH /api/admin/appointments/:appointmentId",
+        "POST /api/admin/faculty/:facultyId/role-grants",
+        "PATCH /api/admin/role-grants/:grantId"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/students.ts",
+      "routeCount": 8,
+      "methods": {
+        "GET": 1,
+        "POST": 4,
+        "PATCH": 3
+      },
+      "examples": [
+        "GET /api/admin/students",
+        "POST /api/admin/students",
+        "PATCH /api/admin/students/:studentId",
+        "POST /api/admin/students/:studentId/enrollments",
+        "PATCH /api/admin/enrollments/:enrollmentId",
+        "POST /api/admin/mentor-assignments/bulk-apply",
+        "POST /api/admin/mentor-assignments",
+        "PATCH /api/admin/mentor-assignments/:assignmentId"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/admin-demo-workspace.ts",
+      "routeCount": 5,
+      "methods": {
+        "GET": 1,
+        "POST": 3,
+        "DELETE": 1
+      },
+      "examples": [
+        "GET /api/admin/demo-workspaces",
+        "POST /api/admin/demo-workspaces",
+        "POST /api/admin/demo-workspaces/:demoWorkspaceId/provision/preview",
+        "POST /api/admin/demo-workspaces/:demoWorkspaceId/provision",
+        "DELETE /api/admin/demo-workspaces/:demoWorkspaceId"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/app.ts",
+      "routeCount": 3,
+      "methods": {
+        "GET": 3
+      },
+      "examples": [
+        "GET /",
+        "GET /health",
+        "GET /openapi.json"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/courses.ts",
+      "routeCount": 3,
+      "methods": {
+        "GET": 1,
+        "POST": 1,
+        "PATCH": 1
+      },
+      "examples": [
+        "GET /api/admin/courses",
+        "POST /api/admin/courses",
+        "PATCH /api/admin/courses/:courseId"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/academic-bootstrap-routes.ts",
+      "routeCount": 2,
+      "methods": {
+        "GET": 2
+      },
+      "examples": [
+        "GET /api/academic/public/faculty",
+        "GET /api/academic/bootstrap"
+      ]
+    },
+    {
+      "file": "air-mentor-api/src/modules/client-telemetry.ts",
+      "routeCount": 1,
+      "methods": {
+        "POST": 1
+      },
+      "examples": [
+        "POST /api/client-telemetry"
+      ]
+    }
+  ],
+  "componentOwnership": [
+    {
+      "file": "adapters/web/app/App.tsx",
+      "role": "other",
+      "lines": 304,
+      "components": [
+        "App",
+        "OperationalApp",
+        "PortalRouterApp"
+      ],
+      "hooks": [
+        "useAcademicProjection",
+        "useAcademicProofLoaders",
+        "useAcademicSession",
+        "useApiConnectionTarget",
+        "useBackendHealthMonitor",
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/academic-workspace-route-surface.tsx",
+      "role": "other",
+      "lines": 380,
+      "components": [
+        "AcademicWorkspaceRouteSurface",
+        "LazyAllStudentsPage",
+        "LazyCalendarTimetablePage",
+        "LazyCourseDetail",
+        "LazyEntryWorkspacePage",
+        "LazyHodView",
+        "LazyRiskExplorerPage",
+        "LazySchemeSetupPage",
+        "LazyStudentHistoryPage",
+        "LazyStudentShellPage",
+        "LazyUploadPage"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-curriculum-graph.tsx",
+      "role": "other",
+      "lines": 400,
+      "components": [
+        "CurriculumGraphContent",
+        "SystemAdminCurriculumGraphWorkspace"
+      ],
+      "hooks": [
+        "useCallback",
+        "useEffect",
+        "useForceLayout",
+        "useMemo",
+        "useReactFlow",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/shared/components/backend-health-indicator.tsx",
+      "role": "other",
+      "lines": 210,
+      "components": [
+        "ApiFallbackIndicator",
+        "BackendOfflineIndicator"
+      ],
+      "hooks": [
+        "useBackendHealthMonitor",
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useRef",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-live-app.tsx",
+      "role": "other",
+      "lines": 3964,
+      "components": [
+        "SystemAdminLiveApp"
+      ],
+      "hooks": [
+        "useCallback",
+        "useDeferredValue",
+        "useDismissibleSessionNotice",
+        "useEffect",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/shared/components/obsidian-graph.tsx",
+      "role": "other",
+      "lines": 350,
+      "components": [
+        "H",
+        "ObsidianGraph"
+      ],
+      "hooks": [
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useRef",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/app/operational-workspace.tsx",
+      "role": "other",
+      "lines": 2667,
+      "components": [
+        "OperationalWorkspace"
+      ],
+      "hooks": [
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useRef",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/academic-session-shell-parts/auth-primitives.tsx",
+      "role": "other",
+      "lines": 50,
+      "components": [
+        "AcademicAuthPageShell",
+        "AcademicFieldLabel",
+        "AcademicHeroFeature",
+        "AcademicHeroPill",
+        "AcademicInput",
+        "AcademicNotice"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/faculties-workspace/workspace-primitives.tsx",
+      "role": "other",
+      "lines": 131,
+      "components": [
+        "AdminMiniStat",
+        "LabeledField",
+        "SystemAdminHierarchyWorkspaceTabs",
+        "ToggleField",
+        "WorkspaceEntityRailItems",
+        "WorkspaceMeta"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/shared/ui/primitives-parts/modal-workspace.tsx",
+      "role": "other",
+      "lines": 197,
+      "components": [
+        "ModalWorkspace"
+      ],
+      "hooks": [
+        "useCallback",
+        "useEffect",
+        "useReducedMotion",
+        "useRef",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/simulation/proof-surface-shell.tsx",
+      "role": "other",
+      "lines": 396,
+      "components": [
+        "ProofSurfaceHero",
+        "ProofSurfaceLauncher",
+        "ProofSurfaceTabPanel",
+        "ProofSurfaceTabs"
+      ],
+      "hooks": [
+        "useReducedMotion",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/app/task-composer-modal.tsx",
+      "role": "other",
+      "lines": 298,
+      "components": [
+        "TaskComposerModal"
+      ],
+      "hooks": [
+        "useAppSelectors",
+        "useCallback",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/admin/curriculum-graph-workspace/curriculum-graph-nodes.tsx",
+      "role": "other",
+      "lines": 189,
+      "components": [
+        "CourseBubbleNode",
+        "OutcomeNode",
+        "PrereqNode",
+        "SemesterClusterNode",
+        "TopicNode"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/faculties-workspace/hierarchy-structure-cards.tsx",
+      "role": "other",
+      "lines": 321,
+      "components": [
+        "AcademicFacultyCreateForm",
+        "AcademicFacultyDetailCard",
+        "BranchDetailCard",
+        "DepartmentDetailCard",
+        "PickAYearFallback"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-app.tsx",
+      "role": "other",
+      "lines": 104,
+      "components": [
+        "SystemAdminApp"
+      ],
+      "hooks": [
+        "useApiConnectionTarget",
+        "useBackendHealthMonitor",
+        "useEffect",
+        "useMemo"
+      ]
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-session-shell.tsx",
+      "role": "other",
+      "lines": 193,
+      "components": [
+        "SystemAdminAuthPageShell",
+        "SystemAdminLoginScreen",
+        "SystemAdminRoleRequiredScreen",
+        "SystemAdminSessionBoundary"
+      ],
+      "hooks": [
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-timetable-editor.tsx",
+      "role": "other",
+      "lines": 375,
+      "components": [
+        "SystemAdminTimetableEditor"
+      ],
+      "hooks": [
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-ui-parts/field-inputs.tsx",
+      "role": "other",
+      "lines": 83,
+      "components": [
+        "FieldLabel",
+        "SearchField",
+        "SelectInput",
+        "TextAreaInput",
+        "TextInput"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-ui-parts/misc-widgets.tsx",
+      "role": "other",
+      "lines": 110,
+      "components": [
+        "AuthFeature",
+        "DayToggle",
+        "EntityButton",
+        "HeroBadge",
+        "ModalFrame"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/curriculum/course-config-drawer.tsx",
+      "role": "other",
+      "lines": 360,
+      "components": [
+        "CourseConfigDrawer",
+        "FormInput",
+        "FormSection",
+        "FormSelect",
+        "TabButton"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/curriculum/curriculum-graph-workspace.tsx",
+      "role": "other",
+      "lines": 384,
+      "components": [
+        "CurriculumGraphWorkspace"
+      ],
+      "hooks": [
+        "useCallback",
+        "useEffect",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/pages/course-pages.tsx",
+      "role": "other",
+      "lines": 179,
+      "components": [
+        "CourseDetail"
+      ],
+      "hooks": [
+        "useAppSelectors",
+        "useMemo",
+        "useReducedMotion",
+        "useState"
+      ]
+    },
+    {
+      "file": "tests/ui-primitives-modal.test.tsx",
+      "role": "unit-test",
+      "lines": 140,
+      "components": [
+        "ModalHarness",
+        "RerenderModalHarness"
+      ],
+      "hooks": [
+        "useFakeTimers",
+        "useRealTimers",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/app/student-drawer.tsx",
+      "role": "other",
+      "lines": 337,
+      "components": [
+        "StudentDrawer"
+      ],
+      "hooks": [
+        "useAppSelectors",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/academic-routes/dashboard-year-section.tsx",
+      "role": "other",
+      "lines": 109,
+      "components": [
+        "OfferingCard",
+        "YearSection"
+      ],
+      "hooks": [
+        "useAppSelectors",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-faculty-calendar-workspace.tsx",
+      "role": "other",
+      "lines": 337,
+      "components": [
+        "SystemAdminFacultyCalendarWorkspace"
+      ],
+      "hooks": [
+        "useEffect",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/pages/student-shell.tsx",
+      "role": "other",
+      "lines": 254,
+      "components": [
+        "StudentShellPage"
+      ],
+      "hooks": [
+        "useEffect",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/pages/workflow/all-students-page.tsx",
+      "role": "other",
+      "lines": 128,
+      "components": [
+        "AllStudentsPage"
+      ],
+      "hooks": [
+        "useAppSelectors",
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/shared/ui/primitives-parts/scroll-area.tsx",
+      "role": "other",
+      "lines": 69,
+      "components": [
+        "HScrollArea"
+      ],
+      "hooks": [
+        "useCallback",
+        "useRef",
+        "useState"
+      ]
+    },
+    {
+      "file": "tests/api-connection.test.tsx",
+      "role": "unit-test",
+      "lines": 119,
+      "components": [
+        "SnapshotProbe"
+      ],
+      "hooks": [
+        "useApiConnectionTarget",
+        "useFakeTimers",
+        "useRealTimers"
+      ]
+    },
+    {
+      "file": "adapters/web/features/academic-routes/cl-dashboard.tsx",
+      "role": "other",
+      "lines": 260,
+      "components": [
+        "CLDashboard"
+      ],
+      "hooks": [
+        "useAppSelectors",
+        "useMemo"
+      ]
+    },
+    {
+      "file": "adapters/web/features/academic-routes/mentor-view.tsx",
+      "role": "other",
+      "lines": 330,
+      "components": [
+        "MentorView"
+      ],
+      "hooks": [
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/academic-session-shell-parts/login-page.tsx",
+      "role": "other",
+      "lines": 278,
+      "components": [
+        "AcademicLoginPage"
+      ],
+      "hooks": [
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/academic-session-shell-parts/route-states.tsx",
+      "role": "other",
+      "lines": 57,
+      "components": [
+        "AcademicBackendUnavailableState",
+        "AcademicFacultyContextUnavailableState",
+        "AcademicRouteLoadingFallback"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/live-app-chrome-parts/overview-cards.tsx",
+      "role": "other",
+      "lines": 141,
+      "components": [
+        "ActionQueueCard",
+        "OverviewSupportCard",
+        "SectionLaunchCard"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/proof-dashboard/proof-dashboard-cards.tsx",
+      "role": "other",
+      "lines": 47,
+      "components": [
+        "CompactStatCard",
+        "ScrollCard"
+      ],
+      "hooks": [
+        "useId"
+      ]
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-faculties-workspace.tsx",
+      "role": "other",
+      "lines": 374,
+      "components": [
+        "SystemAdminFacultiesWorkspace"
+      ],
+      "hooks": [
+        "useEffect",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-ui-parts/banners.tsx",
+      "role": "other",
+      "lines": 103,
+      "components": [
+        "InfoBanner",
+        "QueueBulkActions",
+        "RestoreBanner"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/admin/system-admin-ui-parts/section-widgets.tsx",
+      "role": "other",
+      "lines": 48,
+      "components": [
+        "EmptyState",
+        "MetricCard",
+        "SectionHeading"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/hod-counterfactual-panel.tsx",
+      "role": "other",
+      "lines": 245,
+      "components": [
+        "HodCounterfactualPanel"
+      ],
+      "hooks": [
+        "useEffect",
+        "useMemo"
+      ]
+    },
+    {
+      "file": "adapters/web/features/hod-counterfactual-simulator-panel.tsx",
+      "role": "other",
+      "lines": 316,
+      "components": [
+        "HodCounterfactualSimulatorPanel"
+      ],
+      "hooks": [
+        "useEffect",
+        "useMemo"
+      ]
+    },
+    {
+      "file": "adapters/web/features/pages/calendar/block-details-sheet.tsx",
+      "role": "other",
+      "lines": 291,
+      "components": [
+        "BlockDetailsSheet",
+        "DetailRow"
+      ],
+      "hooks": [
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/pages/hod-pages.tsx",
+      "role": "other",
+      "lines": 266,
+      "components": [
+        "HodView"
+      ],
+      "hooks": [
+        "useMemo",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/pages/risk-explorer.tsx",
+      "role": "other",
+      "lines": 137,
+      "components": [
+        "RiskExplorerPage"
+      ],
+      "hooks": [
+        "useEffect",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/features/pages/student-shell-parts/shared.tsx",
+      "role": "other",
+      "lines": 64,
+      "components": [
+        "CitationList",
+        "MessageBubble",
+        "PanelLabel"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/features/pages/workflow/scheme-setup-page.tsx",
+      "role": "other",
+      "lines": 196,
+      "components": [
+        "SchemeSetupPage"
+      ],
+      "hooks": [
+        "useEffect",
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/shared/ui/primitives-parts/fields.tsx",
+      "role": "other",
+      "lines": 15,
+      "components": [
+        "FieldInput",
+        "FieldSelect",
+        "FieldTextarea"
+      ],
+      "hooks": []
+    },
+    {
+      "file": "adapters/web/shared/ui/primitives-parts/risk.tsx",
+      "role": "other",
+      "lines": 33,
+      "components": [
+        "RiskBadge",
+        "StagePips"
+      ],
+      "hooks": [
+        "useReducedMotion"
+      ]
+    },
+    {
+      "file": "adapters/web/app/action-queue.tsx",
+      "role": "other",
+      "lines": 250,
+      "components": [
+        "ActionQueue"
+      ],
+      "hooks": [
+        "useState"
+      ]
+    },
+    {
+      "file": "adapters/web/app/portal-entry.tsx",
+      "role": "other",
+      "lines": 138,
+      "components": [
+        "PortalCard",
+        "PortalEntryScreen"
+      ],
+      "hooks": []
+    }
+  ],
+  "topAtoms": [
+    {
+      "key": "toBe",
+      "value": 2416
+    },
+    {
+      "key": "eq",
+      "value": 1203
+    },
+    {
+      "key": "where",
+      "value": 1179
+    },
+    {
+      "key": "get",
+      "value": 1054
+    },
+    {
+      "key": "async",
+      "value": 882
+    },
+    {
+      "key": "notNull",
+      "value": 833
+    },
+    {
+      "key": "stringify",
+      "value": 793
+    },
+    {
+      "key": "set",
+      "value": 670
+    },
+    {
+      "key": "inject",
+      "value": 637
+    },
+    {
+      "key": "string",
+      "value": 611
+    },
+    {
+      "key": "toContain",
+      "value": 547
+    },
+    {
+      "key": "has",
+      "value": 482
+    },
+    {
+      "key": "toBeTruthy",
+      "value": 441
+    },
+    {
+      "key": "round",
+      "value": 423
+    },
+    {
+      "key": "toEqual",
+      "value": 379
+    },
+    {
+      "key": "fn",
+      "value": 373
+    },
+    {
+      "key": "first",
+      "value": 350
+    },
+    {
+      "key": "object",
+      "value": 310
+    },
+    {
+      "key": "loginAs",
+      "value": 291
+    },
+    {
+      "key": "toMatchObject",
+      "value": 274
+    },
+    {
+      "key": "parse",
+      "value": 267
+    },
+    {
+      "key": "insert",
+      "value": 266
+    },
+    {
+      "key": "toBeGreaterThan",
+      "value": 259
+    },
+    {
+      "key": "optional",
+      "value": 248
+    },
+    {
+      "key": "references",
+      "value": 229
+    },
+    {
+      "key": "toBeNull",
+      "value": 227
+    },
+    {
+      "key": "getByRole",
+      "value": 226
+    },
+    {
+      "key": "isArray",
+      "value": 222
+    },
+    {
+      "key": "waitForTimeout",
+      "value": 216
+    },
+    {
+      "key": "all",
+      "value": 213
+    },
+    {
+      "key": "num",
+      "value": 202
+    },
+    {
+      "key": "createTestApp",
+      "value": 192
+    },
+    {
+      "key": "fromEntries",
+      "value": 192
+    },
+    {
+      "key": "expectVisible",
+      "value": 189
+    },
+    {
+      "key": "number",
+      "value": 186
+    },
+    {
+      "key": "resolve",
+      "value": 183
+    },
+    {
+      "key": "toISOString",
+      "value": 180
+    },
+    {
+      "key": "useCallback",
+      "value": 178
+    },
+    {
+      "key": "getByText",
+      "value": 154
+    },
+    {
+      "key": "auth",
+      "value": 146
+    }
+  ],
+  "anomalies": [],
+  "ignoredExamples": [
+    ".absolute-human/archive/",
+    ".agents/",
+    ".audit/",
+    ".devin/",
+    ".env",
+    ".kilo/",
+    ".kilo/.gitignore",
+    ".kilo/agent-manager.json",
+    ".kilo/node_modules/",
+    ".kilo/package-lock.json",
+    ".kilo/package.json",
+    ".kilo/worktrees/",
+    ".kiro/skills/",
+    ".mcp.json",
+    ".tmp-test-postgres/",
+    ".vscode/mcp.json",
+    "adapters/persistence/repositories/context.json",
+    "adapters/web/app/app-parts/context.json",
+    "adapters/web/app/context.json",
+    "adapters/web/app/operational-workspace-parts/",
+    "adapters/web/app/operational-workspace-parts/context.json",
+    "adapters/web/features/academic-faculty-profile/context.json",
+    "adapters/web/features/academic-routes/context.json",
+    "adapters/web/features/academic-session-shell-parts/context.json",
+    "adapters/web/features/academic/context.json",
+    "adapters/web/features/admin/context.json",
+    "adapters/web/features/admin/curriculum-graph-workspace/context.json",
+    "adapters/web/features/admin/faculties-workspace/context.json",
+    "adapters/web/features/admin/faculty-calendar-workspace/context.json",
+    "adapters/web/features/admin/live-app-chrome-parts/context.json",
+    "adapters/web/features/admin/live-app-model-parts/context.json",
+    "adapters/web/features/admin/live-app/handlers/context.json",
+    "adapters/web/features/admin/live-data-parts/context.json",
+    "adapters/web/features/admin/proof-dashboard/context.json",
+    "adapters/web/features/admin/sections/context.json",
+    "adapters/web/features/admin/sections/faculty-members/context.json",
+    "adapters/web/features/admin/sections/students/context.json",
+    "adapters/web/features/admin/system-admin-ui-parts/context.json",
+    "adapters/web/features/admin/timetable-editor/context.json",
+    "adapters/web/features/context.json",
+    "adapters/web/features/curriculum/context.json",
+    "adapters/web/features/pages/calendar/context.json",
+    "adapters/web/features/pages/context.json",
+    "adapters/web/features/pages/course/context.json",
+    "adapters/web/features/pages/hod/context.json",
+    "adapters/web/features/pages/risk-explorer-parts/context.json",
+    "adapters/web/features/pages/student-shell-parts/context.json",
+    "adapters/web/features/pages/workflow/context.json",
+    "adapters/web/shared/api/client-parts/context.json",
+    "adapters/web/shared/api/context.json",
+    "adapters/web/shared/api/types-parts/context.json",
+    "adapters/web/shared/components/context.json",
+    "adapters/web/shared/components/obsidian-graph-parts/context.json",
+    "adapters/web/shared/hooks/context.json",
+    "adapters/web/shared/state/calendar-utils-parts/context.json",
+    "adapters/web/shared/state/context.json",
+    "adapters/web/shared/ui/context.json",
+    "adapters/web/shared/ui/primitives-parts/context.json",
+    "adapters/web/simulation/context.json",
+    "air-mentor-api/.airmentor-test-tmp/",
+    "air-mentor-api/.env",
+    "air-mentor-api/.eval-db-local/",
+    "air-mentor-api/context.json",
+    "air-mentor-api/scripts/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/academic-offerings/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/academic-runtime/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/academic/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/admin-control-plane/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/admin-structure/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/curriculum-graph/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/people/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/students/context.json",
+    "air-mentor-api/src/application/ports/context.json",
+    "air-mentor-api/src/application/use-cases/academic-offerings/context.json",
+    "air-mentor-api/src/application/use-cases/academic-runtime/context.json",
+    "air-mentor-api/src/application/use-cases/academic/context.json",
+    "air-mentor-api/src/application/use-cases/admin-control-plane/context.json",
+    "air-mentor-api/src/application/use-cases/admin-structure/context.json",
+    "air-mentor-api/src/application/use-cases/curriculum-graph/context.json",
+    "air-mentor-api/src/application/use-cases/people/context.json"
+  ],
+  "mcpObservations": [
+    "CTXO is callable, but the observed overlay was stale relative to current Git state; use it as a hint, not deletion authority.",
+    "Codegraph context switching failed because this checkout has no .codegraphcontext file; do not treat Codegraph as current deletion authority yet.",
+    "LogicStamp compare-modes succeeded for the TypeScript/TSX slice: 258 files, 186,791 GPT-4 header tokens, and 1,312,917 GPT-4 source tokens."
+  ]
+}

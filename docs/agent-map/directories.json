@@ -285,8 +285,8 @@
   {
     "path": "adapters/web/features/admin",
     "fileCount": 29,
-    "bytes": 451080,
-    "lines": 9859,
+    "bytes": 375072,
+    "lines": 8326,
     "roles": {
       "other": 29
     },
@@ -356,6 +356,18 @@
     },
     "extensions": {
       ".ts": 6
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/live-app/handlers",
+    "fileCount": 15,
+    "bytes": 115019,
+    "lines": 2748,
+    "roles": {
+      "other": 15
+    },
+    "extensions": {
+      ".ts": 15
     }
   },
   {

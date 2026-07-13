@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type FormEvent,
   type ReactNode,
 } from 'react'
 import { motion } from 'framer-motion'
@@ -20,7 +19,7 @@ import {
   Network,
 } from 'lucide-react'
 import { AirMentorApiClient, AirMentorApiError } from '@web/shared/api/client'
-import { readActiveDemoWorkspacePointer, writeActiveDemoWorkspacePointer } from '@web/simulation/demo-workspace-pointer'
+import { readActiveDemoWorkspacePointer } from '@web/simulation/demo-workspace-pointer'
 import type {
   ApiAdminFacultyPasswordSetupResponse,
   ApiAuditEvent,
@@ -31,25 +30,18 @@ import type {
   ApiCurriculumLinkageCandidate,
   ApiCurriculumLinkageGenerationStatus,
   ApiFacultyRecord,
-  ApiFacultyAppointment,
   ApiMentorAssignmentBulkApplyResponse,
-  ApiMentorAssignment,
   ApiAdminRequestDetail,
   ApiAdminSearchResult,
-  ApiAdminRequestSummary,
   ApiOfferingStageEligibility,
-  ApiOfferingOwnership,
   ApiProofDashboard,
   ApiProofRunCheckpointDetail,
   ApiProofRunCheckpointStudentSummary,
   ApiResolvedBatchPolicy,
   ApiResolvedBatchStagePolicy,
-  ApiScopeType,
-  ApiRoleGrant,
   ApiSessionResponse,
   ApiSimulationStageCheckpointSummary,
   ApiStagePolicyOverride,
-  ApiStudentEnrollment,
   ApiStudentRecord,
 } from '@web/shared/api/types'
 import { T, mono, sora } from '@web/simulation/fixtures'
@@ -101,7 +93,6 @@ import {
   matchesStudentScope,
 } from './system-admin-overview-helpers'
 import { resolveSelectedAdminRequest } from './admin-request-selection'
-import { areSessionResponsesEquivalent } from '@web/shared/api/session-response-helpers'
 import {
   CANONICAL_PROOF_BATCH_ID,
   CANONICAL_PROOF_ACADEMIC_FACULTY_ID,
@@ -114,10 +105,7 @@ import {
   resolveProofDashboardBatchId,
 } from '@web/simulation/proof-pilot'
 import {
-  buildBulkMentorAssignmentApplyPayload,
-  buildBulkMentorAssignmentPreviewPayload,
   defaultBulkMentorAssignmentForm,
-  describeBulkMentorPreview,
   getScopedMentorEligibleFaculty,
   type BulkMentorAssignmentFormState,
 } from './system-admin-provisioning-helpers'
@@ -135,16 +123,13 @@ import type { LiveAdminSectionId } from './system-admin-live-data'
 import { applyThemePreset, isLightTheme } from '@web/shared/ui/theme'
 import { clearProofPlaybackSelection, readSharedProofPlaybackSelection, writeProofPlaybackSelection } from '@web/simulation/proof-playback'
 import { emitClientOperationalEvent, normalizeClientTelemetryError } from '@web/shared/state/telemetry'
-import {
-  describeGovernanceRollbackMessage,
-  SystemAdminFacultiesWorkspace,
-} from './system-admin-faculties-workspace'
+import { SystemAdminFacultiesWorkspace } from './system-admin-faculties-workspace'
 import { SystemAdminHistoryWorkspace } from './system-admin-history-workspace'
 import { SystemAdminProofDashboardWorkspace } from './system-admin-proof-dashboard-workspace'
 import { SystemAdminRequestWorkspace } from './system-admin-request-workspace'
 import { SystemAdminSessionBoundary } from './system-admin-session-shell'
 import { ProofSurfaceLauncher } from '@web/simulation/proof-surface-shell'
-import { ProofSimulationControls, type ProofAdvanceControlMode } from '@web/simulation/proof-simulation-controls'
+import { ProofSimulationControls } from '@web/simulation/proof-simulation-controls'
 import {
   Btn,
   Card,
@@ -156,6 +141,21 @@ import { StudentsSection } from './sections/students-section'
 import { FacultyMembersSection } from './sections/faculty-members-section'
 import { EntityEditorModals } from './sections/entity-editor-modals'
 import { ActionQueueRail } from './action-queue-rail'
+import { createAuthHandlers } from './live-app/handlers/auth-handlers'
+import { createReminderHandlers } from './live-app/handlers/reminder-handlers'
+import { createCurriculumEditorHelpers } from './live-app/handlers/curriculum-editor-helpers'
+import { createHierarchyHandlers } from './live-app/handlers/hierarchy-handlers'
+import { createCurriculumCrudHandlers } from './live-app/handlers/curriculum-crud-handlers'
+import { createCurriculumFeatureHandlers } from './live-app/handlers/curriculum-feature-handlers'
+import { createScopePolicyHandlers } from './live-app/handlers/scope-policy-handlers'
+import { createProvisioningHandlers } from './live-app/handlers/provisioning-handlers'
+import { createProofHandlers } from './live-app/handlers/proof-handlers'
+import { createRequestHandlers } from './live-app/handlers/request-handlers'
+import { createStudentHandlers } from './live-app/handlers/student-handlers'
+import { createFacultyProfileHandlers } from './live-app/handlers/faculty-profile-handlers'
+import { createFacultyOwnershipHandlers } from './live-app/handlers/faculty-ownership-handlers'
+import { createRegistryNavigationHandlers } from './live-app/handlers/registry-navigation-handlers'
+import { createRailNavigationHandlers } from './live-app/handlers/rail-navigation-handlers'
 
 type SystemAdminLiveAppProps = {
   apiBaseUrl: string
@@ -213,13 +213,9 @@ import {
   defaultStudentForm,
   defaultCurriculumFeatureForm,
   hydrateCurriculumFeatureForm,
-  buildCurriculumFeaturePayload,
-  validateCurriculumFeaturePrerequisites,
   defaultStagePolicyForm,
   hydrateStagePolicyForm,
-  buildStagePolicyPayload,
   defaultBatchProvisioningForm,
-  buildBatchProvisioningPayload,
   mergePolicyPayload,
   defaultEnrollmentForm,
   defaultMentorAssignmentForm,
@@ -232,10 +228,6 @@ import {
   defaultOwnershipForm,
   hydratePolicyForm,
   toErrorMessage,
-  requireText,
-  requirePositiveInteger,
-  requirePositiveEvenInteger,
-  requireDate,
   buildValidatedPolicyPayload,
   readStringField,
   readNumberField,
@@ -251,12 +243,7 @@ import {
   getAdminWorkspaceSnapshotKey,
   matchesBatchScope,
   toOptionalScopeValue,
-  readSubmittedField,
   shouldHydrateHierarchyEditor,
-  upsertAcademicFacultyRecord,
-  upsertDepartmentRecord,
-  upsertBranchRecord,
-  upsertBatchRecord,
 } from './live-app-model'
 import {
   TeachingShellAdminTopBar,
@@ -1714,74 +1701,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return () => { cancelled = true }
   }, [apiClient, selectedFacultyId])
 
-  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setAuthBusy(true); setAuthError('')
-    try {
-      const loginSession = await apiClient.login({ identifier, password })
-      setSession(loginSession); setIdentifier(''); setPassword('')
-      void settleCookieBackedSession('login', loginSession)
-        .then(settledSession => {
-          setSession(current => {
-            if (!current) return current
-            if (current.sessionId !== loginSession.sessionId) return current
-            if (current.activeRoleGrant.grantId !== loginSession.activeRoleGrant.grantId) return current
-            if (areSessionResponsesEquivalent(current, settledSession)) return current
-            return settledSession
-          })
-        })
-        .catch(error => {
-          setAuthError(toErrorMessage(error))
-        })
-    } catch (error) {
-      setAuthError(toErrorMessage(error))
-    }
-    finally { setAuthBusy(false) }
-  }
-
-  const handleLogout = async () => {
-    const activeSessionId = session?.sessionId ?? null
-    clearRegistryScope()
-    setDismissedQueueItemKeys([])
-    setSession(null)
-    setData(EMPTY_DATA)
-    setStagePolicyOverrides([])
-    setDataError('')
-    onExitPortal?.()
-    void apiClient.logout().catch(error => {
-      emitClientOperationalEvent('auth.session.logout_failed', {
-        workspace: 'system-admin',
-        sessionId: activeSessionId,
-        error: normalizeClientTelemetryError(error),
-      }, { level: 'warn' })
-    })
-  }
-
-  const handleSwitchToSystemAdmin = async () => {
-    if (!systemAdminGrant) return
-    setAuthBusy(true); setAuthError('')
-    try {
-      const switchedSession = await apiClient.switchRoleContext(systemAdminGrant.grantId)
-      setSession(switchedSession)
-      void settleCookieBackedSession('role-switch', switchedSession)
-        .then(settledSession => {
-          setSession(current => {
-            if (!current) return current
-            if (current.sessionId !== switchedSession.sessionId) return current
-            if (current.activeRoleGrant.grantId !== switchedSession.activeRoleGrant.grantId) return current
-            if (areSessionResponsesEquivalent(current, settledSession)) return current
-            return settledSession
-          })
-        })
-        .catch(error => {
-          setAuthError(toErrorMessage(error))
-        })
-    }
-    catch (error) {
-      setAuthError(toErrorMessage(error))
-    }
-    finally { setAuthBusy(false) }
-  }
 
   const runAction = useCallback(async <T,>(runner: () => Promise<T>) => {
     setActionError('')
@@ -1817,1149 +1736,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })
   }, [curriculumProofRefreshRetry, queueProofRefreshBatches, runAction])
 
-  const handleCreateReminder = async () => {
-    if (!remindersSupported) {
-      setActionError('This live backend does not expose private admin reminders yet. Deploy the latest API to enable them.')
-      return
-    }
-    const title = window.prompt('Reminder title')
-    if (!title?.trim()) return
-    const body = window.prompt('Reminder note', 'Follow up with HoD / verify structure change / review pending implementation.') ?? ''
-    const dueAt = window.prompt('Due date and time (YYYY-MM-DDTHH:mm)', `${new Date().toISOString().slice(0, 16)}`) ?? ''
-    if (!dueAt.trim()) return
-    await runAction(async () => {
-      await apiClient.createAdminReminder({
-        title: title.trim(),
-        body: body.trim() || 'Personal admin reminder.',
-        dueAt: dueAt.trim(),
-        status: 'pending',
-      })
-      setFlashMessage('Reminder created.')
-    })
-  }
 
-  const handleToggleReminderStatus = async (reminder: LiveAdminDataset['reminders'][number]) => {
-    if (!remindersSupported) {
-      setActionError('Private reminders are not available on this backend yet.')
-      return
-    }
-    await runAction(async () => {
-      await apiClient.updateAdminReminder(reminder.reminderId, {
-        title: reminder.title,
-        body: reminder.body,
-        dueAt: reminder.dueAt,
-        status: reminder.status === 'pending' ? 'done' : 'pending',
-        version: reminder.version,
-      })
-      setFlashMessage(reminder.status === 'pending' ? 'Reminder completed.' : 'Reminder reopened.')
-    })
-  }
 
-  const startEditingTerm = (termId: string) => {
-    const target = data.terms.find(item => item.termId === termId)
-    if (!target) return
-    setEntityEditors(prev => ({
-      ...prev,
-      term: {
-        termId: target.termId,
-        academicYearLabel: target.academicYearLabel,
-        semesterNumber: String(target.semesterNumber),
-        startDate: target.startDate,
-        endDate: target.endDate,
-      },
-    }))
-  }
 
-  const resetTermEditor = () => {
-    setEntityEditors(prev => ({
-      ...prev,
-      term: defaultEntityEditorState(String(authoritativeOperationalSemester ?? 1)).term,
-    }))
-  }
 
-  const startEditingCurriculumCourse = (curriculumCourseId: string) => {
-    const target = data.curriculumCourses.find(item => item.curriculumCourseId === curriculumCourseId)
-    if (!target) return
-    setSelectedCurriculumSemester(String(target.semesterNumber))
-    setSelectedCurriculumCourseId(target.curriculumCourseId)
-    setEntityEditors(prev => ({
-      ...prev,
-      curriculum: {
-        curriculumCourseId: target.curriculumCourseId,
-        semesterNumber: String(target.semesterNumber),
-        courseCode: target.courseCode,
-        title: target.title,
-        credits: String(target.credits),
-      },
-    }))
-  }
 
-  const resetCurriculumEditor = () => {
-    setEntityEditors(prev => ({
-      ...prev,
-      curriculum: defaultEntityEditorState(selectedCurriculumSemester || String(authoritativeOperationalSemester ?? 1)).curriculum,
-    }))
-  }
 
-  const handleUpdateAcademicFaculty = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedAcademicFaculty) return
-    const form = event.currentTarget
-    const nextAcademicFaculty = await runAction(async () => apiClient.updateAcademicFaculty(selectedAcademicFaculty.academicFacultyId, {
-        code: requireText('Faculty code', readSubmittedField(form, 'academicFacultyCode', entityEditors.academicFaculty.code)),
-        name: requireText('Faculty name', readSubmittedField(form, 'academicFacultyName', entityEditors.academicFaculty.name)),
-        overview: readSubmittedField(form, 'academicFacultyOverview', entityEditors.academicFaculty.overview).trim() || null,
-        status: selectedAcademicFaculty.status,
-        version: selectedAcademicFaculty.version,
-      }))
-    if (!nextAcademicFaculty) return
-    setData(prev => upsertAcademicFacultyRecord(prev, nextAcademicFaculty))
-    setFlashMessage('Academic faculty updated.')
-    setEditingEntity(null)
-  }
 
-  const handleArchiveAcademicFaculty = async () => {
-    if (!selectedAcademicFaculty) return
-    if (!window.confirm(`Archive ${selectedAcademicFaculty.name}? Departments, branches, years, students, and faculty tied to this scope will disappear from the working views until you restore it from History.`)) return
-    await runAction(async () => {
-      await apiClient.updateAcademicFaculty(selectedAcademicFaculty.academicFacultyId, {
-        code: selectedAcademicFaculty.code,
-        name: selectedAcademicFaculty.name,
-        overview: selectedAcademicFaculty.overview,
-        status: 'archived',
-        version: selectedAcademicFaculty.version,
-      })
-      navigate({ section: 'faculties' })
-      setFlashMessage('Academic faculty archived. Restore it from History when needed.')
-    })
-  }
-
-  const handleDeleteAcademicFaculty = async () => {
-    if (!selectedAcademicFaculty) return
-    if (!window.confirm(`Delete ${selectedAcademicFaculty.name}? This removes the faculty scope from working views, including its departments, branches, years, and linked registries, and sends the faculty to the recycle bin.`)) return
-    await runAction(async () => {
-      await apiClient.updateAcademicFaculty(selectedAcademicFaculty.academicFacultyId, {
-        code: selectedAcademicFaculty.code,
-        name: selectedAcademicFaculty.name,
-        overview: selectedAcademicFaculty.overview,
-        status: 'deleted',
-        version: selectedAcademicFaculty.version,
-      })
-      navigate({ section: 'faculties' })
-      setFlashMessage('Academic faculty moved to recycle bin.')
-    })
-  }
-
-  const handleRestoreAcademicFaculty = async (academicFaculty = selectedAcademicFaculty) => {
-    if (!academicFaculty) return
-    await runAction(async () => {
-      await apiClient.updateAcademicFaculty(academicFaculty.academicFacultyId, {
-        code: academicFaculty.code,
-        name: academicFaculty.name,
-        overview: academicFaculty.overview,
-        status: 'active',
-        version: academicFaculty.version,
-      })
-      navigate({ section: 'faculties', academicFacultyId: academicFaculty.academicFacultyId })
-      setFlashMessage('Academic faculty restored.')
-    })
-  }
-
-  const handleUpdateDepartment = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedDepartment) return
-    const form = event.currentTarget
-    const nextDepartment = await runAction(async () => apiClient.updateDepartment(selectedDepartment.departmentId, {
-        academicFacultyId: selectedAcademicFaculty?.academicFacultyId ?? null,
-        code: requireText('Department code', readSubmittedField(form, 'departmentCode', entityEditors.department.code)),
-        name: requireText('Department name', readSubmittedField(form, 'departmentName', entityEditors.department.name)),
-        status: selectedDepartment.status,
-        version: selectedDepartment.version,
-      }))
-    if (!nextDepartment) return
-    setData(prev => upsertDepartmentRecord(prev, nextDepartment))
-    setFlashMessage('Department updated.')
-    setEditingEntity(null)
-  }
-
-  const handleArchiveDepartment = async () => {
-    if (!selectedDepartment) return
-    const activeCourseCount = data.courses.filter(item => item.departmentId === selectedDepartment.departmentId && isVisibleAdminRecord(item.status)).length
-    const activeAppointmentCount = data.facultyMembers
-      .flatMap(item => item.appointments)
-      .filter(item => item.departmentId === selectedDepartment.departmentId && item.status === 'active').length
-    if (departmentBranches.length > 0 || activeCourseCount > 0 || activeAppointmentCount > 0) {
-      setActionError('Clear branches, course catalog links, and faculty appointments before archiving this department.')
-      return
-    }
-    await runAction(async () => {
-      await apiClient.updateDepartment(selectedDepartment.departmentId, {
-        academicFacultyId: selectedDepartment.academicFacultyId,
-        code: selectedDepartment.code,
-        name: selectedDepartment.name,
-        status: 'deleted',
-        version: selectedDepartment.version,
-      })
-      navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty?.academicFacultyId })
-      setFlashMessage('Department archived.')
-    })
-  }
-
-  const handleUpdateBranch = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedBranch) return
-    const form = event.currentTarget
-    const nextBranch = await runAction(async () => apiClient.updateBranch(selectedBranch.branchId, {
-        departmentId: selectedBranch.departmentId,
-        code: requireText('Branch code', readSubmittedField(form, 'branchCode', entityEditors.branch.code)),
-        name: requireText('Branch name', readSubmittedField(form, 'branchName', entityEditors.branch.name)),
-        programLevel: requireText('Program level', readSubmittedField(form, 'branchProgramLevel', entityEditors.branch.programLevel)),
-        semesterCount: requirePositiveEvenInteger('Semester count', readSubmittedField(form, 'branchSemesterCount', entityEditors.branch.semesterCount)),
-        status: selectedBranch.status,
-        version: selectedBranch.version,
-      }))
-    if (!nextBranch) return
-    setData(prev => upsertBranchRecord(prev, nextBranch))
-    setFlashMessage('Branch updated.')
-    setEditingEntity(null)
-  }
-
-  const handleArchiveBranch = async () => {
-    if (!selectedBranch) return
-    const activeTermCount = data.terms.filter(item => item.branchId === selectedBranch.branchId && isVisibleAdminRecord(item.status)).length
-    if (branchBatches.length > 0 || activeTermCount > 0) {
-      setActionError('Archive or move branch batches and terms before archiving the branch.')
-      return
-    }
-    await runAction(async () => {
-      await apiClient.updateBranch(selectedBranch.branchId, {
-        departmentId: selectedBranch.departmentId,
-        code: selectedBranch.code,
-        name: selectedBranch.name,
-        programLevel: selectedBranch.programLevel,
-        semesterCount: selectedBranch.semesterCount,
-        status: 'deleted',
-        version: selectedBranch.version,
-      })
-      navigate({
-        section: 'faculties',
-        academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
-        departmentId: selectedDepartment?.departmentId,
-      })
-      setFlashMessage('Branch archived.')
-    })
-  }
-
-  const handleUpdateBatch = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedBatch || !selectedBranch) return
-    const form = event.currentTarget
-    const nextBatch = await runAction(async () => {
-      const sectionLabels = readSubmittedField(form, 'batchSectionLabels', entityEditors.batch.sectionLabels).split(',').map(item => item.trim()).filter(Boolean)
-      if (sectionLabels.length === 0) throw new Error('At least one batch section label is required.')
-      return apiClient.updateBatch(selectedBatch.batchId, {
-        branchId: selectedBranch.branchId,
-        admissionYear: requirePositiveInteger('Admission year', readSubmittedField(form, 'batchAdmissionYear', entityEditors.batch.admissionYear)),
-        batchLabel: requireText('Batch label', readSubmittedField(form, 'batchLabel', entityEditors.batch.batchLabel)),
-        currentSemester: requirePositiveInteger('Active semester', readSubmittedField(form, 'batchCurrentSemester', entityEditors.batch.currentSemester)),
-        sectionLabels,
-        status: selectedBatch.status,
-        version: selectedBatch.version,
-      })
-    })
-    if (!nextBatch) return
-    setData(prev => upsertBatchRecord(prev, nextBatch))
-    setFlashMessage('Batch updated.')
-    setEditingEntity(null)
-  }
-
-  const handleArchiveBatch = async () => {
-    if (!selectedBatch || !selectedBranch) return
-    const activeStudentCount = data.students.filter(item => item.status === 'active' && item.activeAcademicContext?.batchId === selectedBatch.batchId).length
-    const activeTermCount = batchTerms.length
-    const activeCurriculumCount = data.curriculumCourses.filter(item => item.batchId === selectedBatch.batchId && isVisibleAdminRecord(item.status)).length
-    if (activeStudentCount > 0 || activeTermCount > 0 || activeCurriculumCount > 0) {
-      setActionError('Archive the batch’s terms and curriculum, and remap active students before archiving the batch.')
-      return
-    }
-    await runAction(async () => {
-      await apiClient.updateBatch(selectedBatch.batchId, {
-        branchId: selectedBranch.branchId,
-        admissionYear: selectedBatch.admissionYear,
-        batchLabel: selectedBatch.batchLabel,
-        currentSemester: selectedBatch.currentSemester,
-        sectionLabels: selectedBatch.sectionLabels,
-        status: 'deleted',
-        version: selectedBatch.version,
-      })
-      navigate({
-        section: 'faculties',
-        academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
-        departmentId: selectedDepartment?.departmentId,
-        branchId: selectedBranch.branchId,
-      })
-      setFlashMessage('Batch archived.')
-    })
-  }
-
-  const handleCreateAcademicFaculty = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const form = event.currentTarget
-    const nextAcademicFaculty = await runAction(async () => apiClient.createAcademicFaculty({
-        code: requireText('Faculty code', readSubmittedField(form, 'academicFacultyCode', structureForms.academicFaculty.code)),
-        name: requireText('Faculty name', readSubmittedField(form, 'academicFacultyName', structureForms.academicFaculty.name)),
-        overview: readSubmittedField(form, 'academicFacultyOverview', structureForms.academicFaculty.overview).trim() || null,
-        status: 'active',
-      }))
-    if (!nextAcademicFaculty) return
-    setData(prev => upsertAcademicFacultyRecord(prev, nextAcademicFaculty))
-    setStructureForms(prev => ({ ...prev, academicFaculty: { code: '', name: '', overview: '' } }))
-    setFlashMessage('Academic faculty created.')
-  }
-
-  const handleCreateDepartment = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedAcademicFaculty) return
-    const form = event.currentTarget
-    const nextDepartment = await runAction(async () => apiClient.createDepartment({
-        academicFacultyId: selectedAcademicFaculty.academicFacultyId,
-        code: requireText('Department code', readSubmittedField(form, 'departmentCode', structureForms.department.code)),
-        name: requireText('Department name', readSubmittedField(form, 'departmentName', structureForms.department.name)),
-        status: 'active',
-      }))
-    if (!nextDepartment) return
-    setData(prev => upsertDepartmentRecord(prev, nextDepartment))
-    setStructureForms(prev => ({ ...prev, department: { code: '', name: '' } }))
-    setFlashMessage('Department created.')
-  }
-
-  const handleCreateBranch = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedDepartment) return
-    const form = event.currentTarget
-    const nextBranch = await runAction(async () => apiClient.createBranch({
-        departmentId: selectedDepartment.departmentId,
-        code: requireText('Branch code', readSubmittedField(form, 'branchCode', structureForms.branch.code)),
-        name: requireText('Branch name', readSubmittedField(form, 'branchName', structureForms.branch.name)),
-        programLevel: requireText('Program level', readSubmittedField(form, 'branchProgramLevel', structureForms.branch.programLevel)),
-        semesterCount: requirePositiveEvenInteger('Semester count', readSubmittedField(form, 'branchSemesterCount', structureForms.branch.semesterCount)),
-        status: 'active',
-      }))
-    if (!nextBranch) return
-    setData(prev => upsertBranchRecord(prev, nextBranch))
-    setStructureForms(prev => ({ ...prev, branch: { code: '', name: '', programLevel: 'UG', semesterCount: '8' } }))
-    setFlashMessage('Branch created.')
-  }
-
-  const handleCreateBatch = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedBranch) return
-    const form = event.currentTarget
-    const nextBatch = await runAction(async () => {
-      const sectionLabels = readSubmittedField(form, 'batchSectionLabels', structureForms.batch.sectionLabels).split(',').map(item => item.trim()).filter(Boolean)
-      if (sectionLabels.length === 0) throw new Error('At least one batch section label is required.')
-      return apiClient.createBatch({
-        branchId: selectedBranch.branchId,
-        admissionYear: requirePositiveInteger('Admission year', readSubmittedField(form, 'batchAdmissionYear', structureForms.batch.admissionYear)),
-        batchLabel: requireText('Batch label', readSubmittedField(form, 'batchLabel', structureForms.batch.batchLabel)),
-        currentSemester: requirePositiveInteger('Active semester', readSubmittedField(form, 'batchCurrentSemester', structureForms.batch.currentSemester)),
-        sectionLabels,
-        status: 'active',
-      })
-    })
-    if (!nextBatch) return
-    setData(prev => upsertBatchRecord(prev, nextBatch))
-    setStructureForms(prev => ({ ...prev, batch: { admissionYear: '2022', batchLabel: '2022', currentSemester: '1', sectionLabels: 'A, B' } }))
-    setFlashMessage('Batch created.')
-  }
-
-  const handleSaveTerm = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedBranch || !selectedBatch) return
-    await runAction(async () => {
-      if (entityEditors.term.termId) {
-        const current = data.terms.find(item => item.termId === entityEditors.term.termId)
-        if (!current) throw new Error('Selected term could not be found.')
-        await apiClient.updateTerm(current.termId, {
-          branchId: selectedBranch.branchId,
-          batchId: selectedBatch.batchId,
-          academicYearLabel: requireText('Academic year label', entityEditors.term.academicYearLabel),
-          semesterNumber: requirePositiveInteger('Semester number', entityEditors.term.semesterNumber),
-          startDate: requireDate('Term start date', entityEditors.term.startDate),
-          endDate: requireDate('Term end date', entityEditors.term.endDate),
-          status: current.status,
-          version: current.version,
-        })
-        setFlashMessage('Academic term updated.')
-      } else {
-        await apiClient.createTerm({
-          branchId: selectedBranch.branchId,
-          batchId: selectedBatch.batchId,
-          academicYearLabel: requireText('Academic year label', entityEditors.term.academicYearLabel),
-          semesterNumber: requirePositiveInteger('Semester number', entityEditors.term.semesterNumber),
-          startDate: requireDate('Term start date', entityEditors.term.startDate),
-          endDate: requireDate('Term end date', entityEditors.term.endDate),
-          status: 'active',
-        })
-        setFlashMessage('Academic term created.')
-      }
-      resetTermEditor()
-    })
-  }
-
-  const handleArchiveTerm = async (termId: string) => {
-    const target = data.terms.find(item => item.termId === termId)
-    if (!target) return
-    await runAction(async () => {
-      await apiClient.updateTerm(target.termId, {
-        branchId: target.branchId,
-        batchId: target.batchId,
-        academicYearLabel: target.academicYearLabel,
-        semesterNumber: target.semesterNumber,
-        startDate: target.startDate,
-        endDate: target.endDate,
-        status: 'deleted',
-        version: target.version,
-      })
-      if (entityEditors.term.termId === termId) resetTermEditor()
-      setFlashMessage('Academic term archived.')
-    })
-  }
-
-  const handleSaveCurriculumCourse = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedBatch) return
-    await runAction(async () => {
-      let courseCodeForRefresh = entityEditors.curriculum.courseCode
-      const matchingCourse = data.courses.find(item => item.courseCode.toLowerCase() === entityEditors.curriculum.courseCode.toLowerCase() && isVisibleAdminRecord(item.status)) ?? null
-      if (entityEditors.curriculum.curriculumCourseId) {
-        const current = data.curriculumCourses.find(item => item.curriculumCourseId === entityEditors.curriculum.curriculumCourseId)
-        if (!current) throw new Error('Selected curriculum course could not be found.')
-        courseCodeForRefresh = current.courseCode
-        await apiClient.updateCurriculumCourse(current.curriculumCourseId, {
-          batchId: selectedBatch.batchId,
-          semesterNumber: requirePositiveInteger('Curriculum semester number', entityEditors.curriculum.semesterNumber),
-          courseId: matchingCourse?.courseId ?? null,
-          courseCode: requireText('Course code', entityEditors.curriculum.courseCode),
-          title: requireText('Course title', entityEditors.curriculum.title),
-          credits: requirePositiveInteger('Course credits', entityEditors.curriculum.credits),
-          status: current.status,
-          version: current.version,
-        })
-        setFlashMessage('Curriculum course updated.')
-      } else {
-        await apiClient.createCurriculumCourse({
-          batchId: selectedBatch.batchId,
-          semesterNumber: requirePositiveInteger('Curriculum semester number', entityEditors.curriculum.semesterNumber),
-          courseId: matchingCourse?.courseId ?? null,
-          courseCode: requireText('Course code', entityEditors.curriculum.courseCode),
-          title: requireText('Course title', entityEditors.curriculum.title),
-          credits: requirePositiveInteger('Course credits', entityEditors.curriculum.credits),
-          status: 'active',
-        })
-        setFlashMessage('Curriculum course created.')
-      }
-      resetCurriculumEditor()
-      await loadAdminData()
-      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
-      await refreshProofDashboard(selectedBatch.batchId)
-      setFlashMessage(`Curriculum course saved for ${courseCodeForRefresh}. Any required proof refresh is now queued by the backend.`)
-    })
-  }
-
-  const handleBootstrapCurriculumManifest = async () => {
-    if (!selectedBatch) return
-    await runAction(async () => {
-      const result = await apiClient.bootstrapCurriculum(selectedBatch.batchId, { manifestKey: 'msruas-mnc-seed' })
-      setCurriculumLinkageGenerationStatus(result.candidateGenerationStatus)
-      await loadAdminData()
-      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
-      await refreshProofDashboard(selectedBatch.batchId)
-      const queuedCount = getQueuedProofRefreshCount(result)
-      const generationNote = result.candidateGenerationStatus.status === 'ok'
-        ? ''
-        : ` Candidate generation ran in ${result.candidateGenerationStatus.status} mode via ${result.candidateGenerationStatus.provider.replace('-', ' ')}.`
-      setFlashMessage(
-        queuedCount > 0
-          ? `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, generated ${result.generatedCandidateCount} prerequisite suggestion${result.generatedCandidateCount === 1 ? '' : 's'}, and queued ${queuedCount} proof refresh${queuedCount === 1 ? '' : 'es'}.${generationNote}`
-          : `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, and generated ${result.generatedCandidateCount} prerequisite suggestion${result.generatedCandidateCount === 1 ? '' : 's'}.${generationNote}`,
-      )
-    })
-  }
-
-  const handleRegenerateCurriculumLinkageCandidates = async () => {
-    if (!selectedBatch) return
-    await runAction(async () => {
-      let result
-      try {
-        result = await apiClient.regenerateCurriculumLinkageCandidates(selectedBatch.batchId, {
-          curriculumCourseId: selectedCurriculumFeatureItem?.curriculumCourseId,
-        })
-      } catch (error) {
-        emitClientOperationalEvent('curriculum.linkage.regeneration_failed', {
-          workspace: 'system-admin',
-          batchId: selectedBatch.batchId,
-          curriculumCourseId: selectedCurriculumFeatureItem?.curriculumCourseId ?? null,
-          error: normalizeClientTelemetryError(error),
-        }, { level: 'warn' })
-        throw error
-      }
-      emitClientOperationalEvent('curriculum.linkage.regenerated', {
-        workspace: 'system-admin',
-        batchId: selectedBatch.batchId,
-        curriculumCourseId: selectedCurriculumFeatureItem?.curriculumCourseId ?? null,
-        generatedCount: result.items.length,
-        candidateGenerationStatus: result.candidateGenerationStatus.status,
-      })
-      setCurriculumLinkageGenerationStatus(result.candidateGenerationStatus)
-      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
-      const generationNote = result.candidateGenerationStatus.status === 'ok'
-        ? ''
-        : ` Candidate generation ran in ${result.candidateGenerationStatus.status} mode via ${result.candidateGenerationStatus.provider.replace('-', ' ')}.`
-      setFlashMessage(
-        result.items.length > 0
-          ? `Generated ${result.items.length} prerequisite suggestion${result.items.length === 1 ? '' : 's'} for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`
-          : `No prerequisite suggestions generated for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`,
-      )
-    })
-  }
-
-  const handleApproveCurriculumLinkageCandidate = async (curriculumLinkageCandidateId: string) => {
-    if (!selectedBatch) return
-    await runAction(async () => {
-      let result
-      try {
-        result = await apiClient.approveCurriculumLinkageCandidate(selectedBatch.batchId, curriculumLinkageCandidateId, {
-          reviewNote: curriculumLinkageReviewNote.trim() || undefined,
-        })
-      } catch (error) {
-        emitClientOperationalEvent('curriculum.linkage.approval_failed', {
-          workspace: 'system-admin',
-          batchId: selectedBatch.batchId,
-          curriculumLinkageCandidateId,
-          error: normalizeClientTelemetryError(error),
-        }, { level: 'warn' })
-        throw error
-      }
-      emitClientOperationalEvent('curriculum.linkage.approved', {
-        workspace: 'system-admin',
-        batchId: selectedBatch.batchId,
-        curriculumLinkageCandidateId,
-        affectedBatchIds: result.affectedBatchIds,
-        proofRefreshQueued: result.proofRefreshQueued,
-        proofRefreshStatus: result.proofRefresh?.status ?? null,
-        queuedProofRefreshCount: getQueuedProofRefreshCount(result),
-      })
-      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
-      await refreshProofDashboard(selectedBatch.batchId)
-      const queuedCount = getQueuedProofRefreshCount(result)
-      setCurriculumLinkageReviewNote('')
-      if (!result.proofRefreshQueued && result.affectedBatchIds.length > 0) {
-        setCurriculumProofRefreshRetry({
-          batchIds: result.affectedBatchIds,
-          curriculumImportVersionId: result.curriculumImportVersionId,
-          message: result.proofRefreshWarning
-            ?? 'Prerequisite suggestion accepted, but proof refresh queueing failed for one or more affected batches. Retry immediately to restore proof parity.',
-        })
-      } else {
-        setCurriculumProofRefreshRetry(null)
-      }
-      setFlashMessage(
-        !result.proofRefreshQueued
-          ? `Suggestion accepted, but proof refresh queueing failed. ${result.proofRefreshWarning ?? 'Use Retry proof refresh to re-queue the affected batches.'}`
-          : queuedCount > 0
-          ? `Suggestion accepted and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued.`
-          : 'Prerequisite suggestion accepted.',
-      )
-    })
-  }
-
-  const handleRejectCurriculumLinkageCandidate = async (curriculumLinkageCandidateId: string) => {
-    if (!selectedBatch) return
-    await runAction(async () => {
-      await apiClient.rejectCurriculumLinkageCandidate(selectedBatch.batchId, curriculumLinkageCandidateId, {
-        reviewNote: curriculumLinkageReviewNote.trim() || undefined,
-      })
-      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
-      setCurriculumLinkageReviewNote('')
-      setFlashMessage('Prerequisite suggestion rejected.')
-    })
-  }
-
-  const handleArchiveCurriculumCourse = async (curriculumCourseId: string) => {
-    const current = data.curriculumCourses.find(item => item.curriculumCourseId === curriculumCourseId)
-    if (!current) return
-    await runAction(async () => {
-      await apiClient.updateCurriculumCourse(current.curriculumCourseId, {
-        batchId: current.batchId,
-        semesterNumber: current.semesterNumber,
-        courseId: current.courseId,
-        courseCode: current.courseCode,
-        title: current.title,
-        credits: current.credits,
-        status: 'deleted',
-        version: current.version,
-      })
-      if (entityEditors.curriculum.curriculumCourseId === curriculumCourseId) resetCurriculumEditor()
-      await loadAdminData()
-      await refreshCurriculumFeatureConfig(current.batchId)
-      await refreshCurriculumLinkageCandidates(current.batchId)
-      await refreshProofDashboard(current.batchId)
-      setFlashMessage(`Curriculum course archived for ${current.courseCode}. Any required proof refresh is now queued by the backend.`)
-    })
-  }
-
-  const handleSaveCurriculumFeatureConfig = async () => {
-    if (!selectedBatch || !selectedCurriculumFeatureItem) return
-    await runAction(async () => {
-      const payload = buildCurriculumFeaturePayload(curriculumFeatureForm)
-      validateCurriculumFeaturePrerequisites(selectedCurriculumFeatureItem, payload.prerequisites, curriculumFeatureItems)
-      const [targetScopeType, targetScopeId] = curriculumFeatureTargetScopeKey.split('::')
-      const saved = await apiClient.saveCurriculumFeatureConfig(selectedBatch.batchId, selectedCurriculumFeatureItem.curriculumCourseId, {
-        ...payload,
-        targetMode: curriculumFeatureTargetMode,
-        targetScopeType: curriculumFeatureTargetMode === 'scope-profile' ? targetScopeType as ApiScopeType : undefined,
-        targetScopeId: curriculumFeatureTargetMode === 'scope-profile' ? targetScopeId : undefined,
-      })
-      const nextBundle = await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
-      const nextSelected = nextBundle.items.find(item => item.curriculumCourseId === selectedCurriculumFeatureItem.curriculumCourseId) ?? null
-      setCurriculumFeatureForm(hydrateCurriculumFeatureForm(nextSelected))
-      await refreshProofDashboard(selectedBatch.batchId)
-      const queuedCount = getQueuedProofRefreshCount(saved)
-      if (saved.proofRefresh?.status === 'degraded' && saved.affectedBatchIds?.length) {
-        setCurriculumProofRefreshRetry({
-          batchIds: saved.affectedBatchIds,
-          curriculumImportVersionId: saved.curriculumImportVersionId,
-          message: saved.proofRefresh.warning
-            ?? `Curriculum model inputs were saved for ${selectedCurriculumFeatureItem.courseCode}, but proof refresh queueing failed for one or more affected batches.`,
-        })
-      } else {
-        setCurriculumProofRefreshRetry(null)
-      }
-      setFlashMessage(saved.proofRefresh?.status === 'degraded'
-        ? `Curriculum model inputs saved for ${selectedCurriculumFeatureItem.courseCode}, but proof refresh queueing failed. ${saved.proofRefresh.warning ?? 'Use Retry proof refresh to re-queue the affected batches.'}`
-        : queuedCount > 0
-          ? `Curriculum model inputs saved and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued for ${selectedCurriculumFeatureItem.courseCode}.`
-          : `Curriculum model inputs saved for ${selectedCurriculumFeatureItem.courseCode}.`)
-    })
-  }
-
-  const handleLoadCurriculumFeatureHistory = async () => {
-    if (!selectedBatch || !selectedCurriculumFeatureItem) return
-    await runAction(async () => {
-      const result = await apiClient.getCurriculumFeatureConfigHistory(
-        selectedBatch.batchId,
-        selectedCurriculumFeatureItem.curriculumCourseId,
-      )
-      setCurriculumFeatureHistory(result.events)
-    })
-  }
-
-  const handlePreviewCurriculumFeatureConfig = async () => {
-    if (!selectedBatch || !selectedCurriculumFeatureItem) return
-    await runAction(async () => {
-      const payload = buildCurriculumFeaturePayload(curriculumFeatureForm)
-      const result = await apiClient.previewCurriculumFeatureConfig(
-        selectedBatch.batchId,
-        selectedCurriculumFeatureItem.curriculumCourseId,
-        payload.outcomes.map(o => ({ id: o.id, bloom: o.bloom })),
-      )
-      setCurriculumFeaturePreview(result)
-    })
-  }
-
-  const handleSaveCurriculumFeatureBinding = async () => {
-    if (!selectedBatch) return
-    await runAction(async () => {
-      const saved = await apiClient.saveCurriculumFeatureBinding(selectedBatch.batchId, {
-        bindingMode: curriculumFeatureBindingMode,
-        curriculumFeatureProfileId: curriculumFeatureBindingMode === 'pin-profile' ? (curriculumFeaturePinnedProfileId || null) : null,
-        status: 'active',
-        version: curriculumFeatureConfig?.binding?.version ?? 1,
-      })
-      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
-      await refreshProofDashboard(selectedBatch.batchId)
-      const queuedCount = getQueuedProofRefreshCount(saved)
-      if (saved.proofRefresh?.status === 'degraded' && saved.affectedBatchIds.length > 0) {
-        setCurriculumProofRefreshRetry({
-          batchIds: saved.affectedBatchIds,
-          curriculumImportVersionId: saved.curriculumImportVersionId,
-          message: saved.proofRefresh.warning
-            ?? 'Curriculum feature binding was saved, but proof refresh queueing failed for one or more affected batches.',
-        })
-      } else {
-        setCurriculumProofRefreshRetry(null)
-      }
-      setFlashMessage(saved.proofRefresh?.status === 'degraded'
-        ? `Curriculum feature binding saved, but proof refresh queueing failed. ${saved.proofRefresh.warning ?? 'Use Retry proof refresh to re-queue the affected batches.'}`
-        : queuedCount > 0
-          ? `Curriculum feature binding saved and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued.`
-          : 'Curriculum feature binding saved.')
-    })
-  }
-
-  const handleSaveScopePolicy = async () => {
-    if (!activeGovernanceScope) return
-    await runAction(async () => {
-      const existing = activeScopePolicyOverride
-      const payload = {
-        scopeType: activeGovernanceScope.scopeType,
-        scopeId: activeGovernanceScope.scopeId,
-        policy: buildValidatedPolicyPayload(policyForm),
-        status: 'active',
-      }
-      if (existing) await apiClient.updatePolicyOverride(existing.policyOverrideId, { ...payload, version: existing.version })
-      else await apiClient.createPolicyOverride(payload)
-      await loadAdminData()
-      if (preferredGovernanceBatchId) {
-        const nextResolved = await apiClient.getResolvedBatchPolicy(preferredGovernanceBatchId, { sectionCode: selectedSectionCode })
-        setResolvedBatchPolicy(nextResolved)
-      }
-      const refreshed = activeGovernanceProofRefreshBatchIds.length > 0
-        ? await queueProofRefreshBatches(activeGovernanceProofRefreshBatchIds, 'policy refresh')
-        : []
-      setFlashMessage(refreshed.length > 0
-        ? `${activeGovernanceScope.label} policy saved and proof batch refreshed.`
-        : `${activeGovernanceScope.label} policy saved.`)
-    })
-  }
-
-  const handleResetScopePolicy = async () => {
-    if (!activeGovernanceScope) {
-      setFlashMessage('Select a hierarchy scope before resetting governance.')
-      return
-    }
-    if (!activeScopePolicyOverride) {
-      setFlashMessage(describeGovernanceRollbackMessage({
-        activeGovernanceScope,
-        activeScopeChain,
-        hasLocalOverride: false,
-        resolved: resolvedBatchPolicy,
-        subject: 'policy',
-      }))
-      return
-    }
-    const existing = activeScopePolicyOverride
-    if (!existing) {
-      setFlashMessage(describeGovernanceRollbackMessage({
-        activeGovernanceScope,
-        activeScopeChain,
-        hasLocalOverride: false,
-        resolved: resolvedBatchPolicy,
-        subject: 'policy',
-      }))
-      return
-    }
-    await runAction(async () => {
-      await apiClient.updatePolicyOverride(existing.policyOverrideId, {
-        scopeType: existing.scopeType,
-        scopeId: existing.scopeId,
-        policy: existing.policy,
-        status: 'archived',
-        version: existing.version,
-      })
-      await loadAdminData()
-      let nextResolved: ApiResolvedBatchPolicy | null = null
-      if (preferredGovernanceBatchId) {
-        nextResolved = await apiClient.getResolvedBatchPolicy(preferredGovernanceBatchId, { sectionCode: selectedSectionCode })
-        setResolvedBatchPolicy(nextResolved)
-        setPolicyForm(hydratePolicyForm(nextResolved.effectivePolicy))
-      }
-      const refreshed = activeGovernanceProofRefreshBatchIds.length > 0
-        ? await queueProofRefreshBatches(activeGovernanceProofRefreshBatchIds, 'policy reset')
-        : []
-      const rollbackMessage = describeGovernanceRollbackMessage({
-        activeGovernanceScope,
-        activeScopeChain,
-        hasLocalOverride: false,
-        resolved: nextResolved ?? resolvedBatchPolicy,
-        subject: 'policy',
-      })
-      setFlashMessage(refreshed.length > 0
-        ? `${activeGovernanceScope.label} policy override reset and proof batch refreshed. ${rollbackMessage}`
-        : `${activeGovernanceScope.label} policy override reset. ${rollbackMessage}`)
-    })
-  }
-
-  const handleSaveScopeStagePolicy = async () => {
-    if (!activeGovernanceScope) return
-    await runAction(async () => {
-      const payload = {
-        scopeType: activeGovernanceScope.scopeType,
-        scopeId: activeGovernanceScope.scopeId,
-        policy: buildStagePolicyPayload(stagePolicyForm),
-        status: 'active',
-      }
-      if (activeScopeStageOverride) await apiClient.updateStagePolicyOverride(activeScopeStageOverride.stagePolicyOverrideId, { ...payload, version: activeScopeStageOverride.version })
-      else await apiClient.createStagePolicyOverride(payload)
-      await loadAdminData()
-      if (preferredGovernanceBatchId) {
-        const nextResolved = await apiClient.getResolvedStagePolicy(preferredGovernanceBatchId, { sectionCode: selectedSectionCode })
-        setResolvedStagePolicy(nextResolved)
-      }
-      const refreshed = activeGovernanceProofRefreshBatchIds.length > 0
-        ? await queueProofRefreshBatches(activeGovernanceProofRefreshBatchIds, 'stage policy refresh')
-        : []
-      setFlashMessage(refreshed.length > 0
-        ? `${activeGovernanceScope.label} stage policy saved and proof batch refreshed.`
-        : `${activeGovernanceScope.label} stage policy saved.`)
-    })
-  }
-
-  const handleResetScopeStagePolicy = async () => {
-    if (!activeGovernanceScope) {
-      setFlashMessage('Select a hierarchy scope before resetting stage policy.')
-      return
-    }
-    if (!activeScopeStageOverride) {
-      setFlashMessage(describeGovernanceRollbackMessage({
-        activeGovernanceScope,
-        activeScopeChain,
-        hasLocalOverride: false,
-        resolved: resolvedStagePolicy,
-        subject: 'stage policy',
-      }))
-      return
-    }
-    await runAction(async () => {
-      await apiClient.updateStagePolicyOverride(activeScopeStageOverride.stagePolicyOverrideId, {
-        scopeType: activeScopeStageOverride.scopeType,
-        scopeId: activeScopeStageOverride.scopeId,
-        policy: activeScopeStageOverride.policy,
-        status: 'archived',
-        version: activeScopeStageOverride.version,
-      })
-      await loadAdminData()
-      let nextResolved: ApiResolvedBatchStagePolicy | null = null
-      if (preferredGovernanceBatchId) {
-        nextResolved = await apiClient.getResolvedStagePolicy(preferredGovernanceBatchId, { sectionCode: selectedSectionCode })
-        setResolvedStagePolicy(nextResolved)
-        setStagePolicyForm(hydrateStagePolicyForm(nextResolved.effectivePolicy))
-      }
-      const refreshed = activeGovernanceProofRefreshBatchIds.length > 0
-        ? await queueProofRefreshBatches(activeGovernanceProofRefreshBatchIds, 'stage policy reset')
-        : []
-      const rollbackMessage = describeGovernanceRollbackMessage({
-        activeGovernanceScope,
-        activeScopeChain,
-        hasLocalOverride: false,
-        resolved: nextResolved ?? resolvedStagePolicy,
-        subject: 'stage policy',
-      })
-      setFlashMessage(refreshed.length > 0
-        ? `${activeGovernanceScope.label} stage policy override reset and proof batch refreshed. ${rollbackMessage}`
-        : `${activeGovernanceScope.label} stage policy override reset. ${rollbackMessage}`)
-    })
-  }
-
-  const handleAdvanceOfferingStage = async () => {
-    if (!selectedStageOffering) return
-    await runAction(async () => {
-      const nextEligibility = await apiClient.advanceOfferingStage(selectedStageOffering.offId)
-      setSelectedStageEligibility(nextEligibility)
-      await loadAdminData()
-      setFlashMessage(`${selectedStageOffering.code} · Section ${selectedStageOffering.section} advanced to ${nextEligibility.currentStage.label}.`)
-    })
-  }
-
-  const handleProvisionBatch = async () => {
-    if (!selectedBatch) return
-    await runAction(async () => {
-      const payload = buildBatchProvisioningPayload(batchProvisioningForm)
-      const result = await apiClient.provisionBatch(selectedBatch.batchId, payload)
-      await loadAdminData()
-      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      if (selectedBatch.batchId === route.batchId) {
-        await refreshProofDashboard(selectedBatch.batchId)
-      }
-      const queuedCount = getQueuedProofRefreshCount(result)
-      setFlashMessage(
-        queuedCount > 0
-          ? `Provisioned ${result.summary.createdStudentCount} students, ${result.summary.createdOfferingCount} offerings, ${result.summary.createdMentorCount} mentor links, and ${queuedCount} proof refresh${queuedCount === 1 ? '' : 'es'} for ${selectedBatch.batchLabel}.`
-          : `Provisioned ${result.summary.createdStudentCount} students, ${result.summary.createdOfferingCount} offerings, and ${result.summary.createdMentorCount} mentor links for ${selectedBatch.batchLabel}.`,
-      )
-    })
-  }
-
-  const handleProvisionSeededDemoWorkspace = async () => {
-    if (!selectedBatch) return
-    if (!window.confirm(`Provision a disposable seeded demo workspace for ${selectedBatch.batchLabel}?`)) return
-    const activeSessionId = session?.sessionId ?? null
-    setActionError('')
-    try {
-      const workspace = await apiClient.createDemoWorkspace({
-        name: `MSRUAS seeded demo · ${selectedBatch.batchLabel}`,
-        ownerFacultyId: session?.faculty?.facultyId ?? undefined,
-        batchId: selectedBatch.batchId,
-      })
-      const provisioned = await apiClient.provisionDemoWorkspace(workspace.demoWorkspaceId)
-      await apiClient.logout().catch(error => {
-        emitClientOperationalEvent('auth.session.logout_failed', {
-          workspace: 'system-admin',
-          sessionId: activeSessionId,
-          error: normalizeClientTelemetryError(error),
-        }, { level: 'warn' })
-      })
-      writeActiveDemoWorkspacePointer({ demoWorkspaceId: workspace.demoWorkspaceId })
-      clearRegistryScope()
-      setDismissedQueueItemKeys([])
-      setSession(null)
-      setData(EMPTY_DATA)
-      setStagePolicyOverrides([])
-      setDataError('')
-      setPassword('')
-      setFlashMessage('')
-      if (typeof window !== 'undefined') {
-        window.alert(`Seeded demo workspace ready with ${provisioned.provisionedCounts.checkpoints} checkpoints, ${provisioned.provisionedCounts.observedStates} observed states, and ${provisioned.provisionedCounts.riskAssessments} risk assessments. Sign in again to enter the demo workspace.`)
-      }
-    } catch (error) {
-      setActionError(toErrorMessage(error))
-    }
-  }
-
-  const handlePreviewBulkMentorAssignment = async () => {
-    if (!selectedBatch) return
-    const result = await runAction(async () => apiClient.bulkApplyMentorAssignments(
-      buildBulkMentorAssignmentPreviewPayload(selectedBatch.batchId, selectedSectionCode, bulkMentorAssignmentForm),
-    ))
-    if (!result) return
-    setBulkMentorAssignmentPreview(result)
-    setFlashMessage(describeBulkMentorPreview(result))
-  }
-
-  const handleApplyBulkMentorAssignment = async () => {
-    if (!selectedBatch || !bulkMentorAssignmentPreview) return
-    if (
-      bulkMentorAssignmentPreview.summary.createdAssignmentCount === 0
-      && bulkMentorAssignmentPreview.summary.endedAssignmentCount === 0
-    ) {
-      setFlashMessage('The current preview does not contain any mentor changes to apply.')
-      return
-    }
-    if (!window.confirm(`Apply mentor changes for ${bulkMentorAssignmentPreview.scopeLabel}?`)) return
-    const result = await runAction(async () => apiClient.bulkApplyMentorAssignments(
-      buildBulkMentorAssignmentApplyPayload(
-        selectedBatch.batchId,
-        selectedSectionCode,
-        bulkMentorAssignmentForm,
-        bulkMentorAssignmentPreview.studentIds,
-      ),
-    ))
-    if (!result) return
-    await loadAdminData()
-    setBulkMentorAssignmentPreview(null)
-    setFlashMessage(
-      `${result.summary.createdAssignmentCount} mentor links applied and ${result.summary.endedAssignmentCount} active links end-dated for ${result.scopeLabel}.`,
-    )
-  }
-
-  const handleCreateProofImport = async () => {
-    await runAction(async () => {
-      await apiClient.createProofImport(proofControlBatchId)
-      await refreshCurriculumFeatureConfig(proofControlBatchId)
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage('Proof curriculum import created from the reconciled workbook.')
-    })
-  }
-
-  const handleValidateLatestProofImport = async () => {
-    const latestImport = proofDashboard?.imports[0]
-    if (!latestImport) return
-    await runAction(async () => {
-      await apiClient.validateProofImport(latestImport.curriculumImportVersionId)
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage('Latest proof import validated.')
-    })
-  }
-
-  const handleReviewPendingCrosswalks = async () => {
-    if (!proofDashboard?.crosswalkReviewQueue.length || !proofDashboard.imports[0]) return
-    await runAction(async () => {
-      await apiClient.reviewProofCrosswalks(proofDashboard.imports[0].curriculumImportVersionId, {
-        reviews: proofDashboard.crosswalkReviewQueue.map(item => ({
-          officialCodeCrosswalkId: item.officialCodeCrosswalkId,
-          reviewStatus: 'accepted-with-note',
-          overrideReason: 'Reviewed in the sysadmin proof shell for the first-6-semester proof batch.',
-        })),
-      })
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage('Pending proof crosswalk entries marked as reviewed.')
-    })
-  }
-
-  const handleApproveLatestProofImport = async () => {
-    const latestImport = proofDashboard?.imports[0]
-    if (!latestImport) return
-    await runAction(async () => {
-      await apiClient.approveProofImport(latestImport.curriculumImportVersionId)
-      const rerun = await queueSelectedProofRefresh('proof import approval', latestImport.curriculumImportVersionId)
-      await refreshCurriculumFeatureConfig(proofControlBatchId)
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage(
-        rerun.length > 0
-          ? 'Latest proof import approved, synced into the batch curriculum snapshot, and republished as the active proof run.'
-          : 'Latest proof import approved and synced into the batch curriculum snapshot.',
-      )
-    })
-  }
-
-  const handleCreateProofRun = async () => {
-    const preferredImport = proofDashboard?.imports.find(item => item.status === 'approved') ?? proofDashboard?.imports[0]
-    if (!preferredImport) return
-    await runAction(async () => {
-      const queuedRun = await apiClient.createProofRun(proofControlBatchId, {
-        curriculumImportVersionId: preferredImport.curriculumImportVersionId,
-        activate: true,
-      })
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage(`Proof simulation rerun queued as ${queuedRun.simulationRunId}. It will publish automatically when background execution completes.`)
-    })
-  }
-
-  const handleCreateProofSimulation = async () => {
-    await runAction(async () => {
-      const createdImport = await apiClient.createProofImport(proofControlBatchId)
-      await refreshCurriculumFeatureConfig(proofControlBatchId)
-      const queuedRun = await apiClient.createProofRun(proofControlBatchId, {
-        curriculumImportVersionId: createdImport.curriculumImportVersionId,
-        activate: true,
-      })
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage(`Proof simulation created as ${queuedRun.simulationRunId}. It will publish automatically when background execution completes.`)
-    })
-  }
-
-  const handleRetryProofRun = async (simulationRunId: string) => {
-    await runAction(async () => {
-      await apiClient.retryProofRun(simulationRunId)
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage('Failed proof run re-queued for background execution.')
-    })
-  }
-
-  const handleActivateProofRun = async (simulationRunId: string) => {
-    await runAction(async () => {
-      await apiClient.activateProofRun(simulationRunId)
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage('Selected proof run is now active.')
-    })
-  }
-
-  const handleActivateProofSemester = async (simulationRunId: string, semesterNumber: number) => {
-    await runAction(async () => {
-      const activation = await apiClient.activateProofSemester(simulationRunId, {
-        semesterNumber: semesterNumber as 1 | 2 | 3 | 4 | 5 | 6,
-      })
-      setData(prev => ({
-        ...prev,
-        batches: prev.batches.map(batch => (
-          batch.batchId === activation.batchId
-            ? {
-                ...batch,
-                currentSemester: activation.activeOperationalSemester,
-                updatedAt: new Date().toISOString(),
-              }
-            : batch
-        )),
-      }))
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage(`Proof operational semester switched to Semester ${semesterNumber}.`)
-    })
-  }
-
-  const handleAdvanceProofRun = async (simulationRunId: string, mode: ProofAdvanceControlMode) => {
-    await runAction(async () => {
-      try {
-        await apiClient.advanceProofRun(simulationRunId, { mode })
-      } catch (error) {
-        if (error instanceof AirMentorApiError && error.status === 409) {
-          await refreshProofDashboard(proofControlBatchId)
-          setFlashMessage('Proof run is still preparing checkpoints. Refreshed status; retry when progress finishes.')
-          return
-        }
-        throw error
-      }
-      clearProofPlaybackSelection()
-      setSelectedProofCheckpointSource('auto')
-      setProofPlaybackRestoreNotice(null)
-      setSelectedProofCheckpointDetail(null)
-      setSelectedProofCheckpointId(null)
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage(mode === 'day' ? 'Proof simulation advanced by one day.' : 'Proof simulation advanced to the next stage.')
-    })
-  }
-
-  const handleStopProofRun = async (simulationRunId: string) => {
-    await runAction(async () => {
-      await apiClient.stopProofRun(simulationRunId)
-      clearProofPlaybackSelection()
-      setSelectedProofCheckpointSource('auto')
-      setProofPlaybackRestoreNotice(null)
-      setSelectedProofCheckpointDetail(null)
-      setSelectedProofCheckpointId(null)
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage('Proof simulation stopped.')
-    })
-  }
-
-  const handleArchiveProofRun = async (simulationRunId: string) => {
-    await runAction(async () => {
-      await apiClient.archiveProofRun(simulationRunId)
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage('Selected proof run archived.')
-    })
-  }
-
-  const handleRecomputeProofRunRisk = async () => {
-    if (!proofDashboard?.activeRunDetail) return
-    const activeRunDetail = proofDashboard.activeRunDetail
-    await runAction(async () => {
-      await apiClient.recomputeProofRunRisk(activeRunDetail.simulationRunId)
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage('Observable-only risk recomputed for the active proof run.')
-    })
-  }
-
-  const handleRestoreProofSnapshot = async (simulationRunId: string, simulationResetSnapshotId?: string) => {
-    await runAction(async () => {
-      await apiClient.restoreProofRunSnapshot(simulationRunId, simulationResetSnapshotId ? { simulationResetSnapshotId } : undefined)
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage('Proof run restored from the selected snapshot.')
-    })
-  }
-
-  const handleResetProofRunFromScratch = async (simulationRunId: string, simulationResetSnapshotId?: string) => {
-    if (!simulationResetSnapshotId) return
-    if (!window.confirm('Reset the active proof branch from the baseline snapshot and pin it back to Semester 1? This creates a fresh run and replaces the current active proof run.')) return
-    await runAction(async () => {
-      const restored = await apiClient.restoreProofRunSnapshot(simulationRunId, { simulationResetSnapshotId })
-      const activation = await apiClient.activateProofSemester(restored.simulationRunId, { semesterNumber: 1 })
-      clearProofPlaybackSelection()
-      setSelectedProofCheckpointSource('auto')
-      setProofPlaybackRestoreNotice(null)
-      setSelectedProofCheckpointDetail(null)
-      setSelectedProofCheckpointId(null)
-      setData(prev => ({
-        ...prev,
-        batches: prev.batches.map(batch => (
-          batch.batchId === activation.batchId
-            ? {
-                ...batch,
-                currentSemester: activation.activeOperationalSemester,
-                updatedAt: new Date().toISOString(),
-              }
-            : batch
-        )),
-      }))
-      await refreshProofDashboard(proofControlBatchId)
-      setFlashMessage('Proof branch reset from the baseline snapshot and pinned to Semester 1.')
-    })
-  }
 
   const handleResetProofPlaybackSelection = useCallback(() => {
     clearProofPlaybackSelection()
@@ -3015,591 +1798,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
   }, [apiClient, loadAdminData, route.requestId])
 
-  const handleAdvanceRequest = async (request: ApiAdminRequestSummary) => {
-    setRequestBusy(request.adminRequestId)
-    try {
-      if (request.status === 'New' || request.status === 'Needs Info') await apiClient.assignAdminRequest(request.adminRequestId, { version: request.version, noteBody: 'Claimed for review.' })
-      else if (request.status === 'In Review') await apiClient.approveAdminRequest(request.adminRequestId, { version: request.version, noteBody: 'Approved for implementation.' })
-      else if (request.status === 'Approved') await apiClient.markAdminRequestImplemented(request.adminRequestId, { version: request.version, noteBody: 'Implemented from the sysadmin workspace.' })
-      else if (request.status === 'Implemented' || request.status === 'Rejected') await apiClient.closeAdminRequest(request.adminRequestId, { version: request.version, noteBody: 'Closed after execution.' })
-      await refreshRequestWorkspaceState(request.adminRequestId)
-      setFlashMessage('Request updated.')
-    } catch (error) { setActionError(toErrorMessage(error)) }
-    finally { setRequestBusy('') }
-  }
 
-  const handleRequestInfoRequest = async (request: ApiAdminRequestSummary) => {
-    if (request.status !== 'In Review') return
-    const noteBody = window.prompt('What clarification is needed from HoD?', 'Please clarify implementation scope and acceptance criteria.')
-    if (noteBody == null) return
-    const trimmedNote = noteBody.trim()
-    if (!trimmedNote) {
-      setActionError('A clarification note is required to move this request to Needs Info.')
-      return
-    }
-    setRequestBusy(request.adminRequestId)
-    try {
-      await apiClient.requestAdminRequestInfo(request.adminRequestId, {
-        version: request.version,
-        noteBody: trimmedNote,
-      })
-      await refreshRequestWorkspaceState(request.adminRequestId)
-      setFlashMessage('Request moved to Needs Info.')
-    } catch (error) {
-      setActionError(toErrorMessage(error))
-    } finally {
-      setRequestBusy('')
-    }
-  }
 
-  const handleRejectRequest = async (request: ApiAdminRequestSummary) => {
-    if (!['New', 'In Review', 'Needs Info', 'Approved'].includes(request.status)) return
-    const noteBody = window.prompt('Enter a rejection rationale (required).', 'Rejected by system admin after governance review.')
-    if (noteBody == null) return
-    const trimmedNote = noteBody.trim()
-    if (!trimmedNote) {
-      setActionError('A rejection rationale is required to reject this request.')
-      return
-    }
-    setRequestBusy(request.adminRequestId)
-    try {
-      await apiClient.rejectAdminRequest(request.adminRequestId, {
-        version: request.version,
-        noteBody: trimmedNote,
-      })
-      await refreshRequestWorkspaceState(request.adminRequestId)
-      setFlashMessage('Request rejected.')
-    } catch (error) {
-      setActionError(toErrorMessage(error))
-    } finally {
-      setRequestBusy('')
-    }
-  }
 
-  const resetStudentEditors = () => {
-    setStudentForm(defaultStudentForm())
-    setEnrollmentForm(defaultEnrollmentForm())
-    setMentorForm(defaultMentorAssignmentForm())
-  }
 
-  const startEditingEnrollment = (enrollment: ApiStudentEnrollment) => {
-    setEnrollmentForm({
-      enrollmentId: enrollment.enrollmentId,
-      branchId: enrollment.branchId,
-      termId: enrollment.termId,
-      sectionCode: enrollment.sectionCode,
-      rosterOrder: String(enrollment.rosterOrder ?? 0),
-      academicStatus: enrollment.academicStatus,
-      startDate: enrollment.startDate,
-      endDate: enrollment.endDate ?? '',
-    })
-  }
-
-  const startEditingMentorAssignment = (assignment: ApiMentorAssignment) => {
-    setMentorForm({
-      assignmentId: assignment.assignmentId,
-      facultyId: assignment.facultyId,
-      effectiveFrom: assignment.effectiveFrom,
-      effectiveTo: assignment.effectiveTo ?? '',
-      source: assignment.source,
-    })
-  }
-
-  const handleSaveStudent = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const payload = {
-      usn: requireText('University ID / USN', studentForm.usn),
-      rollNumber: studentForm.rollNumber.trim() || null,
-      name: requireText('Student name', studentForm.name),
-      email: studentForm.email.trim() || null,
-      phone: studentForm.phone.trim() || null,
-      admissionDate: requireDate('Admission date', studentForm.admissionDate),
-      status: selectedStudent?.status ?? 'active',
-    }
-    if (selectedStudent) {
-      await runAction(async () => {
-        const updated = await apiClient.updateStudent(selectedStudent.studentId, {
-          ...payload,
-          version: selectedStudent.version,
-        })
-        mergeStudentRecord(updated)
-        setFlashMessage('Student record updated.')
-        setEditingEntity(null)
-      })
-      return
-    }
-    const created = await runAction(async () => {
-      const next = await apiClient.createStudent(payload)
-      mergeStudentRecord(next)
-      return next
-    })
-    if (created) {
-      navigate({ section: 'students', studentId: created.studentId })
-      setFlashMessage('Student created.')
-    }
-  }
-
-  const handleArchiveStudent = async () => {
-    if (!selectedStudent) return
-    if (!window.confirm(`Delete ${selectedStudent.name}? This moves the record to the recycle bin for 60 days.`)) return
-    await runAction(async () => {
-      const deleted = await apiClient.updateStudent(selectedStudent.studentId, {
-        usn: selectedStudent.usn,
-        rollNumber: selectedStudent.rollNumber,
-        name: selectedStudent.name,
-        email: selectedStudent.email,
-        phone: selectedStudent.phone,
-        admissionDate: selectedStudent.admissionDate,
-        status: 'deleted',
-        version: selectedStudent.version,
-      })
-      mergeStudentRecord(deleted)
-      navigate({ section: 'students' })
-      resetStudentEditors()
-      setFlashMessage('Student moved to recycle bin.')
-    })
-  }
-
-  const handleSaveEnrollment = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedStudent) throw new Error('Select a student before editing enrollment.')
-    const payload = {
-      branchId: requireText('Branch', enrollmentForm.branchId),
-      termId: requireText('Term', enrollmentForm.termId),
-      sectionCode: requireText('Section', enrollmentForm.sectionCode),
-      rosterOrder: requirePositiveInteger('Roster order', enrollmentForm.rosterOrder),
-      academicStatus: requireText('Academic status', enrollmentForm.academicStatus),
-      startDate: requireDate('Enrollment start date', enrollmentForm.startDate),
-      endDate: enrollmentForm.endDate.trim() ? requireDate('Enrollment end date', enrollmentForm.endDate) : null,
-    }
-    if (enrollmentForm.enrollmentId) {
-      const current = selectedStudent.enrollments.find(item => item.enrollmentId === enrollmentForm.enrollmentId)
-      if (!current) throw new Error('Enrollment could not be found.')
-      await runAction(async () => {
-        await apiClient.updateEnrollment(current.enrollmentId, {
-          studentId: selectedStudent.studentId,
-          ...payload,
-          version: current.version,
-        })
-        const rerun = await queueSelectedProofRefresh(`${selectedStudent.name} enrollment refresh`)
-        setFlashMessage(rerun.length > 0 ? 'Enrollment updated and proof batch refreshed.' : 'Enrollment updated.')
-      })
-      return
-    }
-    await runAction(async () => {
-      await apiClient.createEnrollment(selectedStudent.studentId, payload)
-      const rerun = await queueSelectedProofRefresh(`${selectedStudent.name} enrollment refresh`)
-      setFlashMessage(rerun.length > 0 ? 'Enrollment created and proof batch refreshed.' : 'Enrollment created.')
-    })
-  }
-
-  const handleCloseEnrollment = async (enrollment: ApiStudentEnrollment) => {
-    if (!selectedStudent) return
-    if (!window.confirm(`Close enrollment ${enrollment.enrollmentId}?`)) return
-    await runAction(async () => {
-      await apiClient.updateEnrollment(enrollment.enrollmentId, {
-        studentId: selectedStudent.studentId,
-        branchId: enrollment.branchId,
-        termId: enrollment.termId,
-        sectionCode: enrollment.sectionCode,
-        rosterOrder: enrollment.rosterOrder ?? 0,
-        academicStatus: enrollment.academicStatus === 'regular' ? 'completed' : enrollment.academicStatus,
-        startDate: enrollment.startDate,
-        endDate: enrollment.endDate ?? new Date().toISOString().slice(0, 10),
-        version: enrollment.version,
-      })
-      setFlashMessage('Enrollment closed.')
-    })
-  }
-
-  const handleSaveMentorAssignment = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedStudent) throw new Error('Select a student before editing mentor linkage.')
-    const payload = {
-      studentId: selectedStudent.studentId,
-      facultyId: requireText('Mentor faculty', mentorForm.facultyId),
-      effectiveFrom: requireDate('Mentor effective from', mentorForm.effectiveFrom),
-      effectiveTo: mentorForm.effectiveTo.trim() ? requireDate('Mentor effective to', mentorForm.effectiveTo) : null,
-      source: requireText('Assignment source', mentorForm.source),
-    }
-    if (mentorForm.assignmentId) {
-      const current = selectedStudent.mentorAssignments.find(item => item.assignmentId === mentorForm.assignmentId)
-      if (!current) throw new Error('Mentor assignment could not be found.')
-      await runAction(async () => {
-        await apiClient.updateMentorAssignment(current.assignmentId, {
-          ...payload,
-          version: current.version,
-        })
-        setFlashMessage('Mentor assignment updated.')
-      })
-      return
-    }
-    await runAction(async () => {
-      await apiClient.createMentorAssignment(payload)
-      setFlashMessage('Mentor assignment created.')
-    })
-  }
-
-  const handleEndMentorAssignment = async (assignment: ApiMentorAssignment) => {
-    if (!selectedStudent) return
-    if (!window.confirm('End this mentor assignment?')) return
-    await runAction(async () => {
-      await apiClient.updateMentorAssignment(assignment.assignmentId, {
-        studentId: assignment.studentId,
-        facultyId: assignment.facultyId,
-        effectiveFrom: assignment.effectiveFrom,
-        effectiveTo: assignment.effectiveTo ?? new Date().toISOString().slice(0, 10),
-        source: assignment.source,
-        version: assignment.version,
-      })
-      setFlashMessage('Mentor assignment ended.')
-    })
-  }
-
-  const handlePromoteStudent = async (targetTermId: string) => {
-    if (!selectedStudent) return
-    const currentEnrollment = findLatestEnrollment(selectedStudent)
-    const targetTerm = data.terms.find(item => item.termId === targetTermId)
-    if (!currentEnrollment || !targetTerm) {
-      setActionError('Active enrollment and target term are required for promotion.')
-      return
-    }
-    const existingTarget = selectedStudent.enrollments.find(item => item.termId === targetTermId)
-    if (existingTarget) {
-      setActionError('This student already has an enrollment for the selected next term.')
-      return
-    }
-    if (!window.confirm(`Promote ${selectedStudent.name} into Semester ${targetTerm.semesterNumber} (${targetTerm.academicYearLabel})?`)) return
-    await runAction(async () => {
-      if (!currentEnrollment.endDate) {
-        await apiClient.updateEnrollment(currentEnrollment.enrollmentId, {
-          studentId: selectedStudent.studentId,
-          branchId: currentEnrollment.branchId,
-          termId: currentEnrollment.termId,
-          sectionCode: currentEnrollment.sectionCode,
-          rosterOrder: currentEnrollment.rosterOrder ?? 0,
-          academicStatus: currentEnrollment.academicStatus === 'regular' ? 'completed' : currentEnrollment.academicStatus,
-          startDate: currentEnrollment.startDate,
-          endDate: targetTerm.startDate,
-          version: currentEnrollment.version,
-        })
-      }
-      await apiClient.createEnrollment(selectedStudent.studentId, {
-        branchId: targetTerm.branchId,
-        termId: targetTerm.termId,
-        sectionCode: currentEnrollment.sectionCode,
-        rosterOrder: currentEnrollment.rosterOrder ?? 0,
-        academicStatus: 'regular',
-        startDate: targetTerm.startDate,
-        endDate: null,
-      })
-      setFlashMessage(`Promotion recorded for Semester ${targetTerm.semesterNumber}.`)
-    })
-  }
-
-  const resetFacultyEditors = () => {
-    setFacultyForm(defaultFacultyForm())
-    setFacultyPasswordSetupResult(null)
-    setAppointmentForm(defaultAppointmentForm())
-    setRoleGrantForm(defaultRoleGrantForm())
-    setOwnershipForm(defaultOwnershipForm())
-  }
-
-  const startEditingAppointment = (appointment: ApiFacultyAppointment) => {
-    setAppointmentForm({
-      appointmentId: appointment.appointmentId,
-      departmentId: appointment.departmentId,
-      branchId: appointment.branchId ?? '',
-      isPrimary: appointment.isPrimary,
-      startDate: appointment.startDate,
-      endDate: appointment.endDate ?? '',
-    })
-  }
-
-  const startEditingRoleGrant = (grant: ApiRoleGrant) => {
-    setRoleGrantForm({
-      grantId: grant.grantId,
-      roleCode: grant.roleCode,
-      scopeType: grant.scopeType,
-      scopeId: grant.scopeId,
-      startDate: grant.startDate ?? new Date().toISOString().slice(0, 10),
-      endDate: grant.endDate ?? '',
-    })
-  }
-
-  const handleSaveFaculty = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const payload = {
-      username: requireText('Username', facultyForm.username),
-      email: requireText('Email', facultyForm.email),
-      phone: facultyForm.phone.trim() || null,
-      employeeCode: requireText('Employee code', facultyForm.employeeCode),
-      displayName: requireText('Display name', facultyForm.displayName),
-      designation: requireText('Designation', facultyForm.designation),
-      joinedOn: selectedFacultyMember?.joinedOn ?? null,
-      status: selectedFacultyMember?.status ?? 'active',
-    }
-    if (selectedFacultyMember) {
-      await runAction(async () => {
-        await apiClient.updateFaculty(selectedFacultyMember.facultyId, {
-          ...payload,
-          version: selectedFacultyMember.version,
-        })
-        setFlashMessage('Faculty profile updated.')
-        setEditingEntity(null)
-      })
-      return
-    }
-    const created = await runAction(async () => apiClient.createFaculty({
-      ...payload,
-      password: facultyForm.password.trim() || null,
-    }))
-    if (created) {
-      navigate({ section: 'faculty-members', facultyMemberId: created.facultyId })
-      setFlashMessage(created.credentialStatus?.passwordConfigured
-        ? 'Faculty profile created with an admin-set password.'
-        : 'Faculty profile created. Open Sign-In Setup to issue or copy the invite link.')
-    }
-  }
-
-  const handleIssueFacultyPasswordSetup = async () => {
-    if (!selectedFacultyMember) return
-    const issued = await runAction(async () => apiClient.issueFacultyPasswordSetup(selectedFacultyMember.facultyId))
-    if (!issued) return
-    setFacultyPasswordSetupResult(issued)
-    setFlashMessage(
-      issued.setupUrl
-        ? `${issued.purpose === 'invite' ? 'Invite' : 'Reset'} link is ready for ${selectedFacultyMember.displayName}.`
-        : `${issued.purpose === 'invite' ? 'Invite' : 'Reset'} link generated for ${selectedFacultyMember.displayName}.`,
-    )
-  }
-
-  const handleArchiveFaculty = async () => {
-    if (!selectedFacultyMember) return
-    if (!window.confirm(`Delete ${selectedFacultyMember.displayName}? This will soft-delete the faculty profile and login.`)) return
-    await runAction(async () => {
-      await apiClient.updateFaculty(selectedFacultyMember.facultyId, {
-        username: selectedFacultyMember.username,
-        email: selectedFacultyMember.email,
-        phone: selectedFacultyMember.phone,
-        employeeCode: selectedFacultyMember.employeeCode,
-        displayName: selectedFacultyMember.displayName,
-        designation: selectedFacultyMember.designation,
-        joinedOn: selectedFacultyMember.joinedOn,
-        status: 'deleted',
-        version: selectedFacultyMember.version,
-      })
-      navigate({ section: 'faculty-members' })
-      resetFacultyEditors()
-      setFlashMessage('Faculty member moved to recycle bin.')
-    })
-  }
-
-  const handleSaveAppointment = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedFacultyMember) throw new Error('Select a faculty member before editing appointments.')
-    const payload = {
-      departmentId: requireText('Department', appointmentForm.departmentId),
-      branchId: appointmentForm.branchId.trim() || null,
-      isPrimary: appointmentForm.isPrimary,
-      startDate: requireDate('Appointment start date', appointmentForm.startDate),
-      endDate: appointmentForm.endDate.trim() ? requireDate('Appointment end date', appointmentForm.endDate) : null,
-      status: 'active',
-    }
-    if (appointmentForm.appointmentId) {
-      const current = selectedFacultyMember.appointments.find(item => item.appointmentId === appointmentForm.appointmentId)
-      if (!current) throw new Error('Appointment could not be found.')
-      await runAction(async () => {
-        await apiClient.updateFacultyAppointment(current.appointmentId, {
-          facultyId: selectedFacultyMember.facultyId,
-          ...payload,
-          status: current.status,
-          version: current.version,
-        })
-        setFlashMessage('Appointment updated.')
-      })
-      return
-    }
-    await runAction(async () => {
-      await apiClient.createFacultyAppointment(selectedFacultyMember.facultyId, payload)
-      setFlashMessage('Appointment created.')
-    })
-  }
-
-  const handleArchiveAppointment = async (appointment: ApiFacultyAppointment) => {
-    if (!selectedFacultyMember) return
-    if (!window.confirm('Delete this appointment?')) return
-    await runAction(async () => {
-      await apiClient.updateFacultyAppointment(appointment.appointmentId, {
-        facultyId: selectedFacultyMember.facultyId,
-        departmentId: appointment.departmentId,
-        branchId: appointment.branchId,
-        isPrimary: appointment.isPrimary,
-        startDate: appointment.startDate,
-        endDate: appointment.endDate,
-        status: 'deleted',
-        version: appointment.version,
-      })
-      setFlashMessage('Appointment moved to recycle bin.')
-    })
-  }
-
-  const handleSaveRoleGrant = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedFacultyMember) throw new Error('Select a faculty member before editing permissions.')
-    const payload = {
-      roleCode: roleGrantForm.roleCode,
-      scopeType: requireText('Scope type', roleGrantForm.scopeType),
-      scopeId: requireText('Scope id', roleGrantForm.scopeId),
-      startDate: requireDate('Permission start date', roleGrantForm.startDate),
-      endDate: roleGrantForm.endDate.trim() ? requireDate('Permission end date', roleGrantForm.endDate) : null,
-      status: 'active',
-    }
-    if (roleGrantForm.grantId) {
-      const current = selectedFacultyMember.roleGrants.find(item => item.grantId === roleGrantForm.grantId)
-      if (!current) throw new Error('Permission grant could not be found.')
-      await runAction(async () => {
-        await apiClient.updateRoleGrant(current.grantId, {
-          facultyId: selectedFacultyMember.facultyId,
-          ...payload,
-          status: current.status,
-          version: current.version,
-        })
-        setFlashMessage('Permission updated.')
-      })
-      return
-    }
-    await runAction(async () => {
-      await apiClient.createRoleGrant(selectedFacultyMember.facultyId, payload)
-      setFlashMessage('Permission granted.')
-    })
-  }
-
-  const handleArchiveRoleGrant = async (grant: ApiRoleGrant) => {
-    if (!selectedFacultyMember) return
-    if (!window.confirm(`Delete ${grant.roleCode} permission?`)) return
-    await runAction(async () => {
-      await apiClient.updateRoleGrant(grant.grantId, {
-        facultyId: selectedFacultyMember.facultyId,
-        roleCode: grant.roleCode,
-        scopeType: grant.scopeType,
-        scopeId: grant.scopeId,
-        startDate: grant.startDate ?? new Date().toISOString().slice(0, 10),
-        endDate: grant.endDate,
-        status: 'deleted',
-        version: grant.version,
-      })
-      setFlashMessage('Permission moved to recycle bin.')
-    })
-  }
-
-  const handleSaveOwnership = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedFacultyMember) throw new Error('Select a faculty member before editing teaching ownership.')
-    const offeringId = requireText('Class / offering', ownershipForm.offeringId)
-    await runAction(async () => {
-      await apiClient.createOfferingOwnership({
-        offeringId,
-        facultyId: selectedFacultyMember.facultyId,
-        ownershipRole: 'owner',
-        status: 'active',
-      })
-      setOwnershipForm({
-        ownershipId: '',
-        offeringId: '',
-        facultyId: selectedFacultyMember.facultyId,
-      })
-      setFlashMessage('Class ownership added.')
-    })
-  }
-
-  const handleArchiveOwnership = async (ownership: ApiOfferingOwnership) => {
-    if (!window.confirm('Delete this teaching ownership?')) return
-    await runAction(async () => {
-      await apiClient.updateOfferingOwnership(ownership.ownershipId, {
-        offeringId: ownership.offeringId,
-        facultyId: ownership.facultyId,
-        ownershipRole: ownership.ownershipRole,
-        status: 'deleted',
-        version: ownership.version,
-      })
-      setFlashMessage('Teaching ownership moved to recycle bin.')
-    })
-  }
-
-  const handleAssignCurriculumCourseLeader = async (curriculumCourseId: string, facultyId: string) => {
-    if (!selectedBatch || !selectedBranch) return
-    const curriculumCourse = operatorData.curriculumCourses.find(item => item.curriculumCourseId === curriculumCourseId)
-    if (!curriculumCourse) {
-      setActionError('The selected curriculum course could not be found.')
-      return
-    }
-    const matchingTermIds = new Set(
-      operatorData.terms
-        .filter(item => item.batchId === selectedBatch.batchId && item.branchId === selectedBranch.branchId && item.semesterNumber === curriculumCourse.semesterNumber && isTermVisible(operatorData, item))
-        .map(item => item.termId),
-    )
-    const matchingOfferings = operatorData.offerings.filter(item => {
-      if (item.branchId !== selectedBranch.branchId) return false
-      if (!item.termId) return false
-      if (!matchingTermIds.has(item.termId)) return false
-      if (item.code.toLowerCase() !== curriculumCourse.courseCode.toLowerCase()) return false
-      if (selectedSectionCode && item.section !== selectedSectionCode) return false
-      return true
-    })
-    if (matchingOfferings.length === 0) {
-      setActionError('No live offerings match this curriculum row in the selected year or section yet. Create the relevant class offerings first.')
-      return
-    }
-
-    await runAction(async () => {
-      for (const offering of matchingOfferings) {
-        const activeLeaderLikeOwnerships = operatorData.ownerships.filter(ownership => ownership.offeringId === offering.offId && ownership.status === 'active' && isLeaderLikeOwnership(ownership.ownershipRole))
-        for (const ownership of activeLeaderLikeOwnerships) {
-          if (!facultyId || ownership.facultyId !== facultyId) {
-            await apiClient.updateOfferingOwnership(ownership.ownershipId, {
-              offeringId: ownership.offeringId,
-              facultyId: ownership.facultyId,
-              ownershipRole: ownership.ownershipRole,
-              status: 'deleted',
-              version: ownership.version,
-            })
-          }
-        }
-        if (!facultyId) continue
-        const existingForTarget = activeLeaderLikeOwnerships.find(ownership => ownership.facultyId === facultyId)
-        if (!existingForTarget) {
-          await apiClient.createOfferingOwnership({
-            offeringId: offering.offId,
-            facultyId,
-            ownershipRole: 'owner',
-            status: 'active',
-          })
-        }
-      }
-      setFlashMessage(facultyId
-        ? `Course leader updated across ${matchingOfferings.length} offering${matchingOfferings.length === 1 ? '' : 's'}.`
-        : `Course leader cleared across ${matchingOfferings.length} offering${matchingOfferings.length === 1 ? '' : 's'}.`)
-    })
-  }
-
-  const handleSaveFacultyCalendar = async (payload: Pick<ApiAdminFacultyCalendar, 'template' | 'workspace'>) => {
-    if (!selectedFacultyMember) return
-    setFacultyCalendarLoading(true)
-    setActionError('')
-    try {
-      const next = await apiClient.saveAdminFacultyCalendar(selectedFacultyMember.facultyId, payload)
-      setFacultyCalendar(next)
-      await loadAdminData()
-      setFlashMessage('Timetable planner saved.')
-    } catch (error) {
-      setActionError(toErrorMessage(error))
-    } finally {
-      setFacultyCalendarLoading(false)
-    }
-  }
-
-  // --- Computed ---
   const facultyDepartments = listDepartmentsForAcademicFaculty(data, selectedAcademicFaculty?.academicFacultyId)
   const departmentBranches = listBranchesForDepartment(data, selectedDepartment?.departmentId)
   const branchBatches = listBatchesForBranch(data, selectedBranch?.branchId)
@@ -4564,38 +2766,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
     return []
   })()
-  const handleOpenScopedRegistry = (section: 'students' | 'faculty-members') => {
-    if (activeUniversityRegistryScope) {
-      setRegistryScope(activeUniversityRegistryScope)
-      if (section === 'students') setStudentRegistryFilter(hydrateRegistryFilter(activeUniversityRegistryScope))
-      else setFacultyRegistryFilter(hydrateRegistryFilter(activeUniversityRegistryScope))
-    } else if (section === 'students') {
-      clearRegistryScope()
-      setStudentRegistryFilter(defaultRegistryFilter())
-    } else {
-      clearRegistryScope()
-      setFacultyRegistryFilter(defaultRegistryFilter())
-    }
-    navigate({ section })
-  }
-  const handleOpenFullRegistry = (section: 'students' | 'faculty-members') => {
-    clearRegistryScope()
-    if (section === 'students') setStudentRegistryFilter(defaultRegistryFilter())
-    else setFacultyRegistryFilter(defaultRegistryFilter())
-    navigate({ section })
-  }
-  const handleReturnToScopedUniversity = () => {
-    if (!registryScope) return
-    updateUniversityTab('overview', { recordHistory: false })
-    updateSelectedSectionCode(registryScope.sectionCode, { recordHistory: false })
-    navigate({
-      section: 'faculties',
-      academicFacultyId: registryScope.academicFacultyId ?? undefined,
-      departmentId: registryScope.departmentId ?? undefined,
-      branchId: registryScope.branchId ?? undefined,
-      batchId: registryScope.batchId ?? undefined,
-    }, { recordHistory: false })
-  }
+
   const handleResetFacultiesWorkspaceRestore = useCallback(() => {
     if (typeof window !== 'undefined' && route.section === 'faculties') {
       window.sessionStorage.removeItem(`airmentor-admin-ui:${routeToHash(route)}`)
@@ -4605,6 +2776,330 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     setFacultiesRestoreNotice(null)
   }, [route, setFacultiesRestoreNotice])
   // --- Breadcrumbs ---
+  // --- Extracted action handlers (see ./live-app/handlers/*) ---
+  const { handleLogin, handleLogout, handleSwitchToSystemAdmin } = createAuthHandlers({
+    apiClient,
+    identifier,
+    password,
+    session,
+    systemAdminGrant,
+    settleCookieBackedSession,
+    clearRegistryScope,
+    onExitPortal,
+    setAuthBusy,
+    setAuthError,
+    setSession,
+    setIdentifier,
+    setPassword,
+    setDismissedQueueItemKeys,
+    setData,
+    setStagePolicyOverrides,
+    setDataError,
+  })
+  const { handleCreateReminder, handleToggleReminderStatus } = createReminderHandlers({
+    apiClient,
+    remindersSupported,
+    runAction,
+    setActionError,
+    setFlashMessage,
+  })
+  const { startEditingTerm, resetTermEditor, startEditingCurriculumCourse, resetCurriculumEditor } = createCurriculumEditorHelpers({
+    data,
+    authoritativeOperationalSemester,
+    selectedCurriculumSemester,
+    setEntityEditors,
+    setSelectedCurriculumSemester,
+    setSelectedCurriculumCourseId,
+  })
+  const {
+    handleUpdateAcademicFaculty,
+    handleArchiveAcademicFaculty,
+    handleDeleteAcademicFaculty,
+    handleRestoreAcademicFaculty,
+    handleUpdateDepartment,
+    handleArchiveDepartment,
+    handleUpdateBranch,
+    handleArchiveBranch,
+    handleUpdateBatch,
+    handleArchiveBatch,
+    handleCreateAcademicFaculty,
+    handleCreateDepartment,
+    handleCreateBranch,
+    handleCreateBatch,
+  } = createHierarchyHandlers({
+    apiClient,
+    runAction,
+    navigate,
+    selectedAcademicFaculty,
+    selectedDepartment,
+    selectedBranch,
+    selectedBatch,
+    data,
+    entityEditors,
+    structureForms,
+    departmentBranches,
+    branchBatches,
+    batchTerms,
+    setData,
+    setFlashMessage,
+    setEditingEntity,
+    setStructureForms,
+    setActionError,
+  })
+  const {
+    handleSaveTerm,
+    handleArchiveTerm,
+    handleSaveCurriculumCourse,
+    handleBootstrapCurriculumManifest,
+    handleRegenerateCurriculumLinkageCandidates,
+    handleApproveCurriculumLinkageCandidate,
+    handleRejectCurriculumLinkageCandidate,
+    handleArchiveCurriculumCourse,
+  } = createCurriculumCrudHandlers({
+    apiClient,
+    runAction,
+    loadAdminData,
+    selectedBranch,
+    selectedBatch,
+    data,
+    entityEditors,
+    curriculumLinkageReviewNote,
+    selectedCurriculumFeatureItem,
+    resetTermEditor,
+    resetCurriculumEditor,
+    refreshCurriculumFeatureConfig,
+    refreshCurriculumLinkageCandidates,
+    refreshProofDashboard,
+    getQueuedProofRefreshCount,
+    setFlashMessage,
+    setCurriculumLinkageGenerationStatus,
+    setCurriculumLinkageReviewNote,
+    setCurriculumProofRefreshRetry,
+  })
+  const {
+    handleSaveCurriculumFeatureConfig,
+    handleLoadCurriculumFeatureHistory,
+    handlePreviewCurriculumFeatureConfig,
+    handleSaveCurriculumFeatureBinding,
+  } = createCurriculumFeatureHandlers({
+    apiClient,
+    runAction,
+    selectedBatch,
+    selectedCurriculumFeatureItem,
+    curriculumFeatureForm,
+    curriculumFeatureItems,
+    curriculumFeatureTargetScopeKey,
+    curriculumFeatureTargetMode,
+    curriculumFeatureBindingMode,
+    curriculumFeaturePinnedProfileId,
+    curriculumFeatureConfig,
+    refreshCurriculumFeatureConfig,
+    refreshCurriculumLinkageCandidates,
+    refreshProofDashboard,
+    getQueuedProofRefreshCount,
+    setCurriculumFeatureForm,
+    setCurriculumFeatureHistory,
+    setCurriculumFeaturePreview,
+    setCurriculumProofRefreshRetry,
+    setFlashMessage,
+  })
+  const {
+    handleSaveScopePolicy,
+    handleResetScopePolicy,
+    handleSaveScopeStagePolicy,
+    handleResetScopeStagePolicy,
+    handleAdvanceOfferingStage,
+  } = createScopePolicyHandlers({
+    apiClient,
+    runAction,
+    loadAdminData,
+    activeGovernanceScope,
+    activeScopeChain,
+    activeScopePolicyOverride,
+    activeScopeStageOverride,
+    policyForm,
+    stagePolicyForm,
+    preferredGovernanceBatchId,
+    selectedSectionCode,
+    activeGovernanceProofRefreshBatchIds,
+    resolvedBatchPolicy,
+    resolvedStagePolicy,
+    selectedStageOffering,
+    queueProofRefreshBatches,
+    setResolvedBatchPolicy,
+    setResolvedStagePolicy,
+    setPolicyForm,
+    setStagePolicyForm,
+    setSelectedStageEligibility,
+    setFlashMessage,
+  })
+  const {
+    handleProvisionBatch,
+    handleProvisionSeededDemoWorkspace,
+    handlePreviewBulkMentorAssignment,
+    handleApplyBulkMentorAssignment,
+  } = createProvisioningHandlers({
+    apiClient,
+    runAction,
+    loadAdminData,
+    selectedBatch,
+    route,
+    session,
+    selectedSectionCode,
+    batchProvisioningForm,
+    bulkMentorAssignmentForm,
+    bulkMentorAssignmentPreview,
+    refreshCurriculumFeatureConfig,
+    refreshProofDashboard,
+    getQueuedProofRefreshCount,
+    clearRegistryScope,
+    setBulkMentorAssignmentPreview,
+    setSession,
+    setData,
+    setStagePolicyOverrides,
+    setDismissedQueueItemKeys,
+    setDataError,
+    setPassword,
+    setFlashMessage,
+    setActionError,
+  })
+  const {
+    handleCreateProofImport,
+    handleValidateLatestProofImport,
+    handleReviewPendingCrosswalks,
+    handleApproveLatestProofImport,
+    handleCreateProofRun,
+    handleCreateProofSimulation,
+    handleRetryProofRun,
+    handleActivateProofRun,
+    handleActivateProofSemester,
+    handleAdvanceProofRun,
+    handleStopProofRun,
+    handleArchiveProofRun,
+    handleRecomputeProofRunRisk,
+    handleRestoreProofSnapshot,
+    handleResetProofRunFromScratch,
+  } = createProofHandlers({
+    apiClient,
+    runAction,
+    proofControlBatchId,
+    proofDashboard,
+    queueSelectedProofRefresh,
+    refreshCurriculumFeatureConfig,
+    refreshProofDashboard,
+    setData,
+    setFlashMessage,
+    setSelectedProofCheckpointSource,
+    setProofPlaybackRestoreNotice,
+    setSelectedProofCheckpointDetail,
+    setSelectedProofCheckpointId,
+  })
+  const { handleAdvanceRequest, handleRequestInfoRequest, handleRejectRequest } = createRequestHandlers({
+    apiClient,
+    refreshRequestWorkspaceState,
+    setRequestBusy,
+    setFlashMessage,
+    setActionError,
+  })
+  const {
+    resetStudentEditors,
+    startEditingEnrollment,
+    startEditingMentorAssignment,
+    handleSaveStudent,
+    handleArchiveStudent,
+    handleSaveEnrollment,
+    handleCloseEnrollment,
+    handleSaveMentorAssignment,
+    handleEndMentorAssignment,
+    handlePromoteStudent,
+  } = createStudentHandlers({
+    apiClient,
+    runAction,
+    navigate,
+    mergeStudentRecord,
+    queueSelectedProofRefresh,
+    selectedStudent,
+    data,
+    studentForm,
+    enrollmentForm,
+    mentorForm,
+    setStudentForm,
+    setEnrollmentForm,
+    setMentorForm,
+    setEditingEntity,
+    setActionError,
+    setFlashMessage,
+  })
+  const {
+    resetFacultyEditors,
+    startEditingAppointment,
+    startEditingRoleGrant,
+    handleSaveFaculty,
+    handleIssueFacultyPasswordSetup,
+    handleArchiveFaculty,
+    handleSaveAppointment,
+    handleArchiveAppointment,
+  } = createFacultyProfileHandlers({
+    apiClient,
+    runAction,
+    navigate,
+    selectedFacultyMember,
+    facultyForm,
+    appointmentForm,
+    setFacultyForm,
+    setFacultyPasswordSetupResult,
+    setAppointmentForm,
+    setRoleGrantForm,
+    setOwnershipForm,
+    setEditingEntity,
+    setFlashMessage,
+  })
+  const {
+    handleSaveRoleGrant,
+    handleArchiveRoleGrant,
+    handleSaveOwnership,
+    handleArchiveOwnership,
+    handleAssignCurriculumCourseLeader,
+    handleSaveFacultyCalendar,
+  } = createFacultyOwnershipHandlers({
+    apiClient,
+    runAction,
+    loadAdminData,
+    operatorData,
+    selectedFacultyMember,
+    selectedBatch,
+    selectedBranch,
+    selectedSectionCode,
+    roleGrantForm,
+    ownershipForm,
+    setOwnershipForm,
+    setActionError,
+    setFlashMessage,
+    setFacultyCalendar,
+    setFacultyCalendarLoading,
+  })
+  const { handleOpenScopedRegistry, handleOpenFullRegistry, handleReturnToScopedUniversity } = createRegistryNavigationHandlers({
+    activeUniversityRegistryScope,
+    registryScope,
+    setRegistryScope,
+    setStudentRegistryFilter,
+    setFacultyRegistryFilter,
+    clearRegistryScope,
+    navigate,
+    updateUniversityTab,
+    updateSelectedSectionCode,
+  })
+  const { handleRailSectionChange } = createRailNavigationHandlers({
+    route,
+    activeUniversityRegistryScope,
+    registryScope,
+    setRegistryScope,
+    setStudentRegistryFilter,
+    setFacultyRegistryFilter,
+    clearRegistryScope,
+    navigate,
+  })
+
   const topBarBreadcrumbs: BreadcrumbSegment[] = (() => {
     if (route.section === 'overview') return [{ label: 'Dashboard' }]
     if (route.section === 'proof-dashboard') return [{ label: 'Proof Dashboard' }]
@@ -4702,35 +3197,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       navigate(result.route)
     },
   }))
-  const handleRailSectionChange = (section: LiveAdminSectionId) => {
-    if (section === route.section) return
-    if (section === 'students' || section === 'faculty-members') {
-      const nextScope = route.section === 'faculties' ? activeUniversityRegistryScope : registryScope
-      if (nextScope) {
-        setRegistryScope(nextScope)
-        if (section === 'students') setStudentRegistryFilter(hydrateRegistryFilter(nextScope))
-        else setFacultyRegistryFilter(hydrateRegistryFilter(nextScope))
-      } else if (route.section === 'faculties') {
-        clearRegistryScope()
-        if (section === 'students') setStudentRegistryFilter(defaultRegistryFilter())
-        else setFacultyRegistryFilter(defaultRegistryFilter())
-      }
-      navigate({ section })
-      return
-    }
-    if (section === 'faculties') {
-      const nextScope = route.section === 'faculties' ? activeUniversityRegistryScope : registryScope
-      navigate({
-        section: 'faculties',
-        academicFacultyId: nextScope?.academicFacultyId ?? undefined,
-        departmentId: nextScope?.departmentId ?? undefined,
-        branchId: nextScope?.branchId ?? undefined,
-        batchId: nextScope?.batchId ?? undefined,
-      })
-      return
-    }
-    navigate({ section })
-  }
+
   const canNavigateBack = routeHistory.length > 0
   const workspaceAdminName = session?.faculty?.displayName ?? session?.user.username ?? 'System Admin'
   const proofLauncherOperationalSemester = activeRunDetail?.activeOperationalSemester ?? authoritativeOperationalSemester
