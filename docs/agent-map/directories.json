@@ -440,6 +440,18 @@
     }
   },
   {
+    "path": "air-mentor-api/src/adapters/persistence/repositories/academic-runtime",
+    "fileCount": 7,
+    "bytes": 24294,
+    "lines": 725,
+    "roles": {
+      "backend": 7
+    },
+    "extensions": {
+      ".ts": 7
+    }
+  },
+  {
     "path": "air-mentor-api/src/adapters/persistence/repositories/admin-control-plane",
     "fileCount": 6,
     "bytes": 20383,
@@ -477,14 +489,26 @@
   },
   {
     "path": "air-mentor-api/src/application/ports",
-    "fileCount": 2,
-    "bytes": 6556,
-    "lines": 184,
+    "fileCount": 3,
+    "bytes": 16430,
+    "lines": 499,
     "roles": {
-      "backend": 2
+      "backend": 3
     },
     "extensions": {
-      ".ts": 2
+      ".ts": 3
+    }
+  },
+  {
+    "path": "air-mentor-api/src/application/use-cases/academic-runtime",
+    "fileCount": 11,
+    "bytes": 68129,
+    "lines": 1696,
+    "roles": {
+      "backend": 11
+    },
+    "extensions": {
+      ".ts": 11
     }
   },
   {
@@ -586,8 +610,8 @@
   {
     "path": "air-mentor-api/src/modules",
     "fileCount": 21,
-    "bytes": 599716,
-    "lines": 14508,
+    "bytes": 507358,
+    "lines": 12306,
     "roles": {
       "backend": 21
     },
@@ -646,8 +670,8 @@
   {
     "path": "docs",
     "fileCount": 20,
-    "bytes": 337075,
-    "lines": 8885,
+    "bytes": 337178,
+    "lines": 8886,
     "roles": {
       "documentation": 20
     },

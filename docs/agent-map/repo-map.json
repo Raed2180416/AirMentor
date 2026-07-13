@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 1054,
-    "ignoredEntriesObserved": 68,
-    "bytes": 15324849,
-    "lines": 318333,
-    "nonEmptyLines": 294914,
-    "commentLines": 6464,
+    "trackedFiles": 1073,
+    "ignoredEntriesObserved": 72,
+    "bytes": 15334891,
+    "lines": 318868,
+    "nonEmptyLines": 295340,
+    "commentLines": 6707,
     "localDependencyEdges": 344,
-    "symbols": 23931,
+    "symbols": 23952,
     "apiRoutes": 190,
     "testCases": 1374,
     "filesWithTests": 195,
-    "atoms": 81984,
+    "atoms": 81788,
     "anomalies": 0
   },
   "counts": {
@@ -173,7 +173,7 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".ts": 481,
+      ".ts": 500,
       ".tsx": 82,
       ".css": 2,
       ".example": 1,
@@ -202,7 +202,7 @@
       "ci": 8,
       "model-contract": 3,
       "backend-script": 97,
-      "backend": 211,
+      "backend": 230,
       "unit-test": 162,
       "documentation": 34,
       "forge-audit": 22,
@@ -229,7 +229,7 @@
       ".vscode": 2,
       ".windsurf": 1,
       "adapters": 98,
-      "air-mentor-api": 421,
+      "air-mentor-api": 440,
       "CLAUDE.md": 1,
       "docs": 34,
       "eslint.config.js": 1,
@@ -270,7 +270,7 @@
       ".tmp-test-postgres": 1,
       ".vscode": 1,
       "adapters": 14,
-      "air-mentor-api": 19,
+      "air-mentor-api": 23,
       "context_main.json": 1,
       "context.json": 1,
       "kernel": 5,
@@ -702,7 +702,7 @@
       },
       {
         "key": "drizzle-orm",
-        "value": 121
+        "value": 125
       },
       {
         "key": "@web/simulation",
@@ -737,16 +737,16 @@
         "value": 41
       },
       {
+        "key": "zod",
+        "value": 37
+      },
+      {
         "key": "lucide-react",
         "value": 36
       },
       {
         "key": "argparse",
         "value": 35
-      },
-      {
-        "key": "zod",
-        "value": 33
       },
       {
         "key": "typing",
@@ -1966,15 +1966,15 @@
     },
     {
       "key": "eq",
-      "value": 1246
+      "value": 1194
     },
     {
       "key": "where",
-      "value": 1219
+      "value": 1172
     },
     {
       "key": "get",
-      "value": 1054
+      "value": 1032
     },
     {
       "key": "async",
@@ -1990,7 +1990,7 @@
     },
     {
       "key": "set",
-      "value": 672
+      "value": 652
     },
     {
       "key": "inject",
@@ -1998,7 +1998,7 @@
     },
     {
       "key": "string",
-      "value": 611
+      "value": 610
     },
     {
       "key": "toContain",
@@ -2006,7 +2006,7 @@
     },
     {
       "key": "has",
-      "value": 482
+      "value": 476
     },
     {
       "key": "toBeTruthy",
@@ -2014,7 +2014,7 @@
     },
     {
       "key": "round",
-      "value": 424
+      "value": 421
     },
     {
       "key": "toEqual",
@@ -2030,7 +2030,7 @@
     },
     {
       "key": "object",
-      "value": 310
+      "value": 309
     },
     {
       "key": "loginAs",
@@ -2039,10 +2039,6 @@
     {
       "key": "toMatchObject",
       "value": 274
-    },
-    {
-      "key": "insert",
-      "value": 268
     },
     {
       "key": "parse",
@@ -2055,6 +2051,10 @@
     {
       "key": "optional",
       "value": 248
+    },
+    {
+      "key": "insert",
+      "value": 247
     },
     {
       "key": "toBeNull",
@@ -2074,7 +2074,7 @@
     },
     {
       "key": "all",
-      "value": 213
+      "value": 211
     },
     {
       "key": "num",
@@ -2085,12 +2085,12 @@
       "value": 192
     },
     {
-      "key": "fromEntries",
-      "value": 192
-    },
-    {
       "key": "expectVisible",
       "value": 189
+    },
+    {
+      "key": "fromEntries",
+      "value": 187
     },
     {
       "key": "number",
@@ -2113,12 +2113,12 @@
       "value": 154
     },
     {
-      "key": "and",
-      "value": 147
+      "key": "response",
+      "value": 146
     },
     {
       "key": "auth",
-      "value": 146
+      "value": 145
     }
   ],
   "anomalies": [],
@@ -2159,10 +2159,14 @@
     "air-mentor-api/.eval-db-local/",
     "air-mentor-api/context.json",
     "air-mentor-api/scripts/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/academic-offerings/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/academic-runtime/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/admin-control-plane/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/admin-structure/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/curriculum-graph/context.json",
     "air-mentor-api/src/application/ports/context.json",
+    "air-mentor-api/src/application/use-cases/academic-offerings/context.json",
+    "air-mentor-api/src/application/use-cases/academic-runtime/context.json",
     "air-mentor-api/src/application/use-cases/admin-control-plane/context.json",
     "air-mentor-api/src/application/use-cases/admin-structure/context.json",
     "air-mentor-api/src/application/use-cases/curriculum-graph/context.json",

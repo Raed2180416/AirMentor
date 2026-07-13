@@ -1,65 +1,72 @@
-import { and, asc, eq, inArray, not } from 'drizzle-orm'
+/**
+ * Academic Runtime Routes — thin controller.
+ *
+ * Offering runtime & operational writes (runtime-state slices, action-queue
+ * tasks + placements, calendar-audit, faculty timetable workspace, meetings, and
+ * the offering data-entry writes). Each handler authenticates + parses the
+ * request, then delegates to a use-case built over the AcademicRuntimeRepository
+ * and the shared academic functions from academic.ts (the `deps` bag, bound as
+ * context closures). Domain logic lives under src/application; all direct DB
+ * access lives under src/adapters/persistence.
+ *
+ * The registrar name + signature `registerAcademicRuntimeRoutes(app, context,
+ * deps)` is unchanged (academic.ts calls it) and `taskPayloadWithPlacementDate`
+ * is re-exported for the unit test that imports it from this module.
+ */
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { RouteContext } from '../app.js'
-import {
-  academicCalendarAuditEvents,
-  academicMeetings,
-  academicRuntimeState,
-  academicTaskPlacements,
-  academicTaskTransitions,
-  academicTasks,
-  courseOutcomeOverrides,
-  facultyCalendarWorkspaces,
-  offeringAssessmentSchemes,
-  offeringQuestionPapers,
-  sectionOfferings,
-  studentAssessmentScores,
-  studentAttendanceSnapshots,
-} from '../db/schema.js'
-import { createId } from '../lib/ids.js'
-import { badRequest, conflict, forbidden, notFound } from '../lib/http-errors.js'
-import { parseJson, stringifyJson } from '../lib/json.js'
-import { emitOperationalEvent } from '../lib/telemetry.js'
+import { forbidden } from '../lib/http-errors.js'
 import { triggerActiveRunRecomputeIfPresent } from '../lib/msruas-proof-control-plane.js'
-import {
-  applyCorrectionCycleTransition,
-  describeCorrectionCycle,
-  type CorrectionCycleActorRole,
-  type UnlockRequestAction,
-  type UnlockRequestKind,
-  type UnlockRequestStatus,
-} from '../lib/proof-hod-correction-cycle-engine.js'
 import type { AcademicRouteDependencies } from './academic.js'
 import { DEFAULT_POLICY, resolveBatchPolicy } from './admin-structure.js'
 import {
   emitAuditEvent,
-  expectVersion,
   parseOrThrow,
   requireAuth,
   requireRole,
 } from './support.js'
+import { createAcademicRuntimeRepository } from '../adapters/persistence/repositories/academic-runtime/academic-runtime-repository.js'
+import type { AuditEmitter } from '../application/use-cases/curriculum-graph/shared.js'
+import type { AcademicRuntimeUseCaseDeps } from '../application/use-cases/academic-runtime/deps.js'
+import {
+  upsertNamedRuntimeSlice,
+  upsertRuntimeStateSlice,
+} from '../application/use-cases/academic-runtime/runtime-state.js'
+import {
+  listVisibleTaskRecords,
+  putSingleTask,
+  syncTasks,
+} from '../application/use-cases/academic-runtime/tasks.js'
+import {
+  transitionUnlockRequest,
+  unlockRequestTransitionBodySchema,
+} from '../application/use-cases/academic-runtime/unlock-request-transition.js'
+import {
+  deleteAcademicTaskPlacement,
+  listVisibleTaskPlacements,
+  putSinglePlacement,
+  syncTaskPlacements,
+} from '../application/use-cases/academic-runtime/task-placements.js'
+import {
+  appendAcademicCalendarAuditEvent,
+  listCalendarAudit,
+  saveFacultyCalendarWorkspace,
+  syncCalendarAudit,
+} from '../application/use-cases/academic-runtime/calendar-audit.js'
+import {
+  createMeeting,
+  updateMeeting,
+} from '../application/use-cases/academic-runtime/meetings.js'
+import {
+  clearAssessmentLock,
+  commitAttendance,
+  saveOfferingScheme,
+  saveQuestionPaper,
+} from '../application/use-cases/academic-runtime/offering-data-entry.js'
+import { commitAssessmentEntries } from '../application/use-cases/academic-runtime/offering-assessment-entries.js'
 
-export function taskPayloadWithPlacementDate(
-  payloadJson: string,
-  dueDateISO: string,
-  updatedAt: number,
-) {
-  const currentPayload = parseJson(payloadJson, {} as Record<string, unknown>)
-  const nextPayload: Record<string, unknown> = {
-    ...currentPayload,
-    dueDateISO,
-    updatedAt,
-  }
-  const scheduleMeta = currentPayload.scheduleMeta
-  if (scheduleMeta && typeof scheduleMeta === 'object' && !Array.isArray(scheduleMeta)) {
-    nextPayload.scheduleMeta = {
-      ...(scheduleMeta as Record<string, unknown>),
-      nextDueDateISO: dueDateISO,
-    }
-  }
-  return stringifyJson(nextPayload)
-}
+export { taskPayloadWithPlacementDate } from '../application/use-cases/academic-runtime/task-payload.js'
 
 export async function registerAcademicRuntimeRoutes(
   app: FastifyInstance,
@@ -73,45 +80,70 @@ export async function registerAcademicRuntimeRoutes(
     academicRoleCodes,
     assessmentCommitParamsSchema,
     assessmentCommitSchema,
-    assertCourseLeaderCanManageOffering,
-    assertStudentEnrolledInOffering,
-    assertViewerCanManageTask,
-    assertViewerCanSuperviseStudent,
     attendanceCommitSchema,
-    buildAcademicMeetingResponse,
-    buildDefaultQuestionPaper,
-    buildDefaultSchemeFromPolicy,
     calendarAuditSyncSchema,
-    canonicalizeSchemeState,
     facultyCalendarWorkspaceUpsertSchema,
-    flattenTermTestLeaves,
-    getAcademicRuntimeState,
-    getEditableCalendarWindowStatus,
-    getOfferingContext,
-    mapAcademicTaskRow,
-    mapCalendarAuditEventRow,
-    mapFacultyCalendarWorkspaceRow,
-    mapTaskPlacementRow,
-    mapTaskTransitionRow,
-    millisToIso,
-    normalizeAcademicStudentId,
     offeringParamsSchema,
     offeringQuestionPaperUpsertSchema,
     offeringSchemeUpsertSchema,
     questionPaperParamsSchema,
-    resolveCourseOutcomesForOffering,
     runtimeSliceSchemas,
     runtimeStateKeySchema,
-    saveAcademicRuntimeState,
-    schemeStateSchema,
     taskPlacementSyncSchema,
     taskSyncSchema,
-    termTestBlueprintSchema,
-    validateFacultyCalendarTemplate,
-    validateMeetingWindow,
-    validateQuestionPaperBlueprint,
-    validateSchemeAgainstPolicy,
   } = deps
+
+  const repo = createAcademicRuntimeRepository(context.db, context.now)
+  const emitAudit: AuditEmitter = params => emitAuditEvent(context, params)
+
+  // Context-bound closures for the shared academic `deps` functions + external
+  // services, keeping the persistence-free application layer clean of `context`.
+  const useCaseDeps: AcademicRuntimeUseCaseDeps = {
+    repo,
+    now: context.now,
+    emitAudit,
+    triggerActiveRunRecompute: facultyId => triggerActiveRunRecomputeIfPresent(context, facultyId),
+    resolveBatchPolicy: (batchId, options) => resolveBatchPolicy(context, batchId, options),
+    DEFAULT_POLICY,
+    getAcademicRuntimeState: stateKey => deps.getAcademicRuntimeState(context, stateKey),
+    saveAcademicRuntimeState: (stateKey, payload) => deps.saveAcademicRuntimeState(context, stateKey, payload),
+    assertViewerCanManageTask: (auth, record) => deps.assertViewerCanManageTask(context, auth, record),
+    assertStudentEnrolledInOffering: (offering, studentId) => deps.assertStudentEnrolledInOffering(context, offering, studentId),
+    getOfferingContext: offeringId => deps.getOfferingContext(context, offeringId),
+    assertCourseLeaderCanManageOffering: (facultyId, offeringId) => deps.assertCourseLeaderCanManageOffering(context, facultyId, offeringId),
+    buildAcademicMeetingResponse: row => deps.buildAcademicMeetingResponse(context, row),
+    validateFacultyCalendarTemplate: (facultyId, template) => deps.validateFacultyCalendarTemplate(context, facultyId, template),
+    getEditableCalendarWindowStatus: facultyId => deps.getEditableCalendarWindowStatus(context, facultyId),
+    assertViewerCanSuperviseStudent: input => deps.assertViewerCanSuperviseStudent({ ...input, context }),
+    mapAcademicTaskRow: deps.mapAcademicTaskRow,
+    mapTaskTransitionRow: deps.mapTaskTransitionRow,
+    mapTaskPlacementRow: deps.mapTaskPlacementRow,
+    mapCalendarAuditEventRow: deps.mapCalendarAuditEventRow,
+    mapFacultyCalendarWorkspaceRow: deps.mapFacultyCalendarWorkspaceRow,
+    normalizeAcademicStudentId: deps.normalizeAcademicStudentId,
+    millisToIso: deps.millisToIso,
+    validateMeetingWindow: deps.validateMeetingWindow,
+    validateSchemeAgainstPolicy: deps.validateSchemeAgainstPolicy,
+    canonicalizeSchemeState: deps.canonicalizeSchemeState,
+    buildDefaultSchemeFromPolicy: deps.buildDefaultSchemeFromPolicy,
+    buildDefaultQuestionPaper: deps.buildDefaultQuestionPaper,
+    validateQuestionPaperBlueprint: deps.validateQuestionPaperBlueprint,
+    flattenTermTestLeaves: deps.flattenTermTestLeaves,
+    resolveCourseOutcomesForOffering: deps.resolveCourseOutcomesForOffering,
+    taskSyncSchema: deps.taskSyncSchema,
+    taskPlacementSyncSchema: deps.taskPlacementSyncSchema,
+    calendarAuditSyncSchema: deps.calendarAuditSyncSchema,
+    schemeStateSchema: deps.schemeStateSchema,
+    termTestBlueprintSchema: deps.termTestBlueprintSchema,
+    academicMeetingCreateSchema: deps.academicMeetingCreateSchema,
+    academicMeetingPatchSchema: deps.academicMeetingPatchSchema,
+    attendanceCommitSchema: deps.attendanceCommitSchema,
+    assessmentCommitSchema: deps.assessmentCommitSchema,
+    assessmentCommitParamsSchema: deps.assessmentCommitParamsSchema,
+    questionPaperParamsSchema: deps.questionPaperParamsSchema,
+    offeringSchemeUpsertSchema: deps.offeringSchemeUpsertSchema,
+    offeringQuestionPaperUpsertSchema: deps.offeringQuestionPaperUpsertSchema,
+  }
 
   const taskUpsertBodySchema = z.object({
     task: z.unknown(),
@@ -126,28 +158,6 @@ export async function registerAcademicRuntimeRoutes(
   })
   const taskIdParamsSchema = z.object({
     taskId: z.string().min(1),
-  })
-
-  // HOD correction-cycle unlock-request transition body.
-  // Prompt §D.6 + §C.6 + §C.15. The engine validates the transition against
-  // the task's current unlockRequest.status; the route only persists the
-  // approved next state back into the task payload.
-  const unlockRequestActionSchema = z.enum([
-    'request', 'approve', 'reject', 'reset-complete', 'teacher-edit-submit', 'relock',
-  ]) satisfies z.ZodType<UnlockRequestAction>
-  const unlockRequestKindSchema = z.enum([
-    'tt1', 'tt2', 'quiz', 'assignment', 'attendance', 'finals', 'scheme', 'blueprint',
-  ]) satisfies z.ZodType<UnlockRequestKind>
-  const unlockRequestTransitionBodySchema = z.object({
-    action: unlockRequestActionSchema,
-    // kind must be provided on 'request' (new unlock); for later transitions
-    // we can infer from the stored payload, but allowing override keeps
-    // the route symmetric and lets the client assert intent explicitly.
-    kind: unlockRequestKindSchema.optional(),
-    note: z.string().max(2_000).optional(),
-    reviewNote: z.string().max(2_000).optional(),
-    handoffNote: z.string().max(2_000).optional(),
-    offeringId: z.string().min(1).optional(),
   })
   const taskPlacementDeleteQuerySchema = z.object({
     expectedUpdatedAt: z.coerce.number().int().nonnegative().optional(),
@@ -169,483 +179,6 @@ export async function registerAcademicRuntimeRoutes(
     }
   }
 
-  function taskRecordWithVersion(
-    row: typeof academicTasks.$inferSelect,
-    transitionRows: Array<typeof academicTaskTransitions.$inferSelect>,
-  ) {
-    return {
-      ...mapAcademicTaskRow(row, transitionRows.map(mapTaskTransitionRow)),
-      version: row.version,
-    }
-  }
-
-  async function syncRuntimeTaskShadow(
-    record: ReturnType<typeof taskRecordWithVersion>,
-    options: { writeRuntimeShadow?: boolean } = {},
-  ) {
-    if (options.writeRuntimeShadow === false) return record as Record<string, unknown>
-    const { version: _version, ...runtimeComparableTask } = record
-    const currentTasks = await getAcademicRuntimeState(context, 'tasks') as Array<Record<string, unknown>>
-    const nextTasks = currentTasks.slice()
-    const currentIndex = nextTasks.findIndex(task => task.id === runtimeComparableTask.id)
-    if (currentIndex >= 0) {
-      nextTasks[currentIndex] = runtimeComparableTask
-    } else {
-      nextTasks.push(runtimeComparableTask)
-    }
-    const savedTasks = await saveAcademicRuntimeState(context, 'tasks', nextTasks) as Array<Record<string, unknown>>
-
-    const currentResolvedTasks = await getAcademicRuntimeState(context, 'resolvedTasks') as Record<string, number>
-    const nextResolvedTasks = { ...currentResolvedTasks }
-    if (record.status === 'Resolved') {
-      nextResolvedTasks[record.id] = record.updatedAt ?? record.createdAt
-    } else {
-      delete nextResolvedTasks[record.id]
-    }
-    await saveAcademicRuntimeState(context, 'resolvedTasks', nextResolvedTasks)
-    return (savedTasks.find(task => task.id === runtimeComparableTask.id) ?? runtimeComparableTask) as Record<string, unknown>
-  }
-
-  async function syncRuntimeTaskPlacementShadow(
-    taskId: string,
-    placement: ReturnType<typeof mapTaskPlacementRow> | null,
-    options: { writeRuntimeShadow?: boolean } = {},
-  ) {
-    if (options.writeRuntimeShadow === false) return placement
-    const currentPlacements = await getAcademicRuntimeState(context, 'taskPlacements') as Record<string, unknown>
-    const nextPlacements = { ...currentPlacements }
-    if (placement) {
-      nextPlacements[taskId] = placement
-    } else {
-      delete nextPlacements[taskId]
-    }
-    const savedPlacements = await saveAcademicRuntimeState(context, 'taskPlacements', nextPlacements) as Record<string, unknown>
-    return (savedPlacements[taskId] ?? null) as ReturnType<typeof mapTaskPlacementRow> | null
-  }
-
-  async function syncRuntimeCalendarAuditShadow(
-    event: ReturnType<typeof mapCalendarAuditEventRow>,
-    options: { writeRuntimeShadow?: boolean } = {},
-  ) {
-    if (!event || options.writeRuntimeShadow === false) return event
-    const currentEvents = await getAcademicRuntimeState(context, 'calendarAudit') as Array<Record<string, unknown>>
-    const nextEvents = currentEvents.slice()
-    const currentIndex = nextEvents.findIndex(item => item.id === event.id)
-    if (currentIndex >= 0) {
-      nextEvents[currentIndex] = event
-    } else {
-      nextEvents.push(event)
-    }
-    const savedEvents = await saveAcademicRuntimeState(context, 'calendarAudit', nextEvents) as Array<Record<string, unknown>>
-    return (savedEvents.find(item => item.id === event.id) ?? event) as ReturnType<typeof mapCalendarAuditEventRow>
-  }
-
-  async function maybeEmitRuntimeShadowDrift(
-    stateKey: 'tasks' | 'taskPlacements' | 'calendarAudit',
-    entityId: string,
-    authoritativeEntity: unknown,
-  ) {
-    const runtime = await getAcademicRuntimeState(context, stateKey)
-    const runtimeEntity = stateKey === 'tasks'
-      ? ((runtime as Array<Record<string, unknown>>).find(item => item.id === entityId) ?? null)
-      : stateKey === 'taskPlacements'
-        ? (((runtime as Record<string, unknown>)[entityId]) ?? null)
-        : (((runtime as Array<Record<string, unknown>>).find(item => item.id === entityId)) ?? null)
-    if (JSON.stringify(runtimeEntity) === JSON.stringify(authoritativeEntity)) return
-    emitOperationalEvent('academic.runtime.shadow_drift', {
-      stateKey,
-      entityId,
-      runtimeEntityPresent: runtimeEntity != null,
-      authoritativeEntityPresent: authoritativeEntity != null,
-    }, { level: 'warn' })
-  }
-
-  async function upsertStudentPatchShadow(nextPatchesByKey: Record<string, Record<string, unknown>>) {
-    if (Object.keys(nextPatchesByKey).length === 0) return
-    const currentStudentPatches = await getAcademicRuntimeState(context, 'studentPatches') as Record<string, Record<string, unknown>>
-    const mergedStudentPatches = { ...currentStudentPatches }
-    for (const [patchKey, patchValue] of Object.entries(nextPatchesByKey)) {
-      const nextPatch = {
-        ...(currentStudentPatches[patchKey] ?? {}),
-      }
-      for (const [field, value] of Object.entries(patchValue)) {
-        if (value === null) delete nextPatch[field]
-        else nextPatch[field] = value
-      }
-      if (Object.keys(nextPatch).length === 0) delete mergedStudentPatches[patchKey]
-      else mergedStudentPatches[patchKey] = nextPatch
-    }
-    await saveAcademicRuntimeState(context, 'studentPatches', mergedStudentPatches)
-  }
-
-  async function listVisibleTaskRecords(
-    auth: ReturnType<typeof requireRole>,
-  ) {
-    const [taskRows, transitionRows] = await Promise.all([
-      context.db.select().from(academicTasks),
-      context.db.select().from(academicTaskTransitions).orderBy(asc(academicTaskTransitions.occurredAt)),
-    ])
-    const transitionsByTaskId = new Map<string, Array<typeof academicTaskTransitions.$inferSelect>>()
-    for (const transitionRow of transitionRows) {
-      const current = transitionsByTaskId.get(transitionRow.taskId) ?? []
-      current.push(transitionRow)
-      transitionsByTaskId.set(transitionRow.taskId, current)
-    }
-    const visibleItems: Array<ReturnType<typeof taskRecordWithVersion>> = []
-    for (const row of taskRows) {
-      const record = taskRecordWithVersion(row, transitionsByTaskId.get(row.taskId) ?? [])
-      try {
-        await assertViewerCanManageTask(context, auth, record)
-        visibleItems.push(record)
-      } catch {
-        // Ignore tasks outside the active teaching scope.
-      }
-    }
-    return visibleItems
-  }
-
-  async function persistAcademicTask(
-    auth: ReturnType<typeof requireRole>,
-    taskInput: unknown,
-    options: { expectedVersion?: number; emitShadowDrift?: boolean; writeRuntimeShadow?: boolean } = {},
-  ) {
-    if (!auth.facultyId) throw forbidden('Faculty context is required')
-    const parsed = parseOrThrow(taskSyncSchema, { tasks: [taskInput] })
-    const task = parsed.tasks[0]
-    const normalizedTask = {
-      ...task,
-      studentId: normalizeAcademicStudentId(task.studentId),
-    }
-    await assertViewerCanManageTask(context, auth, normalizedTask)
-    const now = context.now()
-    const [current] = await context.db.select().from(academicTasks).where(eq(academicTasks.taskId, task.id))
-    if (!current && typeof options.expectedVersion === 'number') {
-      throw badRequest('Expected version can only be supplied for an existing task')
-    }
-    if (current && typeof options.expectedVersion === 'number') {
-      expectVersion(current.version, options.expectedVersion, 'academic task', {
-        taskId: task.id,
-        version: current.version,
-      })
-    }
-    if (current) {
-      const currentTransitions = await context.db
-        .select()
-        .from(academicTaskTransitions)
-        .where(eq(academicTaskTransitions.taskId, task.id))
-        .orderBy(asc(academicTaskTransitions.occurredAt))
-      const currentTask = mapAcademicTaskRow(current, currentTransitions.map(mapTaskTransitionRow))
-      if (currentTask.dismissal && !task.dismissal) {
-        const restoreWindowEndsAt = currentTask.dismissal.dismissedAt + (60 * 24 * 60 * 60 * 1000)
-        if (restoreWindowEndsAt < Date.now()) {
-          throw forbidden('The restore window for this queue item has expired')
-        }
-      }
-      await context.db.update(academicTasks).set({
-        studentId: normalizedTask.studentId,
-        offeringId: normalizedTask.offeringId,
-        assignedToRole: normalizedTask.assignedTo,
-        taskType: normalizedTask.taskType ?? 'Follow-up',
-        status: normalizedTask.status,
-        title: normalizedTask.title,
-        dueLabel: normalizedTask.due,
-        dueDateIso: normalizedTask.dueDateISO ?? null,
-        riskProbScaled: Math.round(normalizedTask.riskProb * 100),
-        riskBand: normalizedTask.riskBand,
-        priority: normalizedTask.priority,
-        payloadJson: stringifyJson(normalizedTask),
-        updatedByFacultyId: auth.facultyId,
-        version: current.version + 1,
-        updatedAt: now,
-      }).where(eq(academicTasks.taskId, task.id))
-    } else {
-      await context.db.insert(academicTasks).values({
-        taskId: task.id,
-        studentId: normalizedTask.studentId,
-        offeringId: normalizedTask.offeringId,
-        assignedToRole: normalizedTask.assignedTo,
-        taskType: normalizedTask.taskType ?? 'Follow-up',
-        status: normalizedTask.status,
-        title: normalizedTask.title,
-        dueLabel: normalizedTask.due,
-        dueDateIso: normalizedTask.dueDateISO ?? null,
-        riskProbScaled: Math.round(normalizedTask.riskProb * 100),
-        riskBand: normalizedTask.riskBand,
-        priority: normalizedTask.priority,
-        payloadJson: stringifyJson(normalizedTask),
-        createdByFacultyId: auth.facultyId,
-        updatedByFacultyId: auth.facultyId,
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
-      })
-    }
-
-    const existingTransitions = await context.db
-      .select()
-      .from(academicTaskTransitions)
-      .where(eq(academicTaskTransitions.taskId, task.id))
-    const existingTransitionIds = new Set(existingTransitions.map(row => row.transitionId))
-    const missingTransitions = (task.transitionHistory ?? []).filter(transition => !existingTransitionIds.has(transition.id))
-    for (const transition of missingTransitions) {
-      await context.db.insert(academicTaskTransitions).values({
-        transitionId: transition.id,
-        taskId: task.id,
-        actorRole: transition.actorRole,
-        actorFacultyId: transition.actorTeacherId ?? null,
-        action: transition.action,
-        fromOwner: transition.fromOwner ?? null,
-        toOwner: transition.toOwner,
-        note: transition.note,
-        occurredAt: millisToIso(transition.at, now),
-      })
-    }
-
-    const [storedTask] = await context.db.select().from(academicTasks).where(eq(academicTasks.taskId, task.id))
-    if (!storedTask) throw notFound('Task not found after save')
-    const storedTransitions = await context.db
-      .select()
-      .from(academicTaskTransitions)
-      .where(eq(academicTaskTransitions.taskId, task.id))
-      .orderBy(asc(academicTaskTransitions.occurredAt))
-    const record = taskRecordWithVersion(storedTask, storedTransitions)
-    const runtimeTaskShadow = await syncRuntimeTaskShadow(record, {
-      writeRuntimeShadow: options.writeRuntimeShadow ?? true,
-    })
-    await emitAuditEvent(context, {
-      entityType: 'academic_task',
-      entityId: task.id,
-      action: current ? 'UPSERT' : 'CREATE',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      metadata: { version: record.version },
-    })
-    if (options.emitShadowDrift) {
-      await maybeEmitRuntimeShadowDrift('tasks', task.id, runtimeTaskShadow)
-    }
-    return {
-      task: record,
-      created: !current,
-    }
-  }
-
-  async function persistAcademicTaskPlacement(
-    auth: ReturnType<typeof requireRole>,
-    placementInput: unknown,
-    options: { expectedUpdatedAt?: number; emitShadowDrift?: boolean; writeRuntimeShadow?: boolean } = {},
-  ) {
-    if (!auth.facultyId) throw forbidden('Faculty context is required')
-    const parsed = parseOrThrow(taskPlacementSyncSchema, {
-      placements: {
-        [String((placementInput as { taskId?: string })?.taskId ?? '')]: placementInput,
-      },
-    })
-    const placement = Object.values(parsed.placements)[0]
-    const [taskRow] = await context.db.select().from(academicTasks).where(eq(academicTasks.taskId, placement.taskId))
-    if (!taskRow) throw notFound('Task not found for placement')
-    const task = mapAcademicTaskRow(taskRow, [])
-    await assertViewerCanManageTask(context, auth, task)
-    if (placement.placementMode === 'timed') {
-      if (
-        typeof placement.startMinutes !== 'number'
-        || typeof placement.endMinutes !== 'number'
-        || placement.startMinutes >= placement.endMinutes
-      ) {
-        throw badRequest('Timed task placements must include a valid start and end range')
-      }
-    }
-    const now = context.now()
-    const nowMillis = Date.parse(now)
-    const currentPayload = parseJson(taskRow.payloadJson, {} as Record<string, unknown>)
-    const currentPayloadDueDateISO = typeof currentPayload.dueDateISO === 'string' ? currentPayload.dueDateISO : null
-    const currentScheduleMeta = currentPayload.scheduleMeta
-    const currentScheduleDueDateISO = currentScheduleMeta && typeof currentScheduleMeta === 'object' && !Array.isArray(currentScheduleMeta)
-      && typeof (currentScheduleMeta as Record<string, unknown>).nextDueDateISO === 'string'
-      ? String((currentScheduleMeta as Record<string, unknown>).nextDueDateISO)
-      : null
-    const [current] = await context.db
-      .select()
-      .from(academicTaskPlacements)
-      .where(eq(academicTaskPlacements.taskId, placement.taskId))
-    if (!current && typeof options.expectedUpdatedAt === 'number') {
-      throw badRequest('Expected updatedAt can only be supplied for an existing placement')
-    }
-    if (current && typeof options.expectedUpdatedAt === 'number') {
-      const currentUpdatedAt = Date.parse(current.updatedAt)
-      if (!Number.isFinite(currentUpdatedAt) || currentUpdatedAt !== options.expectedUpdatedAt) {
-        throw conflict('Stale updatedAt for academic task placement', {
-          taskId: placement.taskId,
-          updatedAt: Number.isFinite(currentUpdatedAt) ? currentUpdatedAt : null,
-        })
-      }
-    }
-    if (current) {
-      await context.db.update(academicTaskPlacements).set({
-        facultyId: auth.facultyId,
-        dateIso: placement.dateISO,
-        placementMode: placement.placementMode,
-        startMinutes: placement.startMinutes ?? null,
-        endMinutes: placement.endMinutes ?? null,
-        slotId: placement.slotId ?? null,
-        startTime: placement.startTime ?? null,
-        endTime: placement.endTime ?? null,
-        updatedAt: now,
-      }).where(eq(academicTaskPlacements.taskId, placement.taskId))
-    } else {
-      await context.db.insert(academicTaskPlacements).values({
-        taskId: placement.taskId,
-        facultyId: auth.facultyId,
-        dateIso: placement.dateISO,
-        placementMode: placement.placementMode,
-        startMinutes: placement.startMinutes ?? null,
-        endMinutes: placement.endMinutes ?? null,
-        slotId: placement.slotId ?? null,
-        startTime: placement.startTime ?? null,
-        endTime: placement.endTime ?? null,
-        updatedAt: now,
-      })
-    }
-    let runtimeTaskShadow: Record<string, unknown> | null = null
-    if (
-      taskRow.dueDateIso !== placement.dateISO
-      || currentPayloadDueDateISO !== placement.dateISO
-      || currentScheduleDueDateISO !== placement.dateISO
-    ) {
-      await context.db.update(academicTasks).set({
-        dueDateIso: placement.dateISO,
-        payloadJson: taskPayloadWithPlacementDate(taskRow.payloadJson, placement.dateISO, Number.isFinite(nowMillis) ? nowMillis : Date.now()),
-        updatedByFacultyId: auth.facultyId,
-        updatedAt: now,
-      }).where(eq(academicTasks.taskId, placement.taskId))
-      const [storedTask] = await context.db.select().from(academicTasks).where(eq(academicTasks.taskId, placement.taskId))
-      if (storedTask) {
-        const storedTransitions = await context.db
-          .select()
-          .from(academicTaskTransitions)
-          .where(eq(academicTaskTransitions.taskId, placement.taskId))
-          .orderBy(asc(academicTaskTransitions.occurredAt))
-        runtimeTaskShadow = await syncRuntimeTaskShadow(taskRecordWithVersion(storedTask, storedTransitions), {
-          writeRuntimeShadow: options.writeRuntimeShadow ?? true,
-        }) as Record<string, unknown>
-      }
-    }
-    const [storedPlacement] = await context.db
-      .select()
-      .from(academicTaskPlacements)
-      .where(eq(academicTaskPlacements.taskId, placement.taskId))
-    if (!storedPlacement) throw notFound('Task placement not found after save')
-    const record = mapTaskPlacementRow(storedPlacement)
-    const runtimePlacementShadow = await syncRuntimeTaskPlacementShadow(placement.taskId, record, {
-      writeRuntimeShadow: options.writeRuntimeShadow ?? true,
-    })
-    await emitAuditEvent(context, {
-      entityType: 'academic_task_placement',
-      entityId: placement.taskId,
-      action: current ? 'UPSERT' : 'CREATE',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      metadata: { updatedAt: record.updatedAt },
-    })
-    if (options.emitShadowDrift) {
-      if (runtimeTaskShadow) {
-        await maybeEmitRuntimeShadowDrift('tasks', placement.taskId, runtimeTaskShadow)
-      }
-      await maybeEmitRuntimeShadowDrift('taskPlacements', placement.taskId, runtimePlacementShadow)
-    }
-    return {
-      placement: record,
-      created: !current,
-    }
-  }
-
-  async function deleteAcademicTaskPlacement(
-    auth: ReturnType<typeof requireRole>,
-    taskId: string,
-    expectedUpdatedAt?: number,
-  ) {
-    if (!auth.facultyId) throw forbidden('Faculty context is required')
-    const [taskRow] = await context.db.select().from(academicTasks).where(eq(academicTasks.taskId, taskId))
-    if (!taskRow) throw notFound('Task not found for placement')
-    const task = mapAcademicTaskRow(taskRow, [])
-    await assertViewerCanManageTask(context, auth, task)
-    const [current] = await context.db
-      .select()
-      .from(academicTaskPlacements)
-      .where(eq(academicTaskPlacements.taskId, taskId))
-    if (!current) {
-      return { ok: true as const, taskId, deleted: false }
-    }
-    if (typeof expectedUpdatedAt === 'number') {
-      const currentUpdatedAt = Date.parse(current.updatedAt)
-      if (!Number.isFinite(currentUpdatedAt) || currentUpdatedAt !== expectedUpdatedAt) {
-        throw conflict('Stale updatedAt for academic task placement', {
-          taskId,
-          updatedAt: Number.isFinite(currentUpdatedAt) ? currentUpdatedAt : null,
-        })
-      }
-    }
-    await context.db.delete(academicTaskPlacements).where(eq(academicTaskPlacements.taskId, taskId))
-    const runtimePlacementShadow = await syncRuntimeTaskPlacementShadow(taskId, null, {
-      writeRuntimeShadow: false,
-    })
-    await emitAuditEvent(context, {
-      entityType: 'academic_task_placement',
-      entityId: taskId,
-      action: 'DELETE',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-    })
-    await maybeEmitRuntimeShadowDrift('taskPlacements', taskId, runtimePlacementShadow)
-    return { ok: true as const, taskId, deleted: true }
-  }
-
-  async function appendAcademicCalendarAuditEvent(
-    auth: ReturnType<typeof requireRole>,
-    eventInput: unknown,
-    options: { emitShadowDrift?: boolean; writeRuntimeShadow?: boolean } = {},
-  ) {
-    if (!auth.facultyId) throw forbidden('Faculty context is required')
-    const parsed = parseOrThrow(calendarAuditSyncSchema, { events: [eventInput] })
-    const event = parsed.events[0]
-    if (event.facultyId !== auth.facultyId) {
-      throw forbidden('Calendar audit events can only be persisted for the active faculty')
-    }
-    const [current] = await context.db
-      .select()
-      .from(academicCalendarAuditEvents)
-      .where(eq(academicCalendarAuditEvents.auditEventId, event.id))
-    const currentEvent = current ? mapCalendarAuditEventRow(current) : null
-    if (currentEvent && stringifyJson(currentEvent) !== stringifyJson(event)) {
-      throw conflict('Calendar audit event already exists with different payload', currentEvent)
-    }
-    if (!current) {
-      await context.db.insert(academicCalendarAuditEvents).values({
-        auditEventId: event.id,
-        facultyId: auth.facultyId,
-        payloadJson: stringifyJson(event),
-        createdAt: millisToIso(event.timestamp, context.now()),
-      })
-      await emitAuditEvent(context, {
-        entityType: 'academic_calendar_audit_event',
-        entityId: event.id,
-        action: 'CREATE',
-        actorRole: auth.activeRoleGrant.roleCode,
-        actorId: auth.facultyId,
-      })
-    }
-    const stored = currentEvent ?? event
-    const runtimeCalendarAuditShadow = await syncRuntimeCalendarAuditShadow(stored, {
-      writeRuntimeShadow: options.writeRuntimeShadow ?? true,
-    })
-    if (options.emitShadowDrift) {
-      await maybeEmitRuntimeShadowDrift('calendarAudit', event.id, runtimeCalendarAuditShadow)
-    }
-    return {
-      event: stored,
-      created: !current,
-    }
-  }
-
   app.put('/api/academic/runtime/:stateKey', {
     schema: {
       tags: ['academic'],
@@ -658,30 +191,7 @@ export async function registerAcademicRuntimeRoutes(
     const params = parseOrThrow(z.object({ stateKey: runtimeStateKeySchema }), request.params)
     const body = parseOrThrow(runtimeSliceSchemas[params.stateKey] as z.ZodTypeAny, request.body)
     markCompatibilityRouteUsage(reply, '/api/academic/runtime/:stateKey')
-    const [current] = await context.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, params.stateKey))
-    if (current) {
-      await context.db.update(academicRuntimeState).set({
-        payloadJson: stringifyJson(body),
-        version: current.version + 1,
-        updatedAt: context.now(),
-      }).where(eq(academicRuntimeState.stateKey, params.stateKey))
-    } else {
-      await context.db.insert(academicRuntimeState).values({
-        stateKey: params.stateKey,
-        payloadJson: stringifyJson(body),
-        version: 1,
-        updatedAt: context.now(),
-      })
-    }
-    await emitAuditEvent(context, {
-      entityType: 'academic_runtime_state',
-      entityId: params.stateKey,
-      action: 'UPSERT',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId ?? auth.userId,
-      metadata: { stateKey: params.stateKey },
-    })
-    return { ok: true, stateKey: params.stateKey }
+    return upsertRuntimeStateSlice(useCaseDeps, auth, params.stateKey, body)
   })
 
   function registerNamedRuntimeSliceUpsertRoute(input: {
@@ -698,19 +208,7 @@ export async function registerAcademicRuntimeRoutes(
       requireRole(request, [...academicRoleCodes])
       const auth = requireAuth(request)
       const body = parseOrThrow(runtimeSliceSchemas[input.stateKey] as z.ZodTypeAny, request.body)
-      await saveAcademicRuntimeState(context, input.stateKey, body)
-      await emitAuditEvent(context, {
-        entityType: 'academic_runtime_state',
-        entityId: input.stateKey,
-        action: 'UPSERT',
-        actorRole: auth.activeRoleGrant.roleCode,
-        actorId: auth.facultyId ?? auth.userId,
-        metadata: {
-          route: input.route,
-          stateKey: input.stateKey,
-        },
-      })
-      return { ok: true, stateKey: input.stateKey }
+      return upsertNamedRuntimeSlice(useCaseDeps, auth, input.route, input.stateKey, body)
     })
   }
 
@@ -746,19 +244,7 @@ export async function registerAcademicRuntimeRoutes(
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const body = parseOrThrow(taskSyncSchema, request.body)
     markCompatibilityRouteUsage(reply, '/api/academic/tasks/sync')
-    for (const task of body.tasks) {
-      await persistAcademicTask(auth, task)
-    }
-
-    await emitAuditEvent(context, {
-      entityType: 'academic_task_sync',
-      entityId: auth.facultyId,
-      action: 'UPSERT',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      metadata: { taskCount: body.tasks.length },
-    })
-    return { ok: true, count: body.tasks.length }
+    return syncTasks(useCaseDeps, auth, auth.facultyId, body)
   })
 
   app.get('/api/academic/tasks', {
@@ -769,7 +255,7 @@ export async function registerAcademicRuntimeRoutes(
   }, async request => {
     const auth = requireRole(request, [...academicRoleCodes])
     return {
-      items: await listVisibleTaskRecords(auth),
+      items: await listVisibleTaskRecords(useCaseDeps, auth),
     }
   })
 
@@ -786,15 +272,7 @@ export async function registerAcademicRuntimeRoutes(
     const auth = requireRole(request, [...academicRoleCodes, 'SYSTEM_ADMIN'])
     const params = parseOrThrow(taskIdParamsSchema, request.params)
     const body = parseOrThrow(taskUpsertBodySchema, request.body)
-    const parsed = parseOrThrow(taskSyncSchema, { tasks: [body.task] })
-    const task = parsed.tasks[0]
-    if (task.id !== params.taskId) {
-      throw badRequest('Task payload does not match the requested task id')
-    }
-    return persistAcademicTask(auth, task, {
-      expectedVersion: body.expectedVersion,
-      writeRuntimeShadow: false,
-    })
+    return putSingleTask(useCaseDeps, auth, params.taskId, body)
   })
 
   // POST /api/academic/unlock-requests/:taskId/transition — Phase-6 HOD
@@ -822,124 +300,7 @@ export async function registerAcademicRuntimeRoutes(
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const params = parseOrThrow(taskIdParamsSchema, request.params)
     const body = parseOrThrow(unlockRequestTransitionBodySchema, request.body)
-
-    const [taskRow] = await context.db.select().from(academicTasks).where(eq(academicTasks.taskId, params.taskId))
-    if (!taskRow) throw notFound(`Task ${params.taskId} not found`)
-    const transitionRows = await context.db
-      .select()
-      .from(academicTaskTransitions)
-      .where(eq(academicTaskTransitions.taskId, params.taskId))
-      .orderBy(asc(academicTaskTransitions.occurredAt))
-    const currentTask = mapAcademicTaskRow(taskRow, transitionRows.map(mapTaskTransitionRow))
-
-    const existing = currentTask.unlockRequest ?? null
-    const effectiveKind = (body.kind ?? (existing?.kind as UnlockRequestKind | undefined)) as UnlockRequestKind | undefined
-    if (!effectiveKind) {
-      throw badRequest('Unlock-request kind is required on the first request (no stored kind found).')
-    }
-    const currentStatus = (existing?.status as UnlockRequestStatus | undefined) ?? null
-    const engineResult = applyCorrectionCycleTransition({
-      currentStatus,
-      kind: effectiveKind,
-      action: body.action,
-      actorRole: auth.activeRoleGrant.roleCode as CorrectionCycleActorRole,
-      actorFacultyId: auth.facultyId,
-    })
-    if (!engineResult.ok) {
-      // Engine codes map cleanly onto HTTP: forbidden-role → 403, everything
-      // else (illegal-transition, missing-faculty-id, reopen-without-scope,
-      // invalid-request) is a client contract violation → 400.
-      if (engineResult.code === 'forbidden-role') {
-        throw forbidden(engineResult.reason)
-      }
-      throw badRequest(engineResult.reason)
-    }
-
-    const nowMillis = Date.parse(context.now())
-    // Translate role-codes → UI role strings ('Course Leader' / 'Mentor' /
-    // 'HoD') to satisfy sharedTaskSchema + unlockRequestSchema which the
-    // persistAcademicTask pipeline will re-validate downstream.
-    const toUiRole = (code: string): 'Course Leader' | 'Mentor' | 'HoD' => {
-      if (code === 'MENTOR') return 'Mentor'
-      if (code === 'COURSE_LEADER') return 'Course Leader'
-      return 'HoD'
-    }
-    const actorUiRole = toUiRole(auth.activeRoleGrant.roleCode)
-    const fromOwnerUiRole = currentTask.assignedTo ?? actorUiRole
-    const toOwnerUiRole: 'Course Leader' | 'Mentor' | 'HoD' = (
-      engineResult.next === 'Approved' || engineResult.next === 'Reset Completed'
-        ? 'HoD'
-        : fromOwnerUiRole
-    )
-
-    // Build the next unlockRequest payload. 'request' opens a fresh payload;
-    // every other action updates the existing one in place with role audit.
-    // Shape matches `unlockRequestSchema` in academic.ts (UI role strings);
-    // the engine's UnlockRequestPayload type uses role codes for policy
-    // reasoning and is deliberately not used as the persistence shape.
-    const nextUnlockRequest = body.action === 'request'
-      ? {
-          offeringId: body.offeringId ?? existing?.offeringId ?? currentTask.offeringId,
-          kind: effectiveKind,
-          status: engineResult.next,
-          requestedByRole: actorUiRole,
-          requestedByFacultyId: auth.facultyId,
-          requestedAt: nowMillis,
-          requestNote: body.note,
-          handoffNote: body.handoffNote,
-        }
-      : {
-          offeringId: existing?.offeringId ?? body.offeringId ?? currentTask.offeringId,
-          kind: effectiveKind,
-          status: engineResult.next,
-          requestedByRole: (existing?.requestedByRole as 'Course Leader' | 'Mentor' | 'HoD' | undefined) ?? actorUiRole,
-          requestedByFacultyId: existing?.requestedByFacultyId ?? auth.facultyId,
-          requestedAt: existing?.requestedAt ?? nowMillis,
-          reviewedAt: ['approve', 'reject'].includes(body.action) ? nowMillis : existing?.reviewedAt,
-          requestNote: existing?.requestNote,
-          reviewNote: body.reviewNote ?? existing?.reviewNote,
-          handoffNote: body.handoffNote ?? existing?.handoffNote,
-        }
-
-    // Append a transition-history entry so both the queue audit banner and
-    // the HOD workflow tab can show the exact role/action sequence.
-    const transitionEntry = {
-      id: createId('task_transition'),
-      at: nowMillis,
-      actorRole: actorUiRole,
-      actorTeacherId: auth.facultyId,
-      action: `unlock-request:${body.action}`,
-      fromOwner: fromOwnerUiRole,
-      toOwner: toOwnerUiRole,
-      note: body.reviewNote ?? body.note ?? `unlock-request transitioned to ${engineResult.next}`,
-    }
-
-    const nextTask = {
-      ...currentTask,
-      unlockRequest: nextUnlockRequest,
-      transitionHistory: [...(currentTask.transitionHistory ?? []), transitionEntry],
-      updatedAt: nowMillis,
-    }
-
-    const persisted = await persistAcademicTask(auth, nextTask, {
-      writeRuntimeShadow: false,
-    })
-
-    return {
-      ...persisted,
-      unlockRequest: nextUnlockRequest,
-      engine: {
-        nextStatus: engineResult.next,
-        scope: engineResult.scope,
-        nextActions: engineResult.nextActions,
-        surfaceReopens: engineResult.surfaceReopens,
-        triggersRecompute: engineResult.triggersRecompute,
-      },
-      cycleDescription: describeCorrectionCycle({
-        status: engineResult.next,
-        kind: effectiveKind,
-      }),
-    }
+    return transitionUnlockRequest(useCaseDeps, auth, auth.facultyId, params.taskId, body)
   })
 
   app.put('/api/academic/task-placements/sync', {
@@ -953,20 +314,7 @@ export async function registerAcademicRuntimeRoutes(
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const body = parseOrThrow(taskPlacementSyncSchema, request.body)
     markCompatibilityRouteUsage(reply, '/api/academic/task-placements/sync')
-    for (const [taskId, placement] of Object.entries(body.placements)) {
-      if (placement.taskId !== taskId) throw badRequest('Task placement payload does not match its record key')
-      await persistAcademicTaskPlacement(auth, placement)
-    }
-
-    await emitAuditEvent(context, {
-      entityType: 'academic_task_placement_sync',
-      entityId: auth.facultyId,
-      action: 'UPSERT',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      metadata: { placementCount: Object.keys(body.placements).length },
-    })
-    return { ok: true, count: Object.keys(body.placements).length }
+    return syncTaskPlacements(useCaseDeps, auth, auth.facultyId, body)
   })
 
   app.get('/api/academic/task-placements', {
@@ -976,14 +324,7 @@ export async function registerAcademicRuntimeRoutes(
     },
   }, async request => {
     const auth = requireRole(request, [...academicRoleCodes])
-    const visibleTasks = await listVisibleTaskRecords(auth)
-    const visibleTaskIds = new Set(visibleTasks.map(task => task.id))
-    const placementRows = await context.db.select().from(academicTaskPlacements)
-    return {
-      items: placementRows
-        .filter(row => visibleTaskIds.has(row.taskId))
-        .map(row => mapTaskPlacementRow(row)),
-    }
+    return listVisibleTaskPlacements(useCaseDeps, auth)
   })
 
   app.put('/api/academic/task-placements/:taskId', {
@@ -995,19 +336,7 @@ export async function registerAcademicRuntimeRoutes(
     const auth = requireRole(request, [...academicRoleCodes])
     const params = parseOrThrow(taskIdParamsSchema, request.params)
     const body = parseOrThrow(taskPlacementUpsertBodySchema, request.body)
-    const parsed = parseOrThrow(taskPlacementSyncSchema, {
-      placements: {
-        [params.taskId]: body.placement,
-      },
-    })
-    const placement = parsed.placements[params.taskId]
-    if (!placement || placement.taskId !== params.taskId) {
-      throw badRequest('Task placement payload does not match the requested task id')
-    }
-    return persistAcademicTaskPlacement(auth, placement, {
-      expectedUpdatedAt: body.expectedUpdatedAt,
-      writeRuntimeShadow: false,
-    })
+    return putSinglePlacement(useCaseDeps, auth, params.taskId, body)
   })
 
   app.delete('/api/academic/task-placements/:taskId', {
@@ -1019,7 +348,7 @@ export async function registerAcademicRuntimeRoutes(
     const auth = requireRole(request, [...academicRoleCodes])
     const params = parseOrThrow(taskIdParamsSchema, request.params)
     const query = parseOrThrow(taskPlacementDeleteQuerySchema, request.query)
-    return deleteAcademicTaskPlacement(auth, params.taskId, query.expectedUpdatedAt)
+    return deleteAcademicTaskPlacement(useCaseDeps, auth, params.taskId, query.expectedUpdatedAt)
   })
 
   app.put('/api/academic/calendar-audit/sync', {
@@ -1032,10 +361,7 @@ export async function registerAcademicRuntimeRoutes(
     const auth = requireRole(request, [...academicRoleCodes])
     const body = parseOrThrow(calendarAuditSyncSchema, request.body)
     markCompatibilityRouteUsage(reply, '/api/academic/calendar-audit/sync')
-    for (const event of body.events) {
-      await appendAcademicCalendarAuditEvent(auth, event)
-    }
-    return { ok: true, count: body.events.length }
+    return syncCalendarAudit(useCaseDeps, auth, body)
   })
 
   app.get('/api/academic/calendar-audit', {
@@ -1045,18 +371,7 @@ export async function registerAcademicRuntimeRoutes(
     },
   }, async request => {
     const auth = requireRole(request, [...academicRoleCodes])
-    if (!auth.facultyId) throw forbidden('Faculty context is required')
-    const rows = await context.db
-      .select()
-      .from(academicCalendarAuditEvents)
-      .where(eq(academicCalendarAuditEvents.facultyId, auth.facultyId))
-      .orderBy(asc(academicCalendarAuditEvents.createdAt))
-    return {
-      items: rows.flatMap(row => {
-        const parsed = mapCalendarAuditEventRow(row)
-        return parsed ? [parsed] : []
-      }),
-    }
+    return listCalendarAudit(useCaseDeps, auth)
   })
 
   app.post('/api/academic/calendar-audit', {
@@ -1067,7 +382,7 @@ export async function registerAcademicRuntimeRoutes(
   }, async request => {
     const auth = requireRole(request, [...academicRoleCodes])
     const body = parseOrThrow(calendarAuditAppendBodySchema, request.body)
-    return appendAcademicCalendarAuditEvent(auth, body.event, {
+    return appendAcademicCalendarAuditEvent(useCaseDeps, auth, body.event, {
       writeRuntimeShadow: false,
     })
   })
@@ -1082,64 +397,7 @@ export async function registerAcademicRuntimeRoutes(
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const params = parseOrThrow(z.object({ facultyId: z.string().min(1) }), request.params)
     const body = parseOrThrow(facultyCalendarWorkspaceUpsertSchema, request.body)
-    if (auth.facultyId !== params.facultyId) {
-      throw forbidden('You can only edit your own timetable workspace')
-    }
-    await validateFacultyCalendarTemplate(context, params.facultyId, body.template)
-    const { directEditWindowEndsAt, classEditingLocked } = await getEditableCalendarWindowStatus(context, params.facultyId)
-    const [current] = await context.db
-      .select()
-      .from(facultyCalendarWorkspaces)
-      .where(eq(facultyCalendarWorkspaces.facultyId, params.facultyId))
-    const currentTemplate = current ? mapFacultyCalendarWorkspaceRow(current) : null
-    if (classEditingLocked && stringifyJson(currentTemplate) !== stringifyJson(body.template)) {
-      throw forbidden('The direct class editing window has ended for this faculty timetable')
-    }
-
-    const now = context.now()
-    if (current) {
-      await context.db.update(facultyCalendarWorkspaces).set({
-        templateJson: stringifyJson(body.template),
-        version: current.version + 1,
-        updatedAt: now,
-      }).where(eq(facultyCalendarWorkspaces.facultyId, params.facultyId))
-    } else {
-      await context.db.insert(facultyCalendarWorkspaces).values({
-        facultyId: params.facultyId,
-        templateJson: stringifyJson(body.template),
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
-      })
-    }
-
-    const timetablePayload = await getAcademicRuntimeState(context, 'timetableByFacultyId') as Record<string, unknown>
-    await saveAcademicRuntimeState(context, 'timetableByFacultyId', {
-      ...timetablePayload,
-      [params.facultyId]: body.template,
-    })
-
-    const [saved] = await context.db
-      .select()
-      .from(facultyCalendarWorkspaces)
-      .where(eq(facultyCalendarWorkspaces.facultyId, params.facultyId))
-    await emitAuditEvent(context, {
-      entityType: 'faculty_calendar_workspace',
-      entityId: params.facultyId,
-      action: current ? 'UPDATE' : 'CREATE',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      before: currentTemplate,
-      after: body.template,
-      metadata: { directEditWindowEndsAt, classEditingLocked },
-    })
-    return {
-      facultyId: params.facultyId,
-      template: body.template,
-      version: saved?.version ?? 1,
-      directEditWindowEndsAt,
-      classEditingLocked,
-    }
+    return saveFacultyCalendarWorkspace(useCaseDeps, auth, auth.facultyId, params.facultyId, body.template)
   })
 
   app.post('/api/academic/meetings', {
@@ -1151,52 +409,7 @@ export async function registerAcademicRuntimeRoutes(
     const auth = requireRole(request, [...academicRoleCodes])
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const body = parseOrThrow(academicMeetingCreateSchema, request.body)
-    validateMeetingWindow(body.startMinutes, body.endMinutes)
-    const { studentId } = await assertViewerCanSuperviseStudent({
-      context,
-      auth,
-      studentId: body.studentId,
-      offeringId: body.offeringId ?? null,
-    })
-
-    if (body.offeringId) {
-      const { offering } = await getOfferingContext(context, body.offeringId)
-      await assertStudentEnrolledInOffering(context, offering, studentId)
-    }
-
-    const now = context.now()
-    const meetingId = createId('meeting')
-    await context.db.insert(academicMeetings).values({
-      meetingId,
-      facultyId: auth.facultyId,
-      studentId,
-      offeringId: body.offeringId ?? null,
-      title: body.title,
-      notes: body.notes ?? null,
-      dateIso: body.dateISO,
-      startMinutes: body.startMinutes,
-      endMinutes: body.endMinutes,
-      status: body.status,
-      createdByFacultyId: auth.facultyId,
-      version: 1,
-      createdAt: now,
-      updatedAt: now,
-    })
-    const [saved] = await context.db
-      .select()
-      .from(academicMeetings)
-      .where(eq(academicMeetings.meetingId, meetingId))
-    if (!saved) throw notFound('Meeting could not be created')
-    const response = await buildAcademicMeetingResponse(context, saved)
-    await emitAuditEvent(context, {
-      entityType: 'academic_meeting',
-      entityId: meetingId,
-      action: 'CREATE',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      after: response,
-    })
-    return response
+    return createMeeting(useCaseDeps, auth, auth.facultyId, body)
   })
 
   app.patch('/api/academic/meetings/:meetingId', {
@@ -1209,56 +422,7 @@ export async function registerAcademicRuntimeRoutes(
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const params = parseOrThrow(academicMeetingParamsSchema, request.params)
     const body = parseOrThrow(academicMeetingPatchSchema, request.body)
-    validateMeetingWindow(body.startMinutes, body.endMinutes)
-    const [current] = await context.db
-      .select()
-      .from(academicMeetings)
-      .where(eq(academicMeetings.meetingId, params.meetingId))
-    if (!current) throw notFound('Meeting not found')
-    if (current.facultyId !== auth.facultyId) {
-      throw forbidden('You can only update meetings owned by the active faculty')
-    }
-    expectVersion(current.version, body.version, 'meeting', current)
-    const { studentId } = await assertViewerCanSuperviseStudent({
-      context,
-      auth,
-      studentId: body.studentId,
-      offeringId: body.offeringId ?? current.offeringId ?? null,
-    })
-    if (body.offeringId) {
-      const { offering } = await getOfferingContext(context, body.offeringId)
-      await assertStudentEnrolledInOffering(context, offering, studentId)
-    }
-
-    await context.db.update(academicMeetings).set({
-      studentId,
-      offeringId: body.offeringId ?? null,
-      title: body.title,
-      notes: body.notes ?? null,
-      dateIso: body.dateISO,
-      startMinutes: body.startMinutes,
-      endMinutes: body.endMinutes,
-      status: body.status,
-      version: current.version + 1,
-      updatedAt: context.now(),
-    }).where(eq(academicMeetings.meetingId, params.meetingId))
-    const [saved] = await context.db
-      .select()
-      .from(academicMeetings)
-      .where(eq(academicMeetings.meetingId, params.meetingId))
-    if (!saved) throw notFound('Meeting not found after update')
-    const beforeResponse = await buildAcademicMeetingResponse(context, current)
-    const response = await buildAcademicMeetingResponse(context, saved)
-    await emitAuditEvent(context, {
-      entityType: 'academic_meeting',
-      entityId: params.meetingId,
-      action: 'UPDATE',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      before: beforeResponse,
-      after: response,
-    })
-    return response
+    return updateMeeting(useCaseDeps, auth, auth.facultyId, params.meetingId, body)
   })
 
   app.put('/api/academic/offerings/:offeringId/attendance', {
@@ -1271,76 +435,7 @@ export async function registerAcademicRuntimeRoutes(
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const params = parseOrThrow(offeringParamsSchema, request.params)
     const body = parseOrThrow(attendanceCommitSchema, request.body)
-    await assertCourseLeaderCanManageOffering(context, auth.facultyId, params.offeringId)
-    const { offering } = await getOfferingContext(context, params.offeringId)
-    const capturedAt = body.capturedAt ?? context.now()
-    const now = context.now()
-    const studentPatchUpdates: Record<string, Record<string, unknown>> = {}
-
-    for (const entry of body.entries) {
-      if (entry.presentClasses > entry.totalClasses) {
-        throw badRequest('Present classes cannot exceed total classes')
-      }
-      const enrollment = await assertStudentEnrolledInOffering(context, offering, entry.studentId)
-      await context.db.insert(studentAttendanceSnapshots).values({
-        attendanceSnapshotId: createId('attendance'),
-        studentId: enrollment.studentId,
-        offeringId: params.offeringId,
-        presentClasses: entry.presentClasses,
-        totalClasses: entry.totalClasses,
-        attendancePercent: Math.round((entry.presentClasses / Math.max(1, entry.totalClasses)) * 100),
-        source: 'teacher-workspace',
-        capturedAt,
-        createdAt: now,
-        updatedAt: now,
-      })
-      studentPatchUpdates[`${params.offeringId}::${enrollment.studentId}`] = {
-        present: entry.presentClasses,
-        totalClasses: entry.totalClasses,
-      }
-    }
-
-    const averageAttendance = body.entries.length > 0
-      ? Math.round(body.entries.reduce((sum, entry) => sum + ((entry.presentClasses / Math.max(1, entry.totalClasses)) * 100), 0) / body.entries.length)
-      : offering.attendance
-
-    await context.db.update(sectionOfferings).set({
-      attendance: averageAttendance,
-      version: offering.version + 1,
-      updatedAt: now,
-    }).where(eq(sectionOfferings.offeringId, params.offeringId))
-    await upsertStudentPatchShadow(studentPatchUpdates)
-
-    if (body.lock) {
-      const currentLockPayload = await getAcademicRuntimeState(context, 'lockByOffering') as Record<string, Record<string, boolean>>
-      await saveAcademicRuntimeState(context, 'lockByOffering', {
-        ...currentLockPayload,
-        [params.offeringId]: {
-          ...(currentLockPayload[params.offeringId] ?? {}),
-          attendance: true,
-        },
-      })
-    }
-
-    await emitAuditEvent(context, {
-      entityType: 'offering_attendance_commit',
-      entityId: params.offeringId,
-      action: 'UPSERT',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      metadata: {
-        entryCount: body.entries.length,
-        capturedAt,
-        locked: !!body.lock,
-      },
-    })
-    return {
-      ok: true,
-      offeringId: params.offeringId,
-      capturedAt,
-      averageAttendance,
-      locked: !!body.lock,
-    }
+    return commitAttendance(useCaseDeps, auth, auth.facultyId, params.offeringId, body)
   })
 
   app.put('/api/academic/offerings/:offeringId/assessment-entries/:kind', {
@@ -1353,307 +448,7 @@ export async function registerAcademicRuntimeRoutes(
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const params = parseOrThrow(assessmentCommitParamsSchema, request.params)
     const body = parseOrThrow(assessmentCommitSchema, request.body)
-    await assertCourseLeaderCanManageOffering(context, auth.facultyId, params.offeringId)
-    const { offering, term, course, department } = await getOfferingContext(context, params.offeringId)
-    const policy = term.batchId
-      ? (await resolveBatchPolicy(context, term.batchId, { sectionCode: offering.sectionCode })).effectivePolicy
-      : DEFAULT_POLICY
-    const schemeRow = await context.db
-      .select()
-      .from(offeringAssessmentSchemes)
-      .where(eq(offeringAssessmentSchemes.offeringId, params.offeringId))
-      .then(rows => rows[0] ?? null)
-    const scheme = schemeRow
-      ? canonicalizeSchemeState(schemeStateSchema.parse(parseJson(schemeRow.schemeJson, {})), policy)
-      : buildDefaultSchemeFromPolicy(policy)
-    const evaluatedAt = body.evaluatedAt ?? context.now()
-    const now = context.now()
-    const studentPatchUpdates: Record<string, Record<string, unknown>> = {}
-
-    const lockField = params.kind === 'tt1'
-      ? 'tt1Locked'
-      : params.kind === 'tt2'
-        ? 'tt2Locked'
-        : params.kind === 'quiz'
-          ? 'quizLocked'
-          : params.kind === 'assignment'
-            ? 'assignmentLocked'
-            : params.kind === 'finals'
-              ? 'finalsLocked'
-              : null
-    if (lockField && offering[lockField] === 1) {
-      throw forbidden('This assessment dataset is locked')
-    }
-
-    // GAP-2: Prevent locking evidence for a stage that hasn't been reached yet.
-    // Stage orders: pre-tt1=1, post-tt1=2, post-tt2=3, post-assignments=4, post-see=5.
-    // Locking future evidence bypasses the proof stage-gate and corrupts the sim timeline.
-    if (body.lock) {
-      const minimumStageToLock: Record<string, number> = {
-        attendance: 1,
-        tt1: 1,
-        tt2: 2,
-        quiz: 2,
-        assignment: 3,
-        finals: 4,
-      }
-      const requiredStage = minimumStageToLock[params.kind] ?? 1
-      if (offering.stage < requiredStage) {
-        throw forbidden(`Cannot lock ${params.kind} evidence before the class has reached the required stage (current: ${offering.stage}, required: ${requiredStage})`)
-      }
-    }
-
-    const allowedComponents = new Map<string, { maxScore: number; storageType: string }>()
-    if (params.kind === 'tt1' || params.kind === 'tt2') {
-      const courseOutcomeRows = await context.db
-        .select()
-        .from(courseOutcomeOverrides)
-        .where(and(
-          eq(courseOutcomeOverrides.courseId, offering.courseId),
-          eq(courseOutcomeOverrides.status, 'active'),
-        ))
-      const resolvedOutcomes = resolveCourseOutcomesForOffering({
-        institutionId: department.institutionId,
-        branchId: offering.branchId,
-        batchId: term.batchId,
-        offeringId: offering.offeringId,
-        courseId: offering.courseId,
-        courseCode: course.courseCode,
-        courseTitle: course.title,
-        overrides: courseOutcomeRows,
-      })
-      const [paperRow] = await context.db
-        .select()
-        .from(offeringQuestionPapers)
-        .where(and(
-          eq(offeringQuestionPapers.offeringId, params.offeringId),
-          eq(offeringQuestionPapers.kind, params.kind),
-        ))
-      const blueprint = paperRow
-        ? termTestBlueprintSchema.parse(parseJson(paperRow.blueprintJson, {}))
-        : buildDefaultQuestionPaper(params.kind, resolvedOutcomes)
-      for (const leaf of flattenTermTestLeaves(blueprint.nodes)) {
-        allowedComponents.set(leaf.id, { maxScore: leaf.maxMarks, storageType: `${params.kind}_leaf` })
-      }
-    } else if (params.kind === 'quiz') {
-      scheme.quizComponents.forEach((component, index) => {
-        allowedComponents.set(component.id, { maxScore: component.rawMax, storageType: `quiz${index + 1}` })
-      })
-    } else if (params.kind === 'assignment') {
-      scheme.assignmentComponents.forEach((component, index) => {
-        allowedComponents.set(component.id, { maxScore: component.rawMax, storageType: `asgn${index + 1}` })
-      })
-    } else {
-      allowedComponents.set('see', { maxScore: scheme.finalsMax, storageType: 'sem_end' })
-    }
-    let replacementComponentTypes = Array.from(new Set([
-      ...Array.from(allowedComponents.values()).map(component => component.storageType),
-      ...((params.kind === 'tt1' || params.kind === 'tt2') ? [params.kind] : []),
-    ]))
-    if (params.kind === 'quiz' || params.kind === 'assignment') {
-      const legacyComponentTypePattern = params.kind === 'quiz' ? /^quiz\d+$/ : /^asgn\d+$/
-      const existingScoreRows = await context.db
-        .select({ componentType: studentAssessmentScores.componentType })
-        .from(studentAssessmentScores)
-        .where(eq(studentAssessmentScores.offeringId, params.offeringId))
-      replacementComponentTypes = Array.from(new Set([
-        ...replacementComponentTypes,
-        ...existingScoreRows
-          .map(row => row.componentType)
-          .filter(componentType => legacyComponentTypePattern.test(componentType)),
-      ]))
-    }
-    const enrollmentByStudentId = new Map<string, Awaited<ReturnType<typeof assertStudentEnrolledInOffering>>>()
-    const submittedCanonicalStudentIds: string[] = []
-    const seenCanonicalStudentIds = new Set<string>()
-    for (const entry of body.entries) {
-      const enrollment = await assertStudentEnrolledInOffering(context, offering, entry.studentId)
-      if (seenCanonicalStudentIds.has(enrollment.studentId)) {
-        throw badRequest('Assessment payload contains duplicate student entries', { studentId: enrollment.studentId })
-      }
-      seenCanonicalStudentIds.add(enrollment.studentId)
-      submittedCanonicalStudentIds.push(enrollment.studentId)
-      enrollmentByStudentId.set(entry.studentId, enrollment)
-    }
-    for (const entry of body.entries) {
-      const seenComponentCodes = new Set<string>()
-      for (const component of entry.components) {
-        if (seenComponentCodes.has(component.componentCode)) {
-          throw badRequest('Assessment entry contains duplicate component scores', {
-            componentCode: component.componentCode,
-            studentId: entry.studentId,
-          })
-        }
-        seenComponentCodes.add(component.componentCode)
-        const allowed = allowedComponents.get(component.componentCode)
-        if (!allowed) {
-          throw badRequest('Assessment entry references a component outside the configured scheme', {
-            componentCode: component.componentCode,
-            kind: params.kind,
-          })
-        }
-        if (component.maxScore > allowed.maxScore || component.score > component.maxScore) {
-          throw badRequest('Assessment entry exceeds the configured component max score', {
-            componentCode: component.componentCode,
-            allowedMax: allowed.maxScore,
-          })
-        }
-      }
-    }
-    const patchFieldForKind = params.kind === 'tt1'
-      ? 'tt1LeafScores'
-      : params.kind === 'tt2'
-        ? 'tt2LeafScores'
-        : params.kind === 'quiz'
-          ? 'quizScores'
-          : params.kind === 'assignment'
-            ? 'assignmentScores'
-            : params.kind === 'finals'
-              ? 'seeScore'
-              : null
-    const submittedStudentIds = submittedCanonicalStudentIds
-    const submittedPatchKeys = new Set(submittedStudentIds.map(studentId => `${params.offeringId}::${studentId}`))
-    const shouldReplaceAssessmentEntries = body.entries.length > 0 || !body.lock
-    if (patchFieldForKind && shouldReplaceAssessmentEntries) {
-      const currentStudentPatches = await getAcademicRuntimeState(context, 'studentPatches') as Record<string, Record<string, unknown>>
-      for (const [patchKey, patch] of Object.entries(currentStudentPatches)) {
-        if (!patchKey.startsWith(`${params.offeringId}::`)) continue
-        if (submittedPatchKeys.has(patchKey)) continue
-        if (patch && typeof patch === 'object' && patch[patchFieldForKind] != null) {
-          studentPatchUpdates[patchKey] = {
-            ...(studentPatchUpdates[patchKey] ?? {}),
-            [patchFieldForKind]: null,
-          }
-        }
-      }
-      const staleScoreWhere = and(
-        eq(studentAssessmentScores.offeringId, params.offeringId),
-        inArray(studentAssessmentScores.componentType, replacementComponentTypes),
-        submittedStudentIds.length > 0 ? not(inArray(studentAssessmentScores.studentId, submittedStudentIds)) : undefined,
-      )
-      await context.db.delete(studentAssessmentScores).where(staleScoreWhere)
-    }
-
-    for (const entry of body.entries) {
-      const enrollment = enrollmentByStudentId.get(entry.studentId)
-      if (!enrollment) throw badRequest('Assessment entry references a student outside the offering', { studentId: entry.studentId })
-      await context.db.delete(studentAssessmentScores).where(and(
-        eq(studentAssessmentScores.studentId, enrollment.studentId),
-        eq(studentAssessmentScores.offeringId, params.offeringId),
-        inArray(studentAssessmentScores.componentType, replacementComponentTypes),
-      ))
-      let aggregateScore = 0
-      let aggregateMax = 0
-      for (const component of entry.components) {
-        const allowed = allowedComponents.get(component.componentCode)
-        if (!allowed) {
-          throw badRequest('Assessment entry references a component outside the configured scheme', {
-            componentCode: component.componentCode,
-            kind: params.kind,
-          })
-        }
-        if (component.maxScore > allowed.maxScore || component.score > component.maxScore) {
-          throw badRequest('Assessment entry exceeds the configured component max score', {
-            componentCode: component.componentCode,
-            allowedMax: allowed.maxScore,
-          })
-        }
-        aggregateScore += component.score
-        aggregateMax += component.maxScore
-        await context.db.insert(studentAssessmentScores).values({
-          assessmentScoreId: createId('assessment'),
-          studentId: enrollment.studentId,
-          offeringId: params.offeringId,
-          termId: term.termId,
-          componentType: allowed.storageType,
-          componentCode: component.componentCode,
-          score: component.score,
-          maxScore: component.maxScore,
-          evaluatedAt,
-          createdAt: now,
-          updatedAt: now,
-        })
-      }
-      const patchKey = `${params.offeringId}::${enrollment.studentId}`
-      if (params.kind === 'tt1') {
-        studentPatchUpdates[patchKey] = {
-          ...(studentPatchUpdates[patchKey] ?? {}),
-          tt1LeafScores: Object.fromEntries(entry.components.map(component => [component.componentCode, component.score])),
-        }
-      } else if (params.kind === 'tt2') {
-        studentPatchUpdates[patchKey] = {
-          ...(studentPatchUpdates[patchKey] ?? {}),
-          tt2LeafScores: Object.fromEntries(entry.components.map(component => [component.componentCode, component.score])),
-        }
-      } else if (params.kind === 'quiz') {
-        studentPatchUpdates[patchKey] = {
-          ...(studentPatchUpdates[patchKey] ?? {}),
-          quizScores: Object.fromEntries(entry.components.map(component => [component.componentCode, component.score])),
-        }
-      } else if (params.kind === 'assignment') {
-        studentPatchUpdates[patchKey] = {
-          ...(studentPatchUpdates[patchKey] ?? {}),
-          assignmentScores: Object.fromEntries(entry.components.map(component => [component.componentCode, component.score])),
-        }
-      } else if (params.kind === 'finals') {
-        studentPatchUpdates[patchKey] = {
-          ...(studentPatchUpdates[patchKey] ?? {}),
-          seeScore: aggregateScore,
-        }
-      }
-      if (params.kind === 'tt1' || params.kind === 'tt2') {
-        await context.db.insert(studentAssessmentScores).values({
-          assessmentScoreId: createId('assessment'),
-          studentId: enrollment.studentId,
-          offeringId: params.offeringId,
-          termId: term.termId,
-          componentType: params.kind,
-          componentCode: null,
-          score: aggregateScore,
-          maxScore: aggregateMax,
-          evaluatedAt,
-          createdAt: now,
-          updatedAt: now,
-        })
-      }
-    }
-    await upsertStudentPatchShadow(studentPatchUpdates)
-
-    if (params.kind === 'tt1' || params.kind === 'tt2' || body.lock) {
-      const nextOfferingPatch: Partial<typeof sectionOfferings.$inferInsert> = {
-        ...(params.kind === 'tt1' ? { tt1Done: 1 } : {}),
-        ...(params.kind === 'tt2' ? { tt2Done: 1 } : {}),
-        version: offering.version + 1,
-        updatedAt: now,
-      }
-      if (body.lock && lockField) nextOfferingPatch[lockField] = 1
-      if (Object.keys(nextOfferingPatch).length > 0) {
-        await context.db.update(sectionOfferings).set(nextOfferingPatch).where(eq(sectionOfferings.offeringId, params.offeringId))
-      }
-    }
-
-    await emitAuditEvent(context, {
-      entityType: 'offering_assessment_commit',
-      entityId: `${params.offeringId}:${params.kind}`,
-      action: 'UPSERT',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      metadata: {
-        kind: params.kind,
-        offeringId: params.offeringId,
-        entryCount: body.entries.length,
-        evaluatedAt,
-        locked: !!body.lock,
-      },
-    })
-    await triggerActiveRunRecomputeIfPresent(context, auth.facultyId)
-    return {
-      ok: true,
-      offeringId: params.offeringId,
-      kind: params.kind,
-      evaluatedAt,
-      locked: !!body.lock,
-    }
+    return commitAssessmentEntries(useCaseDeps, auth, auth.facultyId, params, body)
   })
 
   app.post('/api/academic/offerings/:offeringId/assessment-entries/:kind/clear-lock', {
@@ -1665,44 +460,7 @@ export async function registerAcademicRuntimeRoutes(
     const auth = requireRole(request, ['HOD'])
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const params = parseOrThrow(assessmentCommitParamsSchema, request.params)
-    const { offering } = await getOfferingContext(context, params.offeringId)
-    const lockField = params.kind === 'tt1'
-      ? 'tt1Locked'
-      : params.kind === 'tt2'
-        ? 'tt2Locked'
-        : params.kind === 'quiz'
-          ? 'quizLocked'
-          : params.kind === 'assignment'
-            ? 'assignmentLocked'
-            : params.kind === 'finals'
-              ? 'finalsLocked'
-              : null
-    if (!lockField) throw badRequest(`Invalid kind: ${params.kind}`)
-    if (offering[lockField] !== 1) {
-      return { ok: true as const, offeringId: params.offeringId, kind: params.kind, cleared: false, reason: 'already-unlocked' }
-    }
-    await context.db.update(sectionOfferings).set({
-      [lockField]: 0,
-      version: offering.version + 1,
-      updatedAt: context.now(),
-    }).where(eq(sectionOfferings.offeringId, params.offeringId))
-    const currentLockPayload = await getAcademicRuntimeState(context, 'lockByOffering') as Record<string, Record<string, boolean>>
-    await saveAcademicRuntimeState(context, 'lockByOffering', {
-      ...currentLockPayload,
-      [params.offeringId]: {
-        ...(currentLockPayload[params.offeringId] ?? {}),
-        [params.kind]: false,
-      },
-    })
-    await emitAuditEvent(context, {
-      entityType: 'offering_assessment_lock',
-      entityId: `${params.offeringId}:${params.kind}`,
-      action: 'CLEAR_LOCK',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      metadata: { kind: params.kind, offeringId: params.offeringId },
-    })
-    return { ok: true as const, offeringId: params.offeringId, kind: params.kind, cleared: true }
+    return clearAssessmentLock(useCaseDeps, auth, auth.facultyId, params)
   })
 
   app.put('/api/academic/offerings/:offeringId/scheme', {
@@ -1715,66 +473,7 @@ export async function registerAcademicRuntimeRoutes(
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const params = parseOrThrow(offeringParamsSchema, request.params)
     const body = parseOrThrow(offeringSchemeUpsertSchema, request.body)
-    await assertCourseLeaderCanManageOffering(context, auth.facultyId, params.offeringId)
-    const { offering, term } = await getOfferingContext(context, params.offeringId)
-    const policy = term.batchId
-      ? (await resolveBatchPolicy(context, term.batchId, { sectionCode: offering.sectionCode })).effectivePolicy
-      : DEFAULT_POLICY
-    const canonicalScheme = canonicalizeSchemeState(body.scheme, policy)
-    validateSchemeAgainstPolicy(canonicalScheme, policy)
-    const now = context.now()
-    const [current] = await context.db
-      .select()
-      .from(offeringAssessmentSchemes)
-      .where(eq(offeringAssessmentSchemes.offeringId, params.offeringId))
-
-    if (current) {
-      await context.db.update(offeringAssessmentSchemes).set({
-        configuredByFacultyId: auth.facultyId,
-        schemeJson: stringifyJson(canonicalScheme),
-        policySnapshotJson: stringifyJson(policy),
-        status: current.status,
-        version: current.version + 1,
-        updatedAt: now,
-      }).where(eq(offeringAssessmentSchemes.offeringId, params.offeringId))
-    } else {
-      await context.db.insert(offeringAssessmentSchemes).values({
-        offeringId: offering.offeringId,
-        configuredByFacultyId: auth.facultyId,
-        schemeJson: stringifyJson(canonicalScheme),
-        policySnapshotJson: stringifyJson(policy),
-        status: 'active',
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
-      })
-    }
-
-    const [saved] = await context.db
-      .select()
-      .from(offeringAssessmentSchemes)
-      .where(eq(offeringAssessmentSchemes.offeringId, params.offeringId))
-
-    const previousScheme = current
-      ? schemeStateSchema.safeParse(parseJson(current.schemeJson, {}))
-      : null
-    await emitAuditEvent(context, {
-      entityType: 'offering_assessment_scheme',
-      entityId: params.offeringId,
-      action: current ? 'UPDATE' : 'CREATE',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      before: previousScheme?.success ? canonicalizeSchemeState(previousScheme.data, policy) : null,
-      after: canonicalScheme,
-      metadata: { offeringId: params.offeringId },
-    })
-
-    return {
-      offeringId: saved.offeringId,
-      scheme: canonicalizeSchemeState(schemeStateSchema.parse(parseJson(saved.schemeJson, {})), policy),
-      version: saved.version,
-      policySnapshot: parseJson(saved.policySnapshotJson, {}),
-    }
+    return saveOfferingScheme(useCaseDeps, auth, auth.facultyId, params.offeringId, body)
   })
 
   app.put('/api/academic/offerings/:offeringId/question-papers/:kind', {
@@ -1787,83 +486,6 @@ export async function registerAcademicRuntimeRoutes(
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const params = parseOrThrow(questionPaperParamsSchema, request.params)
     const body = parseOrThrow(offeringQuestionPaperUpsertSchema, request.body)
-    await assertCourseLeaderCanManageOffering(context, auth.facultyId, params.offeringId)
-    const { offering, course, term, department } = await getOfferingContext(context, params.offeringId)
-    const rows = await context.db
-      .select()
-      .from(courseOutcomeOverrides)
-      .where(and(
-        eq(courseOutcomeOverrides.courseId, offering.courseId),
-        eq(courseOutcomeOverrides.status, 'active'),
-      ))
-    const resolvedOutcomes = resolveCourseOutcomesForOffering({
-      institutionId: department.institutionId,
-      branchId: offering.branchId,
-      batchId: term.batchId,
-      offeringId: offering.offeringId,
-      courseId: offering.courseId,
-      courseCode: course.courseCode,
-      courseTitle: course.title,
-      overrides: rows,
-    })
-    validateQuestionPaperBlueprint(params.kind, body.blueprint, new Set(resolvedOutcomes.map(item => item.id)))
-    const now = context.now()
-    const [current] = await context.db
-      .select()
-      .from(offeringQuestionPapers)
-      .where(and(
-        eq(offeringQuestionPapers.offeringId, params.offeringId),
-        eq(offeringQuestionPapers.kind, params.kind),
-      ))
-
-    if (current) {
-      await context.db.update(offeringQuestionPapers).set({
-        blueprintJson: stringifyJson(body.blueprint),
-        updatedByFacultyId: auth.facultyId,
-        version: current.version + 1,
-        updatedAt: now,
-      }).where(eq(offeringQuestionPapers.paperId, current.paperId))
-    } else {
-      await context.db.insert(offeringQuestionPapers).values({
-        paperId: createId('question_paper'),
-        offeringId: params.offeringId,
-        kind: params.kind,
-        blueprintJson: stringifyJson(body.blueprint),
-        updatedByFacultyId: auth.facultyId,
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
-      })
-    }
-
-    const [saved] = await context.db
-      .select()
-      .from(offeringQuestionPapers)
-      .where(and(
-        eq(offeringQuestionPapers.offeringId, params.offeringId),
-        eq(offeringQuestionPapers.kind, params.kind),
-      ))
-
-    const previousBlueprint = current
-      ? termTestBlueprintSchema.safeParse(parseJson(current.blueprintJson, {}))
-      : null
-    await emitAuditEvent(context, {
-      entityType: 'offering_question_paper',
-      entityId: saved.paperId,
-      action: current ? 'UPDATE' : 'CREATE',
-      actorRole: auth.activeRoleGrant.roleCode,
-      actorId: auth.facultyId,
-      before: previousBlueprint?.success ? previousBlueprint.data : null,
-      after: body.blueprint,
-      metadata: { offeringId: params.offeringId, kind: params.kind },
-    })
-
-    return {
-      paperId: saved.paperId,
-      offeringId: saved.offeringId,
-      kind: saved.kind,
-      blueprint: termTestBlueprintSchema.parse(parseJson(saved.blueprintJson, {})),
-      version: saved.version,
-    }
+    return saveQuestionPaper(useCaseDeps, auth, auth.facultyId, params, body)
   })
 }

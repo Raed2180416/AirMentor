@@ -10,16 +10,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 1054 |
+| Tracked files | 1073 |
 | Tracked bytes | 14.6 MiB |
-| Tracked source/doc lines | 318333 |
-| Non-empty lines | 294914 |
-| Comment lines | 6464 |
+| Tracked source/doc lines | 318868 |
+| Non-empty lines | 295340 |
+| Comment lines | 6707 |
 | Local dependency edges | 344 |
-| Symbols/blocks discovered | 23931 |
+| Symbols/blocks discovered | 23952 |
 | API route registrations found | 190 |
 | Test cases discovered | 1374 |
-| Atomic references (exports/env/sql/calls/hooks) | 81984 |
+| Atomic references (exports/env/sql/calls/hooks) | 81788 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -131,7 +131,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Role | Files |
 | --- | --- |
-| backend | 211 |
+| backend | 230 |
 | pipeline | 171 |
 | unit-test | 162 |
 | other | 161 |
@@ -149,7 +149,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Extension | Files |
 | --- | --- |
-| .ts | 481 |
+| .ts | 500 |
 | .py | 108 |
 | .yaml | 107 |
 | .tsx | 82 |
@@ -181,7 +181,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Top directory | Tracked files |
 | --- | --- |
-| air-mentor-api | 421 |
+| air-mentor-api | 440 |
 | pipeline | 171 |
 | scripts | 112 |
 | adapters | 98 |
@@ -223,9 +223,9 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | scripts | 111 | 1017.9 KiB | 24450 | repo-script:111 |
 | tests | 68 | 614.3 KiB | 17898 | unit-test:68 |
 | adapters/web/features/admin | 29 | 769.3 KiB | 16192 | other:29 |
-| air-mentor-api/src/modules | 21 | 585.7 KiB | 14508 | backend:21 |
+| air-mentor-api/src/modules | 21 | 495.5 KiB | 12306 | backend:21 |
 | . | 25 | 336.4 KiB | 9423 | other:14, build-config:10, agent-config:1 |
-| docs | 20 | 329.2 KiB | 8885 | documentation:20 |
+| docs | 20 | 329.3 KiB | 8886 | documentation:20 |
 | tests-e2e/specs | 36 | 363.8 KiB | 7580 | e2e-test:36 |
 | adapters/web/features/pages | 6 | 384.7 KiB | 7147 | other:6 |
 | adapters/web/app | 14 | 237.8 KiB | 5266 | other:14 |
@@ -325,24 +325,24 @@ This regex-based list is a navigation aid, not a formal OpenAPI contract. It rec
 | GET | / | air-mentor-api/src/app.ts:145 |
 | GET | /health | air-mentor-api/src/app.ts:150 |
 | GET | /openapi.json | air-mentor-api/src/app.ts:151 |
-| GET | /api/admin/course-outcomes | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:95 |
-| POST | /api/admin/course-outcomes | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:112 |
-| PATCH | /api/admin/course-outcomes/:courseOutcomeOverrideId | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:147 |
-| GET | /api/admin/offerings/:offeringId/resolved-course-outcomes | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:190 |
-| GET | /api/admin/offerings/:offeringId/stage-eligibility | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:224 |
-| POST | /api/admin/offerings/:offeringId/advance-stage | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:235 |
-| POST | /api/admin/batches/:batchId/provision | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:279 |
-| GET | /api/admin/offerings | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:850 |
-| POST | /api/admin/attendance-snapshots | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:865 |
-| POST | /api/admin/assessment-scores | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:900 |
-| POST | /api/admin/student-interventions | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:935 |
-| POST | /api/admin/transcript-term-results | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:968 |
-| POST | /api/admin/transcript-subject-results | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:1001 |
-| POST | /api/admin/offerings | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:1036 |
-| PATCH | /api/admin/offerings/:offeringId | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:1084 |
-| GET | /api/admin/offering-ownership | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:1142 |
-| POST | /api/admin/offering-ownership | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:1153 |
-| PATCH | /api/admin/offering-ownership/:ownershipId | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:1188 |
+| GET | /api/admin/course-outcomes | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:113 |
+| POST | /api/admin/course-outcomes | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:127 |
+| PATCH | /api/admin/course-outcomes/:courseOutcomeOverrideId | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:149 |
+| GET | /api/admin/offerings/:offeringId/resolved-course-outcomes | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:174 |
+| GET | /api/admin/offerings/:offeringId/stage-eligibility | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:190 |
+| POST | /api/admin/offerings/:offeringId/advance-stage | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:201 |
+| POST | /api/admin/batches/:batchId/provision | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:215 |
+| GET | /api/admin/offerings | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:224 |
+| POST | /api/admin/attendance-snapshots | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:241 |
+| POST | /api/admin/assessment-scores | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:255 |
+| POST | /api/admin/student-interventions | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:269 |
+| POST | /api/admin/transcript-term-results | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:283 |
+| POST | /api/admin/transcript-subject-results | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:297 |
+| POST | /api/admin/offerings | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:311 |
+| PATCH | /api/admin/offerings/:offeringId | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:325 |
+| GET | /api/admin/offering-ownership | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:345 |
+| POST | /api/admin/offering-ownership | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:355 |
+| PATCH | /api/admin/offering-ownership/:ownershipId | air-mentor-api/src/modules/academic-admin-offerings-routes.ts:376 |
 | GET | /api/academic/public/faculty | air-mentor-api/src/modules/academic-bootstrap-routes.ts:24 |
 | GET | /api/academic/bootstrap | air-mentor-api/src/modules/academic-bootstrap-routes.ts:31 |
 | GET | /api/academic/hod/proof-summary | air-mentor-api/src/modules/academic-proof-routes.ts:90 |
@@ -363,26 +363,26 @@ This regex-based list is a navigation aid, not a formal OpenAPI contract. It rec
 | GET | /api/academic/student-shell/students/:studentId/timeline | air-mentor-api/src/modules/academic-proof-routes.ts:530 |
 | POST | /api/academic/student-shell/students/:studentId/sessions | air-mentor-api/src/modules/academic-proof-routes.ts:551 |
 | POST | /api/academic/student-shell/sessions/:sessionId/messages | air-mentor-api/src/modules/academic-proof-routes.ts:572 |
-| PUT | /api/academic/runtime/:stateKey | air-mentor-api/src/modules/academic-runtime-routes.ts:649 |
-| PUT | /api/academic/tasks/sync | air-mentor-api/src/modules/academic-runtime-routes.ts:738 |
-| GET | /api/academic/tasks | air-mentor-api/src/modules/academic-runtime-routes.ts:764 |
-| PUT | /api/academic/tasks/:taskId | air-mentor-api/src/modules/academic-runtime-routes.ts:776 |
-| POST | /api/academic/unlock-requests/:taskId/transition | air-mentor-api/src/modules/academic-runtime-routes.ts:812 |
-| PUT | /api/academic/task-placements/sync | air-mentor-api/src/modules/academic-runtime-routes.ts:945 |
-| GET | /api/academic/task-placements | air-mentor-api/src/modules/academic-runtime-routes.ts:972 |
-| PUT | /api/academic/task-placements/:taskId | air-mentor-api/src/modules/academic-runtime-routes.ts:989 |
-| DELETE | /api/academic/task-placements/:taskId | air-mentor-api/src/modules/academic-runtime-routes.ts:1013 |
-| PUT | /api/academic/calendar-audit/sync | air-mentor-api/src/modules/academic-runtime-routes.ts:1025 |
-| GET | /api/academic/calendar-audit | air-mentor-api/src/modules/academic-runtime-routes.ts:1041 |
-| POST | /api/academic/calendar-audit | air-mentor-api/src/modules/academic-runtime-routes.ts:1062 |
-| PUT | /api/academic/faculty-calendar-workspace/:facultyId | air-mentor-api/src/modules/academic-runtime-routes.ts:1075 |
-| POST | /api/academic/meetings | air-mentor-api/src/modules/academic-runtime-routes.ts:1145 |
-| PATCH | /api/academic/meetings/:meetingId | air-mentor-api/src/modules/academic-runtime-routes.ts:1202 |
-| PUT | /api/academic/offerings/:offeringId/attendance | air-mentor-api/src/modules/academic-runtime-routes.ts:1264 |
-| PUT | /api/academic/offerings/:offeringId/assessment-entries/:kind | air-mentor-api/src/modules/academic-runtime-routes.ts:1346 |
-| POST | /api/academic/offerings/:offeringId/assessment-entries/:kind/clear-lock | air-mentor-api/src/modules/academic-runtime-routes.ts:1659 |
-| PUT | /api/academic/offerings/:offeringId/scheme | air-mentor-api/src/modules/academic-runtime-routes.ts:1708 |
-| PUT | /api/academic/offerings/:offeringId/question-papers/:kind | air-mentor-api/src/modules/academic-runtime-routes.ts:1780 |
+| PUT | /api/academic/runtime/:stateKey | air-mentor-api/src/modules/academic-runtime-routes.ts:182 |
+| PUT | /api/academic/tasks/sync | air-mentor-api/src/modules/academic-runtime-routes.ts:236 |
+| GET | /api/academic/tasks | air-mentor-api/src/modules/academic-runtime-routes.ts:250 |
+| PUT | /api/academic/tasks/:taskId | air-mentor-api/src/modules/academic-runtime-routes.ts:262 |
+| POST | /api/academic/unlock-requests/:taskId/transition | air-mentor-api/src/modules/academic-runtime-routes.ts:290 |
+| PUT | /api/academic/task-placements/sync | air-mentor-api/src/modules/academic-runtime-routes.ts:306 |
+| GET | /api/academic/task-placements | air-mentor-api/src/modules/academic-runtime-routes.ts:320 |
+| PUT | /api/academic/task-placements/:taskId | air-mentor-api/src/modules/academic-runtime-routes.ts:330 |
+| DELETE | /api/academic/task-placements/:taskId | air-mentor-api/src/modules/academic-runtime-routes.ts:342 |
+| PUT | /api/academic/calendar-audit/sync | air-mentor-api/src/modules/academic-runtime-routes.ts:354 |
+| GET | /api/academic/calendar-audit | air-mentor-api/src/modules/academic-runtime-routes.ts:367 |
+| POST | /api/academic/calendar-audit | air-mentor-api/src/modules/academic-runtime-routes.ts:377 |
+| PUT | /api/academic/faculty-calendar-workspace/:facultyId | air-mentor-api/src/modules/academic-runtime-routes.ts:390 |
+| POST | /api/academic/meetings | air-mentor-api/src/modules/academic-runtime-routes.ts:403 |
+| PATCH | /api/academic/meetings/:meetingId | air-mentor-api/src/modules/academic-runtime-routes.ts:415 |
+| PUT | /api/academic/offerings/:offeringId/attendance | air-mentor-api/src/modules/academic-runtime-routes.ts:428 |
+| PUT | /api/academic/offerings/:offeringId/assessment-entries/:kind | air-mentor-api/src/modules/academic-runtime-routes.ts:441 |
+| POST | /api/academic/offerings/:offeringId/assessment-entries/:kind/clear-lock | air-mentor-api/src/modules/academic-runtime-routes.ts:454 |
+| PUT | /api/academic/offerings/:offeringId/scheme | air-mentor-api/src/modules/academic-runtime-routes.ts:466 |
+| PUT | /api/academic/offerings/:offeringId/question-papers/:kind | air-mentor-api/src/modules/academic-runtime-routes.ts:479 |
 | GET | /api/admin/search | air-mentor-api/src/modules/admin-control-plane.ts:91 |
 | GET | /api/admin/audit-events | air-mentor-api/src/modules/admin-control-plane.ts:100 |
 | GET | /api/admin/audit-events/recent | air-mentor-api/src/modules/admin-control-plane.ts:112 |
