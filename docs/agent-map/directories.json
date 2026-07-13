@@ -2,8 +2,8 @@
   {
     "path": ".",
     "fileCount": 25,
-    "bytes": 344504,
-    "lines": 9423,
+    "bytes": 345237,
+    "lines": 9435,
     "roles": {
       "other": 14,
       "agent-config": 1,
@@ -260,14 +260,66 @@
   {
     "path": "adapters/web/features/admin",
     "fileCount": 29,
-    "bytes": 787769,
-    "lines": 16192,
+    "bytes": 539823,
+    "lines": 12007,
     "roles": {
       "other": 29
     },
     "extensions": {
       ".tsx": 15,
       ".ts": 14
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/curriculum-graph-workspace",
+    "fileCount": 6,
+    "bytes": 37614,
+    "lines": 777,
+    "roles": {
+      "other": 6
+    },
+    "extensions": {
+      ".ts": 2,
+      ".tsx": 4
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/faculties-workspace",
+    "fileCount": 10,
+    "bytes": 129074,
+    "lines": 2166,
+    "roles": {
+      "other": 10
+    },
+    "extensions": {
+      ".tsx": 8,
+      ".ts": 2
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/faculty-calendar-workspace",
+    "fileCount": 5,
+    "bytes": 22397,
+    "lines": 464,
+    "roles": {
+      "other": 5
+    },
+    "extensions": {
+      ".tsx": 4,
+      ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/proof-dashboard",
+    "fileCount": 10,
+    "bytes": 69089,
+    "lines": 1255,
+    "roles": {
+      "other": 10
+    },
+    "extensions": {
+      ".tsx": 8,
+      ".ts": 2
     }
   },
   {
@@ -281,6 +333,19 @@
     "extensions": {
       ".ts": 1,
       ".tsx": 7
+    }
+  },
+  {
+    "path": "adapters/web/features/admin/timetable-editor",
+    "fileCount": 9,
+    "bytes": 49387,
+    "lines": 1180,
+    "roles": {
+      "other": 9
+    },
+    "extensions": {
+      ".tsx": 5,
+      ".ts": 4
     }
   },
   {
@@ -298,8 +363,8 @@
   {
     "path": "adapters/web/features/pages",
     "fileCount": 6,
-    "bytes": 229470,
-    "lines": 4538,
+    "bytes": 156477,
+    "lines": 3574,
     "roles": {
       "other": 6
     },
@@ -331,6 +396,31 @@
     "extensions": {
       ".tsx": 10,
       ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/features/pages/risk-explorer-parts",
+    "fileCount": 9,
+    "bytes": 42424,
+    "lines": 686,
+    "roles": {
+      "other": 9
+    },
+    "extensions": {
+      ".tsx": 8,
+      ".ts": 1
+    }
+  },
+  {
+    "path": "adapters/web/features/pages/student-shell-parts",
+    "fileCount": 9,
+    "bytes": 35215,
+    "lines": 551,
+    "roles": {
+      "other": 9
+    },
+    "extensions": {
+      ".tsx": 9
     }
   },
   {
@@ -722,8 +812,8 @@
   {
     "path": "air-mentor-api/src/modules",
     "fileCount": 21,
-    "bytes": 314292,
-    "lines": 7792,
+    "bytes": 259649,
+    "lines": 6424,
     "roles": {
       "backend": 21
     },

@@ -1,83 +1,27 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { MessageSquare, Shield } from 'lucide-react'
-import { T, mono, sora } from '@web/simulation/fixtures'
 import { ReevaluatingRiskLoader } from '@web/shared/components/reevaluating-risk-loader'
 import type { Role } from '@kernel/shared/domain'
 import type {
   ApiStudentAgentCard,
   ApiStudentAgentMessage,
-  ApiStudentAgentPanelLabel,
   ApiStudentAgentSession,
   ApiStudentAgentTimelineItem,
 } from '@web/shared/api/types'
-import { describeProofAvailability, describeProofProvenance, normalizeProofPanelLabel } from '@web/simulation/proof-provenance'
-import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '@web/simulation/proof-surface-shell'
-import { Btn, Card, Chip, FieldInput, PageBackButton, PageShell } from '@web/shared/ui/primitives'
-import { EmptyState, InfoBanner, MetricCard } from '@web/features/admin/system-admin-ui'
-import { humanLabelForActionCode } from '@web/shared/state/action-code-humaniser'
+import { ProofSurfaceTabPanel, ProofSurfaceTabs } from '@web/simulation/proof-surface-shell'
+import { PageBackButton, PageShell } from '@web/shared/ui/primitives'
+import { EmptyState, InfoBanner } from '@web/features/admin/system-admin-ui'
+import { StudentShellHeader } from './student-shell-parts/student-shell-header'
+import { StudentShellSummaryRail } from './student-shell-parts/summary-rail'
+import { StudentShellOverviewTab } from './student-shell-parts/overview-tab'
+import { StudentShellTopicCoTab } from './student-shell-parts/topic-co-tab'
+import { StudentShellAssessmentTab } from './student-shell-parts/assessment-tab'
+import { StudentShellInterventionsTab } from './student-shell-parts/interventions-tab'
+import { StudentShellTimelineTab } from './student-shell-parts/timeline-tab'
+import { StudentShellChatTab } from './student-shell-parts/chat-tab'
 
 type StudentShellTabId = 'overview' | 'topic-co' | 'assessment' | 'interventions' | 'timeline' | 'chat'
 
 const EMPTY_STUDENT_AGENT_TIMELINE: ApiStudentAgentTimelineItem[] = []
-
-function PanelLabel({ label }: { label: ApiStudentAgentPanelLabel }) {
-  const normalizedLabel = normalizeProofPanelLabel(label)
-  const color = label === 'Observed'
-    ? T.accent
-    : label === 'Policy Derived'
-      ? T.warning
-      : label === 'Simulation Internal'
-        ? T.success
-        : T.muted
-  return (
-    <span style={{ ...mono, fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-      {normalizedLabel}
-    </span>
-  )
-}
-
-function formatEvidencePct(value: number | null | undefined) {
-  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not recorded yet'
-}
-
-function CitationList({ citations }: { citations: ApiStudentAgentMessage['citations'] }) {
-  if (citations.length === 0) return null
-  return (
-    <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-      {citations.map(citation => (
-        <div key={citation.citationId} style={{ border: `1px solid ${T.border2}`, borderRadius: 10, padding: '8px 10px', background: T.surface2 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <PanelLabel label={citation.panelLabel} />
-            <div style={{ ...mono, fontSize: 10, color: T.text }}>{citation.label}</div>
-          </div>
-          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.7 }}>{citation.summary}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function MessageBubble({ message }: { message: ApiStudentAgentMessage }) {
-  const isUser = message.actorType === 'user'
-  return (
-    <Card style={{
-      padding: 12,
-      background: isUser ? `${T.accent}12` : T.surface2,
-      border: `1px solid ${isUser ? `${T.accent}33` : T.border2}`,
-      justifySelf: isUser ? 'end' : 'stretch',
-      maxWidth: isUser ? '80%' : '100%',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ ...mono, fontSize: 10, color: isUser ? T.accent : T.text }}>
-          {isUser ? 'Prompt' : message.messageType === 'guardrail' ? 'Guardrail' : message.messageType === 'intro' ? 'Session Intro' : 'Deterministic Reply'}
-        </div>
-        {message.guardrailCode ? <Chip color={T.warning}>{message.guardrailCode}</Chip> : null}
-      </div>
-      <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.8, marginTop: 6 }}>{message.body}</div>
-      <CitationList citations={message.citations} />
-    </Card>
-  )
-}
 
 export function StudentShellPage({
   role,
@@ -235,142 +179,12 @@ export function StudentShellPage({
       <div style={{ display: 'grid', gap: 18, paddingBottom: 26 }}>
         <PageBackButton onClick={onBack} dataProofAction="student-shell-back" />
 
-        <ProofSurfaceHero
-          surface="student-shell"
-          entityId={card.checkpointContext?.simulationStageCheckpointId ?? undefined}
-          studentId={card.student.studentId}
-          eyebrow="Student Shell"
-          title={`${card.student.studentName} · proof snapshot`}
-          description={card.disclaimer}
-          icon={<Shield size={22} color={T.accent} />}
-          badges={(
-            <>
-              <Chip color={T.accent}>{role}</Chip>
-              <Chip color={T.success}>{card.runContext.runLabel}</Chip>
-              <Chip color={T.warning}>Seed {card.runContext.seed}</Chip>
-              {card.checkpointContext ? <Chip color={T.orange}>{`Sem ${card.checkpointContext.semesterNumber} · ${card.checkpointContext.stageLabel}`}</Chip> : null}
-            </>
-          )}
-          notices={(
-            <>
-              <InfoBanner message={`Viewing ${card.runContext.runLabel} · ${card.runContext.status} · created ${new Date(card.runContext.createdAt).toLocaleString('en-IN')}${card.checkpointContext ? ` · Semester ${card.checkpointContext.semesterNumber} · ${card.checkpointContext.stageLabel}` : ''}.`} />
-              <div data-proof-section="authority-banner">
-                <InfoBanner message="This student proof page keeps the summary, timeline, and chat on the same saved snapshot. It cannot edit live records or reveal hidden model state." />
-                <InfoBanner tone="neutral" message={describeProofProvenance(card)} />
-                <InfoBanner tone="neutral" message={describeProofAvailability(card)} />
-              </div>
-            </>
-          )}
-        />
-
-        <ProofSurfaceLauncher
-          targetId="student-shell-proof-controls"
-          label="Jump to student proof controls"
-          dataProofEntityId={card.student.studentId}
-          popupTitle="Student proof control surface"
-          popupCaption={card.checkpointContext
-            ? `Semester ${card.checkpointContext.semesterNumber} · ${card.checkpointContext.stageLabel}`
-            : `Run ${card.runContext.runLabel}`}
-        popupContent={() => (
-          <div style={{ display: 'grid', gap: 12 }}>
-              <InfoBanner message="Compare the current status, the no-action view, and the recorded intervention history together. All three come from the same selected proof snapshot." />
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current status</div>
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{card.overview.currentStatus.riskBand ?? 'Unavailable'}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{card.overview.currentStatus.recommendedAction ?? 'No action'}</div>
-                </Card>
-                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>No-action view</div>
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{card.counterfactual?.noActionRiskBand ?? 'Unavailable'}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{card.counterfactual?.counterfactualLiftScaled != null ? `Counterfactual lift ${card.counterfactual.counterfactualLiftScaled > 0 ? '+' : ''}${card.counterfactual.counterfactualLiftScaled} scaled points` : 'No lift reported'}</div>
-                </Card>
-                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Intervention history</div>
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{card.interventions.interventionHistory.length}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>Recorded steps on this proof path</div>
-                </Card>
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Chip color={T.accent}>{card.runContext.runLabel}</Chip>
-                <Chip color={T.warning}>{card.summaryRail.currentRiskBand ?? 'No watch band'}</Chip>
-                {card.checkpointContext ? <Chip color={T.orange}>{`Sem ${card.checkpointContext.semesterNumber}`}</Chip> : null}
-              </div>
-            </div>
-          )}
-          popupFooter={({ closePopup, jumpToTarget }) => (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <Btn size="sm" variant="ghost" onClick={jumpToTarget}>Open proof controls</Btn>
-              <Btn size="sm" variant="ghost" onClick={closePopup}>Close</Btn>
-            </div>
-          )}
-        />
+        <StudentShellHeader card={card} role={role} />
 
         {error ? <div data-proof-section="load-error"><InfoBanner tone="error" message={error} /></div> : null}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
-          <div style={{ flex: '1 1 320px', maxWidth: 360, display: 'grid', gap: 14 }}>
-            <Card data-proof-section="summary-rail" style={{ padding: 16, display: 'grid', gap: 10 }}>
-              <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Summary Rail</div>
-              <div style={{ ...mono, fontSize: 10, color: T.text }}>{card.student.studentName}</div>
-              <div style={{ ...mono, fontSize: 10, color: T.muted }}>{card.student.usn} · Section {card.student.sectionCode} · Semester {card.student.currentSemester}</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Chip color={card.summaryRail.currentRiskBand === 'High' ? T.danger : card.summaryRail.currentRiskBand === 'Medium' ? T.warning : T.success}>
-                  {card.summaryRail.currentRiskBand ?? 'No watch band'}
-                </Chip>
-                {card.summaryRail.currentRiskProbScaled != null ? <Chip color={T.dim}>{card.summaryRail.currentRiskProbScaled}%</Chip> : null}
-                {card.summaryRail.currentRiskDisplayProbabilityAllowed === false ? <Chip color={T.warning}>Band only</Chip> : null}
-                {card.summaryRail.currentRiskCalibrationMethod ? <Chip color={T.orange}>{`Cal ${card.summaryRail.currentRiskCalibrationMethod}`}</Chip> : null}
-                {card.checkpointContext?.stageAdvanceBlocked ? <Chip color={T.danger}>Stage blocked</Chip> : null}
-                {card.overview.currentEvidence.coEvidenceMode ? <Chip color={T.dim}>{card.overview.currentEvidence.coEvidenceMode}</Chip> : null}
-                {card.overview.currentStatus.policyComparison?.policyPhenotype ? <Chip color={T.orange}>{card.overview.currentStatus.policyComparison.policyPhenotype}</Chip> : null}
-                {card.summaryRail.previousRiskBand ? <Chip color={T.dim}>{`Prev ${card.summaryRail.previousRiskBand}`}</Chip> : null}
-                {card.summaryRail.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={card.summaryRail.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : card.summaryRail.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`${card.summaryRail.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${card.summaryRail.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
-                {card.summaryRail.counterfactualLiftScaled != null ? <Chip color={card.summaryRail.counterfactualLiftScaled > 0 ? T.success : card.summaryRail.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Counterfactual lift ${card.summaryRail.counterfactualLiftScaled > 0 ? '+' : ''}${card.summaryRail.counterfactualLiftScaled}`}</Chip> : null}
-              </div>
-              {card.summaryRail.currentRiskSupportWarning ? <InfoBanner tone="neutral" message={card.summaryRail.currentRiskSupportWarning} /> : null}
-              {card.checkpointContext?.stageAdvanceBlocked ? (
-                <InfoBanner
-                  tone="error"
-                  message={`Playback progression is blocked until ${card.checkpointContext.blockingQueueItemCount ?? 0} queue item(s) at this checkpoint are resolved. This shell stays read-only on the selected proof stage.`}
-                />
-              ) : null}
-              <div style={{ ...mono, fontSize: 10, color: T.text }}>
-                {card.summaryRail.primaryCourseCode ?? 'No primary course'}{card.summaryRail.primaryCourseTitle ? ` · ${card.summaryRail.primaryCourseTitle}` : ''}
-              </div>
-              <div style={{ ...mono, fontSize: 10, color: T.text }}>
-                Reassessment: {card.summaryRail.currentReassessmentStatus ?? 'None'}{card.summaryRail.nextDueAt ? ` · due ${new Date(card.summaryRail.nextDueAt).toLocaleString('en-IN')}` : ''}
-              </div>
-              <div style={{ ...mono, fontSize: 10, color: T.text }}>
-                {card.summaryRail.predictedCgpa != null
-                  ? `Pred CGPA ${card.summaryRail.predictedCgpa.toFixed(2)} · current CGPA ${card.summaryRail.currentCgpa.toFixed(2)} · backlogs ${card.summaryRail.backlogCount}`
-                  : `CGPA ${card.summaryRail.currentCgpa.toFixed(2)} · backlogs ${card.summaryRail.backlogCount}`}
-              </div>
-              {card.checkpointContext ? (
-                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                  Checkpoint: {card.checkpointContext.stageLabel} · {card.checkpointContext.stageDescription}
-                </div>
-              ) : null}
-              {card.summaryRail.electiveFit ? (
-                <Card style={{ padding: 10, background: T.surface2 }}>
-                  <PanelLabel label="Policy Derived" />
-                  <div style={{ ...mono, fontSize: 10, color: T.text, marginTop: 6 }}>
-                    {card.summaryRail.electiveFit.recommendedCode} · {card.summaryRail.electiveFit.recommendedTitle}
-                  </div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                    {card.summaryRail.electiveFit.stream}
-                  </div>
-                </Card>
-              ) : null}
-            </Card>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
-              <MetricCard label="Attendance" value={`${Math.round(card.overview.currentEvidence.attendancePct)}%`} helper="Current observed attendance" />
-              <MetricCard label="TT Window" value={`${formatEvidencePct(card.overview.currentEvidence.tt1Pct)} / ${formatEvidencePct(card.overview.currentEvidence.tt2Pct)}`} helper="TT1 and TT2" />
-              <MetricCard label="SEE" value={formatEvidencePct(card.overview.currentEvidence.seePct)} helper="Observed semester-end evidence" />
-              <MetricCard label="Weak COs" value={String(card.overview.currentEvidence.weakCoCount)} helper="Current weak course outcomes" />
-            </div>
-          </div>
+          <StudentShellSummaryRail card={card} />
 
           <div style={{ display: 'grid', gap: 14 }}>
             <ProofSurfaceTabs
@@ -398,257 +212,37 @@ export function StudentShellPage({
               minHeight={420}
             >
             {activeTab === 'overview' ? (
-              <div data-proof-section="overview-panel" style={{ display: 'grid', gap: 14 }}>
-                <Card data-proof-section="overview-observed-evidence" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <PanelLabel label={card.overview.observedLabel} />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current observed evidence</div>
-                  <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
-                    Attendance {Math.round(card.overview.currentEvidence.attendancePct)}% · TT1 {formatEvidencePct(card.overview.currentEvidence.tt1Pct)} · TT2 {formatEvidencePct(card.overview.currentEvidence.tt2Pct)} · quiz {formatEvidencePct(card.overview.currentEvidence.quizPct)} · assignment {formatEvidencePct(card.overview.currentEvidence.assignmentPct)} · SEE {formatEvidencePct(card.overview.currentEvidence.seePct)}.
-                  </div>
-                  {card.overview.currentEvidence.coEvidenceMode ? (
-                    <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.8 }}>
-                      CO evidence mode: {card.overview.currentEvidence.coEvidenceMode}.
-                    </div>
-                  ) : null}
-                </Card>
-                <Card data-proof-section="overview-policy-status" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <PanelLabel label={card.overview.policyLabel} />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current status</div>
-                  <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
-                    Watch {card.overview.currentStatus.riskBand ?? 'Unavailable'}{card.overview.currentStatus.riskProbScaled != null ? ` at ${card.overview.currentStatus.riskProbScaled}%` : card.summaryRail.currentRiskDisplayProbabilityAllowed === false ? ' in band-only mode' : ''} · recommended action {card.overview.currentStatus.recommendedAction ?? 'none'} · reassessment {card.overview.currentStatus.reassessmentStatus ?? 'none'}{card.overview.currentStatus.queueState ? ` · queue ${card.overview.currentStatus.queueState}` : ''}{card.overview.currentStatus.simulatedActionTaken ? ` · simulated action ${card.overview.currentStatus.simulatedActionTaken}` : ''}.
-                  </div>
-                  {card.overview.currentStatus.previousRiskBand || card.overview.currentStatus.riskChangeFromPreviousCheckpointScaled != null ? (
-                    <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                      Previous band {card.overview.currentStatus.previousRiskBand ?? 'NA'}{card.overview.currentStatus.previousRiskProbScaled != null ? ` · ${card.overview.currentStatus.previousRiskProbScaled}%` : ''}{card.overview.currentStatus.riskChangeFromPreviousCheckpointScaled != null ? ` · change ${card.overview.currentStatus.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${card.overview.currentStatus.riskChangeFromPreviousCheckpointScaled}` : ''}.
-                    </div>
-                  ) : null}
-                  {card.overview.currentStatus.counterfactualLiftScaled != null ? (
-                    <div style={{ ...mono, fontSize: 10, color: card.overview.currentStatus.counterfactualLiftScaled > 0 ? T.success : card.overview.currentStatus.counterfactualLiftScaled < 0 ? T.warning : T.dim, lineHeight: 1.8 }}>
-                      Counterfactual lift vs no-action: {card.overview.currentStatus.counterfactualLiftScaled > 0 ? '+' : ''}{card.overview.currentStatus.counterfactualLiftScaled} scaled points.
-                    </div>
-                  ) : null}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {card.overview.currentStatus.attentionAreas.map(area => <Chip key={area} color={T.warning}>{area}</Chip>)}
-                </div>
-              </Card>
-              {card.counterfactual ? (
-                <Card data-proof-section="no-action-comparator" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                    <PanelLabel label={card.counterfactual.panelLabel} />
-                    <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>No-action view</div>
-                    <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
-                      {card.counterfactual.noActionRiskBand ?? 'Unavailable'}{card.counterfactual.noActionRiskProbScaled != null ? ` at ${card.counterfactual.noActionRiskProbScaled}%` : ''} · lift {card.counterfactual.counterfactualLiftScaled ?? 0} scaled points.
-                    </div>
-                    <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                      {card.counterfactual.note}
-                    </div>
-                  </Card>
-                ) : null}
-                <Card data-proof-section="overview-semester-summary" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <PanelLabel label="Observed" />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Semester evidence summary</div>
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    {card.overview.semesterSummaries.map(item => (
-                      <Card key={item.semesterNumber} style={{ padding: 10, background: T.surface2 }}>
-                        <div style={{ ...mono, fontSize: 10, color: T.text }}>Semester {item.semesterNumber}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                          SGPA {item.sgpa.toFixed(2)} · CGPA {item.cgpaAfterSemester.toFixed(2)} · backlogs {item.backlogCount} · weak COs {item.weakCoCount} · question coverage {item.questionResultCoverage}
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </Card>
-              </div>
+              <StudentShellOverviewTab card={card} />
             ) : null}
 
             {activeTab === 'topic-co' ? (
-              <div data-proof-section="topic-co-panel" style={{ display: 'grid', gap: 14 }}>
-                <Card data-proof-section="topic-buckets" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <PanelLabel label={card.topicAndCo.panelLabel} />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Topic buckets</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                    {([
-                      ['Known', card.topicAndCo.topicBuckets.known, T.success],
-                      ['Partial', card.topicAndCo.topicBuckets.partial, T.warning],
-                      ['Blocked', card.topicAndCo.topicBuckets.blocked, T.danger],
-                      ['High Uncertainty', card.topicAndCo.topicBuckets.highUncertainty, T.accent],
-                    ] as const).map(([label, topics, color]) => (
-                      <Card key={label} style={{ padding: 10, background: T.surface2 }}>
-                        <div style={{ ...mono, fontSize: 10, color }}>{label}</div>
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                          {topics.length > 0 ? topics.map(topic => <Chip key={`${label}-${topic}`} color={color}>{topic}</Chip>) : <Chip color={T.dim}>None</Chip>}
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </Card>
-                <Card data-proof-section="weak-course-outcomes" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <PanelLabel label={card.topicAndCo.panelLabel} />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Weak course outcomes</div>
-                  {card.topicAndCo.weakCourseOutcomes.length > 0 ? card.topicAndCo.weakCourseOutcomes.map(item => (
-                    <Card key={item.coCode} style={{ padding: 10, background: T.surface2 }}>
-                      <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.coCode} · {item.coTitle}</div>
-                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                        Trend {item.trend} · TT1 {formatEvidencePct(item.tt1Pct)} · TT2 {formatEvidencePct(item.tt2Pct)} · SEE {formatEvidencePct(item.seePct)} · transfer gap {item.transferGap.toFixed(2)}
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                        {item.topics.map(topic => <Chip key={`${item.coCode}-${topic}`} color={T.warning}>{topic}</Chip>)}
-                      </div>
-                    </Card>
-                  )) : <EmptyState title="No weak course outcomes" body="The bounded card does not mark any current CO weakness on the active proof record." />}
-                </Card>
-              </div>
+              <StudentShellTopicCoTab card={card} />
             ) : null}
 
             {activeTab === 'assessment' ? (
-              <div data-proof-section="assessment-panel" style={{ display: 'grid', gap: 14 }}>
-                <Card data-proof-section="assessment-evidence" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <PanelLabel label={card.assessmentEvidence.panelLabel} />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Observed course evidence</div>
-                  {card.assessmentEvidence.components.map(item => (
-                    <Card key={`${item.courseCode}-${item.sectionCode ?? 'na'}`} style={{ padding: 10, background: T.surface2 }}>
-                      <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.courseCode} · {item.courseTitle}{item.sectionCode ? ` · Section ${item.sectionCode}` : ''}</div>
-                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
-                        Attendance {Math.round(item.attendancePct)}% · TT1 {formatEvidencePct(item.tt1Pct)} · TT2 {formatEvidencePct(item.tt2Pct)} · quiz {formatEvidencePct(item.quizPct)} · assignment {formatEvidencePct(item.assignmentPct)} · SEE {formatEvidencePct(item.seePct)}.
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                        <Chip color={T.warning}>Weak COs {item.weakCoCount}</Chip>
-                        <Chip color={T.danger}>Weak questions {item.weakQuestionCount}</Chip>
-                        {item.drivers.slice(0, 3).map((driver, index) => (
-                          <Chip key={`${item.courseCode}-${driver.feature}-${index}-${driver.label}`} color={driver.impact >= 0 ? T.warning : T.success}>{driver.label}</Chip>
-                        ))}
-                      </div>
-                    </Card>
-                  ))}
-                </Card>
-                <Card data-proof-section="question-pattern-summary" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <PanelLabel label="Observed" />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Question-pattern summary</div>
-                  <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
-                    Weak questions {card.topicAndCo.questionPatterns.weakQuestionCount} · careless errors {card.topicAndCo.questionPatterns.carelessErrorCount} · transfer-gap signals {card.topicAndCo.questionPatterns.transferGapCount}.
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {card.topicAndCo.questionPatterns.commonWeakTopics.map(topic => <Chip key={`weak-topic-${topic}`} color={T.danger}>{topic}</Chip>)}
-                    {card.topicAndCo.questionPatterns.commonWeakCourseOutcomes.map(coCode => <Chip key={`weak-co-${coCode}`} color={T.warning}>{coCode}</Chip>)}
-                  </div>
-                </Card>
-              </div>
+              <StudentShellAssessmentTab card={card} />
             ) : null}
 
             {activeTab === 'interventions' ? (
-              <div data-proof-section="interventions-panel" style={{ display: 'grid', gap: 14 }}>
-                <Card data-proof-section="reassessments" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <PanelLabel label={card.interventions.panelLabel} />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Reassessments</div>
-                  {card.interventions.currentReassessments.length > 0 ? card.interventions.currentReassessments.map(item => (
-                    <Card key={item.reassessmentEventId} style={{ padding: 10, background: T.surface2 }}>
-                      <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.courseCode} · {item.courseTitle}</div>
-                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                        {item.status} · assigned to {item.assignedToRole} · due {new Date(item.dueAt).toLocaleString('en-IN')}
-                      </div>
-                    </Card>
-                  )) : <Chip color={T.success}>No active reassessments</Chip>}
-                </Card>
-                <Card data-proof-section="intervention-history" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <PanelLabel label={card.interventions.panelLabel} />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Intervention history</div>
-                  {card.interventions.interventionHistory.length > 0 ? card.interventions.interventionHistory.map(item => (
-                    <Card key={item.interventionId} style={{ padding: 10, background: T.surface2 }}>
-                      <div data-proof-field="intervention-type-label" style={{ ...mono, fontSize: 10, color: T.text }}>{humanLabelForActionCode(item.interventionType) ?? item.interventionType}</div>
-                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>{item.note}</div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                        <Chip color={item.accepted === true ? T.success : item.accepted === false ? T.warning : T.dim}>Accepted {item.accepted == null ? 'n/a' : item.accepted ? 'Yes' : 'No'}</Chip>
-                        <Chip color={item.completed === true ? T.success : item.completed === false ? T.warning : T.dim}>Completed {item.completed == null ? 'n/a' : item.completed ? 'Yes' : 'No'}</Chip>
-                        {item.recoveryConfirmed != null ? <Chip color={item.recoveryConfirmed ? T.success : T.warning}>Recovery {item.recoveryConfirmed ? 'Confirmed' : 'Watch'}</Chip> : null}
-                      </div>
-                    </Card>
-                  )) : <Chip color={T.dim}>No intervention history</Chip>}
-                </Card>
-              </div>
+              <StudentShellInterventionsTab card={card} />
             ) : null}
 
             {activeTab === 'timeline' ? (
-              <div>
-                <Card data-proof-section="timeline-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                    <div>
-                      <PanelLabel label="Observed" />
-                      <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 6 }}>Bounded proof timeline</div>
-                    </div>
-                    {timelineLoading ? <Chip color={T.dim}>Loading timeline...</Chip> : null}
-                  </div>
-                  {timelineBySemester.length > 0 ? timelineBySemester.map(([semesterNumber, items]) => (
-                    <Card key={`timeline-${semesterNumber}`} style={{ padding: 12, background: T.surface2 }}>
-                      <div style={{ ...mono, fontSize: 10, color: T.text }}>
-                        {semesterNumber > 0 ? `Semester ${semesterNumber}` : 'Cross-semester log'}
-                      </div>
-                      <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-                        {items.map(item => (
-                          <Card key={item.timelineItemId} style={{ padding: 10, background: T.surface }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <PanelLabel label={item.panelLabel} />
-                              <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.title}</div>
-                            </div>
-                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>{item.detail}</div>
-                            <CitationList citations={item.citations} />
-                          </Card>
-                        ))}
-                      </div>
-                    </Card>
-                  )) : <EmptyState title="No timeline entries" body="The proof card does not currently expose timeline items." />}
-                </Card>
-              </div>
+              <StudentShellTimelineTab timelineBySemester={timelineBySemester} timelineLoading={timelineLoading} />
             ) : null}
 
             {activeTab === 'chat' ? (
-          <div style={{ flex: '999 1 400px', display: 'grid', gap: 14 }}>
-                <Card data-proof-section="chat-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                    <div>
-                      <PanelLabel label="Policy Derived" />
-                      <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 6 }}>Deterministic shell chat</div>
-                      <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
-                        The shell replies only from the stored card. It cannot predict future certainty, override policy-derived records, or disclose hidden simulation internals{card.checkpointContext ? ` beyond the selected checkpoint ${card.checkpointContext.stageLabel}` : ''}.
-                      </div>
-                      <div aria-label="Message type legend" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                        <Chip color={T.warning}>Guardrail</Chip>
-                        <Chip color={T.accent}>Session Intro</Chip>
-                        <Chip color={T.success}>Deterministic Reply</Chip>
-                      </div>
-                    </div>
-                    {!session ? (
-                      <Btn dataProofAction="student-shell-start-session" onClick={handleStartSession} disabled={busy || !startSession}>
-                        <MessageSquare size={14} />
-                        {busy ? 'Starting...' : 'Start Session'}
-                      </Btn>
-                    ) : (
-                      <Chip color={T.success}>{session.responseMode}</Chip>
-                    )}
-                  </div>
-
-                  {session ? (
-                    <>
-                      <div style={{ display: 'grid', gap: 12 }}>
-                        {session.messages.map(message => <MessageBubble key={message.studentAgentMessageId} message={message} />)}
-                      </div>
-                      <form onSubmit={handleSendPrompt} style={{ display: 'grid', gap: 10 }}>
-                        <FieldInput
-                          aria-label="Student shell prompt"
-                          placeholder="Ask about current performance, weak topics, reassessment status, intervention history, elective fit, or compare semesters"
-                          value={prompt}
-                          onChange={event => setPrompt(event.target.value)}
-                        />
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                          <Btn type="submit" dataProofAction="student-shell-send-prompt" disabled={busy || !prompt.trim() || !sendMessage}>
-                            {busy ? 'Sending...' : 'Send Prompt'}
-                          </Btn>
-                        </div>
-                      </form>
-                    </>
-                  ) : (
-                    <EmptyState title="No active shell session" body="Start a deterministic session to ask bounded questions about the current proof card." />
-                  )}
-                </Card>
-              </div>
+              <StudentShellChatTab
+                card={card}
+                session={session}
+                prompt={prompt}
+                setPrompt={setPrompt}
+                busy={busy}
+                startSession={startSession}
+                sendMessage={sendMessage}
+                handleStartSession={handleStartSession}
+                handleSendPrompt={handleSendPrompt}
+              />
             ) : null}
             </ProofSurfaceTabPanel>
           </div>

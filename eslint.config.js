@@ -33,7 +33,19 @@ export default defineConfig([
     },
   },
   {
-    files: ['adapters/web/shared/ui/primitives.tsx', 'adapters/web/features/admin/system-admin-ui.tsx'],
+    // Files that legitimately co-locate a component with its config/type-map or
+    // re-export a sibling's non-component helper (ReactFlow node/edge type maps,
+    // backward-compat re-export barrels). react-refresh is a dev-only HMR rule;
+    // these degrade to a full reload, no runtime/behaviour impact.
+    files: [
+      'adapters/web/shared/ui/primitives.tsx',
+      'adapters/web/features/admin/system-admin-ui.tsx',
+      'adapters/web/features/admin/system-admin-faculties-workspace.tsx',
+      'adapters/web/features/admin/curriculum-graph-workspace/curriculum-graph-nodes.tsx',
+      'adapters/web/features/admin/curriculum-graph-workspace/curriculum-graph-edges.tsx',
+      'adapters/web/features/admin/proof-dashboard/proof-launcher-popup.tsx',
+      'adapters/web/features/pages/student-shell-parts/shared.tsx',
+    ],
     rules: {
       'react-refresh/only-export-components': 'off',
     },
