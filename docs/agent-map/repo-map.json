@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 1012,
-    "ignoredEntriesObserved": 63,
-    "bytes": 15264929,
-    "lines": 316506,
-    "nonEmptyLines": 293230,
-    "commentLines": 6133,
+    "trackedFiles": 1030,
+    "ignoredEntriesObserved": 68,
+    "bytes": 15147836,
+    "lines": 314082,
+    "nonEmptyLines": 290921,
+    "commentLines": 6299,
     "localDependencyEdges": 344,
-    "symbols": 23795,
+    "symbols": 23502,
     "apiRoutes": 190,
     "testCases": 1374,
     "filesWithTests": 195,
-    "atoms": 81723,
+    "atoms": 80116,
     "anomalies": 0
   },
   "counts": {
@@ -173,7 +173,7 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".ts": 439,
+      ".ts": 457,
       ".tsx": 82,
       ".css": 2,
       ".example": 1,
@@ -202,7 +202,7 @@
       "ci": 8,
       "model-contract": 3,
       "backend-script": 97,
-      "backend": 169,
+      "backend": 187,
       "unit-test": 162,
       "documentation": 34,
       "forge-audit": 22,
@@ -229,7 +229,7 @@
       ".vscode": 2,
       ".windsurf": 1,
       "adapters": 98,
-      "air-mentor-api": 379,
+      "air-mentor-api": 397,
       "CLAUDE.md": 1,
       "docs": 34,
       "eslint.config.js": 1,
@@ -261,6 +261,7 @@
       ".absolute-human": 1,
       ".agents": 1,
       ".audit": 1,
+      ".claude": 1,
       ".devin": 1,
       ".env": 1,
       ".kilo": 7,
@@ -269,7 +270,7 @@
       ".tmp-test-postgres": 1,
       ".vscode": 1,
       "adapters": 14,
-      "air-mentor-api": 15,
+      "air-mentor-api": 19,
       "context_main.json": 1,
       "context.json": 1,
       "kernel": 5,
@@ -709,7 +710,7 @@
       },
       {
         "key": "drizzle-orm",
-        "value": 101
+        "value": 103
       },
       {
         "key": "__future__",
@@ -753,7 +754,7 @@
       },
       {
         "key": "zod",
-        "value": 24
+        "value": 25
       },
       {
         "key": "fs",
@@ -792,11 +793,11 @@
         "value": 16
       },
       {
-        "key": "node:crypto",
-        "value": 16
+        "key": "datetime",
+        "value": 15
       },
       {
-        "key": "datetime",
+        "key": "node:crypto",
         "value": 15
       },
       {
@@ -1965,23 +1966,23 @@
     },
     {
       "key": "eq",
-      "value": 1247
+      "value": 1140
     },
     {
       "key": "where",
-      "value": 1220
-    },
-    {
-      "key": "get",
-      "value": 1054
+      "value": 1106
     },
     {
       "key": "it",
       "value": 1048
     },
     {
+      "key": "get",
+      "value": 1035
+    },
+    {
       "key": "async",
-      "value": 857
+      "value": 866
     },
     {
       "key": "notNull",
@@ -1989,19 +1990,19 @@
     },
     {
       "key": "stringify",
-      "value": 793
-    },
-    {
-      "key": "set",
-      "value": 671
+      "value": 792
     },
     {
       "key": "inject",
       "value": 637
     },
     {
+      "key": "set",
+      "value": 637
+    },
+    {
       "key": "string",
-      "value": 611
+      "value": 560
     },
     {
       "key": "toContain",
@@ -2009,7 +2010,7 @@
     },
     {
       "key": "has",
-      "value": 482
+      "value": 447
     },
     {
       "key": "toBeTruthy",
@@ -2017,7 +2018,7 @@
     },
     {
       "key": "round",
-      "value": 424
+      "value": 415
     },
     {
       "key": "toEqual",
@@ -2032,10 +2033,6 @@
       "value": 350
     },
     {
-      "key": "object",
-      "value": 310
-    },
-    {
       "key": "loginAs",
       "value": 291
     },
@@ -2044,8 +2041,8 @@
       "value": 274
     },
     {
-      "key": "insert",
-      "value": 268
+      "key": "object",
+      "value": 272
     },
     {
       "key": "parse",
@@ -2056,8 +2053,8 @@
       "value": 259
     },
     {
-      "key": "optional",
-      "value": 248
+      "key": "insert",
+      "value": 251
     },
     {
       "key": "toBeNull",
@@ -2072,12 +2069,16 @@
       "value": 222
     },
     {
+      "key": "optional",
+      "value": 217
+    },
+    {
       "key": "waitForTimeout",
       "value": 216
     },
     {
       "key": "all",
-      "value": 213
+      "value": 206
     },
     {
       "key": "num",
@@ -2096,16 +2097,12 @@
       "value": 189
     },
     {
-      "key": "number",
-      "value": 186
+      "key": "toISOString",
+      "value": 180
     },
     {
       "key": "resolve",
-      "value": 183
-    },
-    {
-      "key": "toISOString",
-      "value": 180
+      "value": 179
     },
     {
       "key": "useCallback",
@@ -2116,8 +2113,12 @@
       "value": 154
     },
     {
+      "key": "response",
+      "value": 146
+    },
+    {
       "key": "and",
-      "value": 147
+      "value": 144
     }
   ],
   "anomalies": [],
@@ -2125,6 +2126,7 @@
     ".absolute-human/archive/",
     ".agents/",
     ".audit/",
+    ".claude/scheduled_tasks.lock",
     ".devin/",
     ".env",
     ".kilo/",
@@ -2157,8 +2159,12 @@
     "air-mentor-api/.eval-db-local/",
     "air-mentor-api/context.json",
     "air-mentor-api/scripts/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/admin-control-plane/context.json",
+    "air-mentor-api/src/adapters/persistence/repositories/admin-structure/context.json",
     "air-mentor-api/src/adapters/persistence/repositories/curriculum-graph/context.json",
     "air-mentor-api/src/application/ports/context.json",
+    "air-mentor-api/src/application/use-cases/admin-control-plane/context.json",
+    "air-mentor-api/src/application/use-cases/admin-structure/context.json",
     "air-mentor-api/src/application/use-cases/curriculum-graph/context.json",
     "air-mentor-api/src/context.json",
     "air-mentor-api/src/db/context.json",

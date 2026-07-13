@@ -440,6 +440,18 @@
     }
   },
   {
+    "path": "air-mentor-api/src/adapters/persistence/repositories/admin-control-plane",
+    "fileCount": 6,
+    "bytes": 20383,
+    "lines": 544,
+    "roles": {
+      "backend": 6
+    },
+    "extensions": {
+      ".ts": 6
+    }
+  },
+  {
     "path": "air-mentor-api/src/adapters/persistence/repositories/curriculum-graph",
     "fileCount": 4,
     "bytes": 25398,
@@ -453,14 +465,26 @@
   },
   {
     "path": "air-mentor-api/src/application/ports",
-    "fileCount": 1,
-    "bytes": 3908,
-    "lines": 117,
+    "fileCount": 2,
+    "bytes": 6556,
+    "lines": 184,
     "roles": {
-      "backend": 1
+      "backend": 2
     },
     "extensions": {
-      ".ts": 1
+      ".ts": 2
+    }
+  },
+  {
+    "path": "air-mentor-api/src/application/use-cases/admin-control-plane",
+    "fileCount": 11,
+    "bytes": 56002,
+    "lines": 1613,
+    "roles": {
+      "backend": 11
+    },
+    "extensions": {
+      ".ts": 11
     }
   },
   {
@@ -538,8 +562,8 @@
   {
     "path": "air-mentor-api/src/modules",
     "fileCount": 21,
-    "bytes": 795842,
-    "lines": 19156,
+    "bytes": 599716,
+    "lines": 14508,
     "roles": {
       "backend": 21
     },
