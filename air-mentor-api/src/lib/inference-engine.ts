@@ -323,7 +323,14 @@ function inferPolicyFloorDrivers(input: ObservableInferenceInput): ObservableDri
     minimumRequiredPercent: riskRules.mediumRiskAttendancePercentBelow,
     condonationFloorPercent: Math.min(riskRules.mediumRiskAttendancePercentBelow, riskRules.highRiskAttendancePercentBelow),
   }
-  const passRules = input.policy.passRules
+  const passRules = input.policy.passRules ?? {
+    minimumCeMark: 24,
+    minimumSeeMark: 16,
+    minimumOverallMark: 40,
+    ceMaximum: 60,
+    seeMaximum: 40,
+    overallMaximum: 100,
+  }
   const drivers: ObservableDriver[] = []
 
   const mediumAttendanceFloor = Math.max(attendanceRules.minimumRequiredPercent, riskRules.mediumRiskAttendancePercentBelow)

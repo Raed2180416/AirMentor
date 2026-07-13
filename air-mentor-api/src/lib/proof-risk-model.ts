@@ -2336,7 +2336,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
       input.seePct,
       input.overallPct,
     ].some(value => typeof value === 'number' && Number.isFinite(value))
-    const attendanceMinimum = input.policy.attendanceRules.minimumRequiredPercent
+    // Mirror inference-engine.ts's fallback: policies may omit attendanceRules, in
+    // which case the minimum required attendance defaults to the medium-risk floor.
+    const attendanceMinimum = input.policy.attendanceRules?.minimumRequiredPercent
+      ?? input.policy.riskRules.mediumRiskAttendancePercentBelow
     const firstCheckpointLikelyClear = semesterNumber === 1
       && stageKey === 'post-tt1'
       && input.cgpaMissing === true
