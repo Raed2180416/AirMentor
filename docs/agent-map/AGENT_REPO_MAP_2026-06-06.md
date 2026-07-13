@@ -10,16 +10,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 1099 |
+| Tracked files | 1105 |
 | Tracked bytes | 14.7 MiB |
-| Tracked source/doc lines | 321516 |
-| Non-empty lines | 297837 |
-| Comment lines | 7025 |
+| Tracked source/doc lines | 321655 |
+| Non-empty lines | 297965 |
+| Comment lines | 7036 |
 | Local dependency edges | 344 |
 | Symbols/blocks discovered | 24156 |
 | API route registrations found | 190 |
 | Test cases discovered | 1379 |
-| Atomic references (exports/env/sql/calls/hooks) | 82554 |
+| Atomic references (exports/env/sql/calls/hooks) | 82573 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -63,7 +63,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Backend DB schema | air-mentor-api/src/db/schema.ts | 1540 | 0 | 103 | Database schema source of truth. |
 | Backend seeded server | air-mentor-api/scripts/start-seeded-server.ts | 153 | 0 | 24 | Deterministic demo backend launcher. |
 | Proof runtime service | air-mentor-api/src/lib/proof-control-plane-runtime-service.ts | 1380 | 0 | 170 | Observed evidence recomputation, risk rows, playback rebuild, and checkpoint projection updates. |
-| Proof risk model | air-mentor-api/src/lib/proof-risk-model.ts | 3191 | 0 | 481 | Runtime proof-risk scoring/model contract logic. |
+| Proof risk model | air-mentor-api/src/lib/proof-risk-model.ts | 2808 | 0 | 442 | Runtime proof-risk scoring/model contract logic. |
 | Proof risk contract bundle | air-mentor-api/model-contract/proof-risk-model/risk-model-bundle.json | 1628 | 0 | 0 | Tracked serving model contract. |
 | Proof risk promotion decision | air-mentor-api/model-contract/proof-risk-model/promotion-decision.json | 32 | 0 | 0 | Governed shadow-vs-serving decision. |
 | E2E config | tests-e2e/playwright.config.ts | 126 | 1 | 18 | Browser proof harness configuration. |
@@ -133,8 +133,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | backend | 255 |
 | pipeline | 171 |
+| other | 167 |
 | unit-test | 163 |
-| other | 161 |
 | repo-script | 112 |
 | backend-script | 97 |
 | e2e-test | 50 |
@@ -149,7 +149,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Extension | Files |
 | --- | --- |
-| .ts | 526 |
+| .ts | 532 |
 | .py | 108 |
 | .yaml | 107 |
 | .tsx | 82 |
@@ -188,8 +188,8 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | tests | 68 |
 | tests-e2e | 50 |
 | docs | 34 |
+| kernel | 26 |
 | forge-audit | 22 |
-| kernel | 20 |
 | universities | 9 |
 | .github | 8 |
 | .arctic | 4 |
@@ -217,7 +217,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | Directory | Files | Bytes | Lines | Roles |
 | --- | --- | --- | --- | --- |
 | air-mentor-api/src/db/migrations/meta | 5 | 1.2 MiB | 44646 | backend:5 |
-| air-mentor-api/src/lib | 82 | 1.5 MiB | 37890 | backend:82 |
+| air-mentor-api/src/lib | 82 | 1.5 MiB | 37507 | backend:82 |
 | air-mentor-api/tests | 93 | 1.2 MiB | 31936 | unit-test:93 |
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27309 | backend-script:97 |
 | scripts | 111 | 1017.9 KiB | 24450 | repo-script:111 |

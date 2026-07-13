@@ -646,8 +646,8 @@
   {
     "path": "air-mentor-api/src/lib",
     "fileCount": 82,
-    "bytes": 1596576,
-    "lines": 37890,
+    "bytes": 1583428,
+    "lines": 37507,
     "roles": {
       "backend": 82
     },
@@ -842,8 +842,8 @@
   {
     "path": "kernel",
     "fileCount": 1,
-    "bytes": 139,
-    "lines": 5,
+    "bytes": 171,
+    "lines": 6,
     "roles": {
       "other": 1
     },
@@ -885,6 +885,18 @@
     },
     "extensions": {
       ".ts": 3
+    }
+  },
+  {
+    "path": "kernel/risk",
+    "fileCount": 6,
+    "bytes": 17246,
+    "lines": 521,
+    "roles": {
+      "other": 6
+    },
+    "extensions": {
+      ".ts": 6
     }
   },
   {

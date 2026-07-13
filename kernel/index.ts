@@ -1,4 +1,5 @@
 export * from './grading/index.js'
 export * from './identity/index.js'
 export * from './policy/index.js'
+export * from './risk/index.js'
 export * from './shared/index.js'

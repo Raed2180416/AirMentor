@@ -1,14 +1,16 @@
-type GraphCompletenessFlag = 'graph' | 'history'
+import type {
+  FeatureConfidenceClass,
+  GraphAwareFeatureCompleteness,
+  GraphAwarePrerequisiteSummaryCompleteness,
+} from '../../../kernel/risk/index.js'
 
-export type FeatureConfidenceClass = 'high' | 'medium' | 'low'
-
-export type GraphAwareFeatureCompleteness = {
-  graphAvailable: boolean
-  historyAvailable: boolean
-  complete: boolean
-  missing: GraphCompletenessFlag[]
-  fallbackMode: 'graph-aware' | 'policy-only'
-  confidenceClass: FeatureConfidenceClass
+// FeatureConfidenceClass / GraphAwareFeatureCompleteness /
+// GraphAwarePrerequisiteSummaryCompleteness now live in kernel/risk (framework-free
+// contract layer). Re-exported here so every existing import path keeps working.
+export type {
+  FeatureConfidenceClass,
+  GraphAwareFeatureCompleteness,
+  GraphAwarePrerequisiteSummaryCompleteness,
 }
 
 export type GraphAwareFeatureProvenance = {
@@ -18,8 +20,6 @@ export type GraphAwareFeatureProvenance = {
   graphEdgeCount: number
   historyCourseCount: number
 }
-
-export type GraphAwarePrerequisiteSummaryCompleteness = GraphAwareFeatureCompleteness
 
 export type GraphAwarePrerequisiteSummary = {
   prerequisiteAveragePct: number

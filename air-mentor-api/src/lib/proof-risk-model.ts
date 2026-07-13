@@ -2,239 +2,105 @@ import { createHash } from 'node:crypto'
 import { inferObservableDrivers, inferObservableRisk, isCriticallySparseAcademicEvidence, policyRiskFloorFromObservableInput, type ObservableDriver, type ObservableInferenceInput, type ObservableInferenceOutput } from './inference-engine.js'
 import { parseJson } from './json.js'
 
-export type EbmTerm = {
-  name: string
-  features: string[]
-  feature_indices: number[]
-  scores: number[] | number[][]
-}
-
-export type EbmModelArtifact = {
-  intercept: number
-  bins: number[][]
-  terms: EbmTerm[]
-}
+// Pure risk-domain types + constants now live in kernel/risk (framework-free).
+// Imported here for the scoring / training / calibration logic that remains in
+// this module, and re-exported below so every existing consumer of
+// '../lib/proof-risk-model.js' keeps its import paths unchanged.
+import {
+  OBSERVABLE_FEATURE_KEYS,
+  PROOF_SCENARIO_FAMILIES,
+  PROOF_GENERATIVE_SPLIT_FAMILIES,
+  PRODUCTION_RISK_THRESHOLDS,
+  RISK_FEATURE_SCHEMA_VERSION,
+  RISK_PRODUCTION_MODEL_VERSION,
+  RISK_CHALLENGER_MODEL_VERSION,
+  RISK_CORRELATION_ARTIFACT_VERSION,
+  RISK_CALIBRATION_VERSION,
+  PROOF_CORPUS_MANIFEST_VERSION,
+  PROOF_CORPUS_MANIFEST,
+  DEFAULT_PROOF_RISK_TRAINING_CONFIG,
+  CORRECTED_V8_PROOF_RISK_TRAINING_CONFIG,
+  BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG,
+  generativeSplitForFamily,
+  HEAD_LABEL_KEYS,
+  HEAD_DISPLAY_ECE_LIMITS,
+  HEAD_SUPPORT_POSITIVE_MINIMUMS,
+} from '../../../kernel/risk/index.js'
 import type {
-  FeatureConfidenceClass,
-  GraphAwareFeatureCompleteness,
-  GraphAwarePrerequisiteSummaryCompleteness,
-} from './graph-summary.js'
+  ObservableFeatureKey,
+  RiskHeadKey,
+  SplitName,
+  CalibrationMethod,
+  ScenarioFamily,
+  ChallengerModelFamily,
+  ProofRiskTrainingVariantId,
+  ProofCorpusManifestEntry,
+  ProofRiskTrainingConfig,
+  ObservableFeaturePayload,
+  ObservableLabelPayload,
+  ObservableSourceRefs,
+  ObservableRiskEvidenceRow,
+  RiskMetricSummary,
+  ReliabilityBin,
+  HeadSupportSummary,
+  ProbabilityCalibrationArtifact,
+  LogisticHeadArtifact,
+  DepthTwoTreeNodeArtifact,
+  ChallengerHeadArtifact,
+  ProductionRiskModelArtifact,
+  ChallengerRiskModelArtifact,
+  PrerequisiteCorrelationEdge,
+  CorrelationArtifact,
+  ProofRiskModelBundle,
+  ProofRunModelMetadata,
+  EbmTerm,
+  EbmModelArtifact,
+} from '../../../kernel/risk/index.js'
 
-export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v6'
-export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v9'
-export const RISK_CHALLENGER_MODEL_VERSION = 'observable-risk-catboost-challenger-v9'
-export const RISK_CORRELATION_ARTIFACT_VERSION = 'observable-risk-correlations-v4'
-export const RISK_CALIBRATION_VERSION = 'post-hoc-calibration-v2'
-export const PROOF_CORPUS_MANIFEST_VERSION = 'proof-corpus-v1'
-export const PRODUCTION_RISK_THRESHOLDS = {
-  medium: 0.4,
-  high: 0.65,
-} as const
+export {
+  OBSERVABLE_FEATURE_KEYS,
+  PROOF_SCENARIO_FAMILIES,
+  PROOF_GENERATIVE_SPLIT_FAMILIES,
+  PRODUCTION_RISK_THRESHOLDS,
+  RISK_FEATURE_SCHEMA_VERSION,
+  RISK_PRODUCTION_MODEL_VERSION,
+  RISK_CHALLENGER_MODEL_VERSION,
+  RISK_CORRELATION_ARTIFACT_VERSION,
+  RISK_CALIBRATION_VERSION,
+  PROOF_CORPUS_MANIFEST_VERSION,
+  PROOF_CORPUS_MANIFEST,
+  DEFAULT_PROOF_RISK_TRAINING_CONFIG,
+  CORRECTED_V8_PROOF_RISK_TRAINING_CONFIG,
+  BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG,
+  generativeSplitForFamily,
+}
+export type {
+  ObservableFeatureKey,
+  RiskHeadKey,
+  SplitName,
+  CalibrationMethod,
+  ScenarioFamily,
+  ChallengerModelFamily,
+  ProofRiskTrainingVariantId,
+  ProofCorpusManifestEntry,
+  ProofRiskTrainingConfig,
+  ObservableFeaturePayload,
+  ObservableLabelPayload,
+  ObservableSourceRefs,
+  ObservableRiskEvidenceRow,
+  RiskMetricSummary,
+  ProductionRiskModelArtifact,
+  ChallengerRiskModelArtifact,
+  PrerequisiteCorrelationEdge,
+  CorrelationArtifact,
+  ProofRiskModelBundle,
+  ProofRunModelMetadata,
+  EbmTerm,
+  EbmModelArtifact,
+}
+
 const SEM1_POST_TT1_EARLY_CLEAR_PCT = 56
 const EARLY_SINGLE_CHECKPOINT_CAP_MARGIN = 0.006
-
-export const OBSERVABLE_FEATURE_KEYS = [
-  'attendancePctScaled',
-  'attendanceTrendScaled',
-  'attendanceHistoryRiskScaled',
-  'currentCgpaScaled',
-  'backlogPressureScaled',
-  'tt1RiskScaled',
-  'tt2RiskScaled',
-  'seeRiskScaled',
-  'quizRiskScaled',
-  'assignmentRiskScaled',
-  'weakCoPressureScaled',
-  'weakQuestionPressureScaled',
-  'courseworkTtMismatchScaled',
-  'ttMomentumRiskScaled',
-  'interventionResidualRiskScaled',
-  'prerequisitePressureScaled',
-  'prerequisiteAverageRiskScaled',
-  'prerequisiteFailurePressureScaled',
-  'prerequisiteChainDepthScaled',
-  'prerequisiteWeakCourseRateScaled',
-  'prerequisiteCarryoverLoadScaled',
-  'prerequisiteRecencyWeightedFailureScaled',
-  'downstreamDependencyLoadScaled',
-  'weakPrerequisiteChainCountScaled',
-  'repeatedWeakPrerequisiteFamilyCountScaled',
-  'semesterProgressScaled',
-  'stagePreTt1Scaled',
-  'stagePostTt1Scaled',
-  'stagePostTt2Scaled',
-  'stagePostAssignmentsScaled',
-  'stagePostSeeScaled',
-  'sectionPressureScaled',
-  // v5 interaction features: stage × evidence products capture conditional effects
-  // that additive stage indicators cannot express (e.g. TT1 weakness matters more at post-TT1)
-  'tt1tt2ExamCompoundRiskScaled',
-  'courseworkCompoundRiskScaled',
-  'stagePostTt2TtCompoundInteractionScaled',
-  'attendanceTrendCompoundRiskScaled',
-  'stagePostAssignmentsCourseworkInteractionScaled',
-  // v8 missingness indicators: sentinel 0.5 imputation in current pipeline → binary flag restores info
-  'cgpaMissingScaled',
-  'backlogMissingScaled',
-  // v8b missingness indicators for assessment evidence: null-vs-zero disambiguation
-  // (intent §G.4: explicit missingness, never silent zero-collapse).
-  // tt1Pct/tt2Pct/seePct/quizPct/assignmentPct are number|null in payload.
-  // Without these flags, a Sem1 pre-TT1 row with tt1Pct=null is indistinguishable
-  // from a student who scored 0% on TT1. Flags restore the distinction.
-  'tt1MissingScaled',
-  'tt2MissingScaled',
-  'seeMissingScaled',
-  'quizMissingScaled',
-  'assignmentMissingScaled',
-  // v6 backlog-credit decomposition: replaces coarse backlogCount with credit-aware pressure
-  'activeBacklogCreditPressureScaled',
-  'historicalBacklogBurdenScaled',
-  'lowerYearBlockerPressureScaled',
-  'backlogSensitivityScoreScaled',
-] as const
-
-export const PROOF_SCENARIO_FAMILIES = [
-  'balanced',
-  'weak-foundation',
-  'low-attendance',
-  'high-forgetting',
-  'coursework-inflation',
-  'exam-fragility',
-  'carryover-heavy',
-  'intervention-resistant',
-  'chronic-absentee',
-  'attendance-shock',
-  'mental-health-disruption',
-] as const
-
-export type ObservableFeatureKey = (typeof OBSERVABLE_FEATURE_KEYS)[number]
-export type RiskHeadKey =
-  | 'attendanceRisk'
-  | 'ceRisk'
-  | 'seeRisk'
-  | 'overallCourseRisk'
-  | 'downstreamCarryoverRisk'
-export type SplitName = 'train' | 'validation' | 'test'
-export type CalibrationMethod = 'identity' | 'sigmoid' | 'isotonic' | 'beta' | 'venn-abers'
-export type ScenarioFamily = (typeof PROOF_SCENARIO_FAMILIES)[number]
-// Serving-side challenger families. 'catboost' denotes a CatBoost model whose
-// JSON artefact is produced by scripts/train_catboost_challenger.py and loaded
-// by the Python-interop serving path (phase 10 intent). 'depth-2-tree' remains
-// the in-process TS challenger baseline.
-export type ChallengerModelFamily = 'depth-2-tree' | 'catboost'
-export type ProofRiskTrainingVariantId = 'production-v7' | 'production-v8' | 'baseline-v5-like'
-
-export type ProofCorpusManifestEntry = {
-  seed: number
-  /**
-   * Index-based family-balanced split used by the production training
-   * pipeline (40 / 12 / 12). Every scenario family appears in every
-   * split. This is the **in-distribution** evaluation protocol.
-   */
-  split: SplitName
-  /**
-   * Family-disjoint split used by the P2 generative-process evaluation
-   * protocol (`docs/paper-evidence/02-validation-protocol.md`).
-   * Train families ⊥ validation families ⊥ test families.
-   * This is the **out-of-distribution** evaluation protocol used to
-   * defend paper claim N1 ("reproduces failure modes that generalise").
-   *
-   * Mapping (per roadmap §5 P2 task 2.1):
-   *   train      ← weak-foundation, low-attendance, high-forgetting, coursework-inflation
-   *   validation ← exam-fragility, carryover-heavy
-   *   test       ← intervention-resistant, balanced
-   */
-  generativeSplit: SplitName
-  scenarioFamily: ScenarioFamily
-}
-
-/**
- * Family-disjoint split protocol introduced in P2 (E8 closure).
- * Read by `selectGenerativeSplitEntries()` and consumed by the
- * out-of-distribution evaluator path.
- */
-export const PROOF_GENERATIVE_SPLIT_FAMILIES: Record<SplitName, ReadonlyArray<ScenarioFamily>> = {
-  train: ['coursework-inflation', 'high-forgetting', 'low-attendance', 'weak-foundation', 'chronic-absentee'],
-  validation: ['exam-fragility', 'carryover-heavy', 'attendance-shock'],
-  test: ['balanced', 'intervention-resistant', 'mental-health-disruption'],
-}
-
-/**
- * Resolve a scenario family to its position in the family-disjoint
- * generative-process split.
- */
-export function generativeSplitForFamily(family: ScenarioFamily): SplitName {
-  for (const split of ['train', 'validation', 'test'] as const) {
-    if (PROOF_GENERATIVE_SPLIT_FAMILIES[split].includes(family)) return split
-  }
-  // Defensive: every PROOF_SCENARIO_FAMILIES member must be assigned to one
-  // of the three splits. This branch is unreachable under the invariants
-  // protected by `tests/proof-generative-split.test.ts`.
-  throw new Error(
-    `[generativeSplitForFamily] unassigned scenario family ${family}; `
-      + `update PROOF_GENERATIVE_SPLIT_FAMILIES to keep coverage exhaustive`,
-  )
-}
-
-export type ProofRiskTrainingConfig = {
-  variantId: ProofRiskTrainingVariantId
-  productionModelVersion: string
-  challengerModelVersion: string
-  calibrationVersion: string
-  includeStageIndicators: boolean
-  includeInteractionFeatures: boolean
-  calibrationMethods: CalibrationMethod[]
-  challengerModelFamily: ChallengerModelFamily
-}
-
-export const DEFAULT_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfig = {
-  variantId: 'production-v8',
-  productionModelVersion: RISK_PRODUCTION_MODEL_VERSION,
-  challengerModelVersion: RISK_CHALLENGER_MODEL_VERSION,
-  calibrationVersion: RISK_CALIBRATION_VERSION,
-  includeStageIndicators: true,
-  includeInteractionFeatures: true,
-  calibrationMethods: ['identity', 'sigmoid', 'beta', 'isotonic', 'venn-abers'],
-  challengerModelFamily: 'depth-2-tree',
-}
-
-// v8: adds cgpaMissingScaled + backlogMissingScaled to feature vector (43 features total)
-// Fixes v7 overload=1.1127 by restoring missingness signal suppressed by 0.5 imputation
-export const CORRECTED_V8_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfig = {
-  variantId: 'production-v8',
-  productionModelVersion: 'observable-risk-logit-v8',
-  challengerModelVersion: 'observable-risk-catboost-challenger-v8',
-  calibrationVersion: 'post-hoc-calibration-v2',
-  includeStageIndicators: true,
-  includeInteractionFeatures: true,
-  calibrationMethods: ['identity', 'sigmoid', 'beta', 'isotonic', 'venn-abers'],
-  challengerModelFamily: 'depth-2-tree',
-}
-
-export const BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfig = {
-  variantId: 'baseline-v5-like',
-  productionModelVersion: 'observable-risk-logit-v5-like',
-  challengerModelVersion: 'observable-risk-depth2-tree-v5-like',
-  calibrationVersion: 'post-hoc-calibration-v1-like',
-  includeStageIndicators: false,
-  includeInteractionFeatures: false,
-  calibrationMethods: ['identity', 'sigmoid', 'isotonic'],
-  challengerModelFamily: 'depth-2-tree',
-}
-
-export const PROOF_CORPUS_MANIFEST: ProofCorpusManifestEntry[] = (() => {
-  const entries: ProofCorpusManifestEntry[] = []
-  for (let index = 0; index < 64; index += 1) {
-    const scenarioFamily = PROOF_SCENARIO_FAMILIES[index % PROOF_SCENARIO_FAMILIES.length]!
-    entries.push({
-      seed: 101 + (index * 101),
-      split: index < 40 ? 'train' : index < 52 ? 'validation' : 'test',
-      generativeSplit: generativeSplitForFamily(scenarioFamily),
-      scenarioFamily,
-    })
-  }
-  return entries
-})()
 
 /**
  * Manifest entries grouped by the generative-process split. Use this in
@@ -245,234 +111,7 @@ export function selectGenerativeSplitEntries(split: SplitName): ProofCorpusManif
   return PROOF_CORPUS_MANIFEST.filter(entry => entry.generativeSplit === split)
 }
 
-export type ObservableFeaturePayload = {
-  attendancePct: number
-  attendanceTrend: number
-  attendanceHistoryRiskCount: number
-  currentCgpa: number
-  backlogCount: number
-  // Explicit missingness: true when prior CGPA/backlog unknown (e.g. Semester 1 with no history).
-  // Used to prevent zero from being misread as "worst-case CGPA/zero backlog" in the feature vector.
-  cgpaMissing: boolean
-  backlogMissing: boolean
-  tt1Pct: number | null
-  tt2Pct: number | null
-  seePct: number | null
-  quizPct: number | null
-  assignmentPct: number | null
-  weakCoCount: number
-  weakQuestionCount: number
-  courseworkToTtGap: number
-  ttMomentum: number
-  interventionResponseScore: number | null
-  prerequisitePressure: number
-  prerequisiteAveragePct: number
-  prerequisiteFailureCount: number
-  prerequisiteChainDepth: number
-  prerequisiteWeakCourseRate: number
-  prerequisiteCarryoverLoad: number
-  prerequisiteRecencyWeightedFailure: number
-  downstreamDependencyLoad: number
-  weakPrerequisiteChainCount: number
-  repeatedWeakPrerequisiteFamilyCount: number
-  semesterNumber: number
-  semesterProgress: number
-  sectionRiskRate: number
-  // v6 backlog-credit decomposition fields (optional for backward compat with v5 DB rows)
-  activeBacklogCredits?: number
-  historicalBacklogCredits?: number
-  lowerYearBlockerCredits?: number
-  backlogSensitivityScore?: number
-}
-
-export type ObservableLabelPayload = {
-  attendanceRiskLabel: 0 | 1
-  ceShortfallLabel: 0 | 1
-  seeShortfallLabel: 0 | 1
-  overallCourseFailLabel: 0 | 1
-  downstreamCarryoverLabel: 0 | 1
-}
-
-export type ObservableSourceRefs = {
-  simulationRunId: string
-  simulationStageCheckpointId: string | null
-  studentId: string
-  offeringId: string | null
-  semesterNumber: number
-  sectionCode: string
-  courseCode: string
-  courseTitle: string
-  courseFamily?: string | null
-  coEvidenceMode?: string | null
-  stageKey: string | null
-  prerequisiteCourseCodes: string[]
-  prerequisiteWeakCourseCodes: string[]
-  weakCourseOutcomeCodes: string[]
-  dominantQuestionTopics: string[]
-  prerequisiteCompleteness?: GraphAwarePrerequisiteSummaryCompleteness | null
-  featureCompleteness?: GraphAwareFeatureCompleteness | null
-  featureConfidenceClass?: FeatureConfidenceClass | null
-}
-
-export type ObservableRiskEvidenceRow = {
-  riskEvidenceSnapshotId: string
-  batchId: string
-  featurePayload: ObservableFeaturePayload
-  labelPayload: ObservableLabelPayload
-  sourceRefs: ObservableSourceRefs
-}
-
 type FeatureVector = Record<ObservableFeatureKey, number>
-
-type ReliabilityBin = {
-  lowerBound: number
-  upperBound: number
-  meanPredicted: number
-  meanObserved: number
-  count: number
-}
-
-export type RiskMetricSummary = {
-  support: number
-  positiveRate: number
-  brierScore: number
-  logLoss: number
-  rocAuc: number
-  averagePrecision: number
-  expectedCalibrationError: number
-  calibrationSlope: number
-  calibrationIntercept: number
-}
-
-type HeadSupportSummary = {
-  trainSupport: number
-  validationSupport: number
-  testSupport: number
-  trainPositives: number
-  validationPositives: number
-  testPositives: number
-}
-
-type ProbabilityCalibrationArtifact = {
-  method: CalibrationMethod
-  intercept: number | null
-  slope: number | null
-  logProbWeight: number | null
-  logInverseProbWeight: number | null
-  thresholds: number[]
-  values: number[]
-  validationMetrics: RiskMetricSummary
-  testMetrics: RiskMetricSummary
-  displayProbabilityAllowed: boolean
-  supportWarning: string | null
-  reliabilityBins: ReliabilityBin[]
-}
-
-type LogisticHeadArtifact = {
-  headKey: RiskHeadKey
-  intercept: number
-  weights: Record<ObservableFeatureKey, number>
-  threshold: number
-  metrics: RiskMetricSummary
-  support: HeadSupportSummary
-  calibration: ProbabilityCalibrationArtifact
-}
-
-type DepthTwoTreeNodeArtifact = {
-  featureKey: ObservableFeatureKey
-  threshold: number
-  leftValue: number
-  rightValue: number
-  leftChild: DepthTwoTreeNodeArtifact | null
-  rightChild: DepthTwoTreeNodeArtifact | null
-}
-
-type ChallengerHeadArtifact = {
-  headKey: RiskHeadKey
-  modelFamily: ChallengerModelFamily
-  baseIntercept: number
-  root: DepthTwoTreeNodeArtifact
-  threshold: number
-  metrics: RiskMetricSummary
-  support: HeadSupportSummary
-  calibration: ProbabilityCalibrationArtifact
-}
-
-export type ProductionRiskModelArtifact = {
-  modelVersion: string
-  modelFamily?: string
-  featureSchemaVersion: string
-  trainedAt: string
-  trainingManifestVersion: string
-  splitSummary: Record<SplitName, number>
-  worldSplitSummary: Record<SplitName, number>
-  scenarioFamilySummary: Record<ScenarioFamily, number>
-  headSupportSummary: Record<RiskHeadKey, HeadSupportSummary>
-  thresholds: {
-    medium: number
-    high: number
-  }
-  calibrationVersion: string
-  heads: Record<RiskHeadKey, LogisticHeadArtifact>
-}
-
-export type ChallengerRiskModelArtifact = {
-  modelVersion: string
-  modelFamily: ChallengerModelFamily
-  featureSchemaVersion: string
-  trainedAt: string
-  trainingManifestVersion: string
-  splitSummary: Record<SplitName, number>
-  worldSplitSummary: Record<SplitName, number>
-  scenarioFamilySummary: Record<ScenarioFamily, number>
-  headSupportSummary: Record<RiskHeadKey, HeadSupportSummary>
-  calibrationVersion: string
-  heads: Record<RiskHeadKey, ChallengerHeadArtifact>
-}
-
-export type PrerequisiteCorrelationEdge = {
-  sourceCourseCode: string
-  targetCourseCode: string
-  support: number
-  adverseRateWithPrereqWeak: number
-  adverseRateWithoutPrereqWeak: number
-  oddsLift: number
-}
-
-export type CorrelationArtifact = {
-  artifactVersion: string
-  featureSchemaVersion: string
-  builtAt: string
-  splitName: SplitName
-  support: number
-  scenarioFamilySummary: Record<ScenarioFamily, number>
-  weakCoAssociation: {
-    support: number
-    adverseRateWithWeakCo: number
-    adverseRateWithoutWeakCo: number
-    riskLift: number
-  }
-  weakQuestionAssociation: {
-    support: number
-    adverseRateWithWeakQuestions: number
-    adverseRateWithoutWeakQuestions: number
-    riskLift: number
-  }
-  prerequisiteEdges: PrerequisiteCorrelationEdge[]
-}
-
-export type ProofRiskModelBundle = {
-  production: ProductionRiskModelArtifact
-  challenger: ChallengerRiskModelArtifact
-  correlations: CorrelationArtifact
-}
-
-export type ProofRunModelMetadata = {
-  simulationRunId: string
-  seed: number
-  scenarioFamily?: ScenarioFamily | null
-  split?: SplitName | null
-}
 
 export type ModelBackedRiskOutput = ObservableInferenceOutput & {
   modelVersion: string
@@ -494,28 +133,6 @@ export type ModelBackedRiskOutput = ObservableInferenceOutput & {
   calibrationSource: string
   overrideActive: boolean
   driverSource: string
-}
-
-const HEAD_LABEL_KEYS: Record<RiskHeadKey, keyof ObservableLabelPayload> = {
-  attendanceRisk: 'attendanceRiskLabel',
-  ceRisk: 'ceShortfallLabel',
-  seeRisk: 'seeShortfallLabel',
-  overallCourseRisk: 'overallCourseFailLabel',
-  downstreamCarryoverRisk: 'downstreamCarryoverLabel',
-}
-
-const HEAD_DISPLAY_ECE_LIMITS: Partial<Record<RiskHeadKey, number>> = {
-  attendanceRisk: 0.08,
-  seeRisk: 0.08,
-  overallCourseRisk: 0.08,
-  downstreamCarryoverRisk: 0.1,
-}
-
-const HEAD_SUPPORT_POSITIVE_MINIMUMS: Partial<Record<RiskHeadKey, number>> = {
-  attendanceRisk: 100,
-  seeRisk: 100,
-  overallCourseRisk: 100,
-  downstreamCarryoverRisk: 100,
 }
 
 function mergeSupportWarnings(primary: string | null, secondary: string | null) {
