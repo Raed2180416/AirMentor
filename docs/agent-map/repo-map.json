@@ -151,18 +151,18 @@
     }
   },
   "totals": {
-    "trackedFiles": 1375,
+    "trackedFiles": 1376,
     "ignoredEntriesObserved": 106,
-    "bytes": 15729401,
-    "lines": 330416,
-    "nonEmptyLines": 305952,
-    "commentLines": 7477,
+    "bytes": 15730677,
+    "lines": 330460,
+    "nonEmptyLines": 305990,
+    "commentLines": 7491,
     "localDependencyEdges": 898,
-    "symbols": 24694,
+    "symbols": 24703,
     "apiRoutes": 190,
-    "testCases": 1379,
-    "filesWithTests": 196,
-    "atoms": 83482,
+    "testCases": 1384,
+    "filesWithTests": 197,
+    "atoms": 83549,
     "anomalies": 0
   },
   "counts": {
@@ -173,7 +173,7 @@
       ".yaml": 107,
       ".yml": 5,
       ".kiro": 1,
-      ".ts": 670,
+      ".ts": 671,
       ".tsx": 214,
       ".css": 2,
       ".example": 1,
@@ -203,7 +203,7 @@
       "model-contract": 3,
       "backend-script": 97,
       "backend": 283,
-      "unit-test": 163,
+      "unit-test": 164,
       "documentation": 34,
       "forge-audit": 22,
       "pipeline": 171,
@@ -248,7 +248,7 @@
       "scripts": 112,
       "skills-lock.json": 1,
       "tests-e2e": 50,
-      "tests": 68,
+      "tests": 69,
       "tsconfig.app.json": 1,
       "tsconfig.json": 1,
       "tsconfig.node.json": 1,
@@ -697,7 +697,7 @@
       },
       {
         "key": "vitest",
-        "value": 161
+        "value": 162
       },
       {
         "key": "react",
@@ -1913,7 +1913,7 @@
   "topAtoms": [
     {
       "key": "toBe",
-      "value": 2416
+      "value": 2434
     },
     {
       "key": "eq",
@@ -1969,7 +1969,7 @@
     },
     {
       "key": "toEqual",
-      "value": 379
+      "value": 381
     },
     {
       "key": "fn",
@@ -2001,7 +2001,7 @@
     },
     {
       "key": "toBeGreaterThan",
-      "value": 259
+      "value": 260
     },
     {
       "key": "optional",

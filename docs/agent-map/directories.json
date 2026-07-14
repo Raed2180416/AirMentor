@@ -23,8 +23,8 @@
   {
     "path": ".absolute-human",
     "fileCount": 1,
-    "bytes": 5448,
-    "lines": 139,
+    "bytes": 3684,
+    "lines": 114,
     "roles": {
       "other": 1
     },
@@ -1490,14 +1490,14 @@
   },
   {
     "path": "tests",
-    "fileCount": 68,
-    "bytes": 629014,
-    "lines": 17898,
+    "fileCount": 69,
+    "bytes": 632054,
+    "lines": 17967,
     "roles": {
-      "unit-test": 68
+      "unit-test": 69
     },
     "extensions": {
-      ".ts": 40,
+      ".ts": 41,
       ".tsx": 27,
       ".json": 1
     }

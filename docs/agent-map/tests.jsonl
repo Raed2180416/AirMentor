@@ -1366,6 +1366,11 @@
 {"file":"tests/ui-primitives-modal.test.tsx","role":"unit-test","kind":"it","name":"focuses inside the modal, traps tab navigation, and restores focus to the opener","line":65}
 {"file":"tests/ui-primitives-modal.test.tsx","role":"unit-test","kind":"it","name":"wraps reverse tabbing back to the last actionable control even if the dialog itself has focus","line":97}
 {"file":"tests/ui-primitives-modal.test.tsx","role":"unit-test","kind":"it","name":"preserves the focus trap across rerenders while the dialog remains open","line":109}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","kind":"describe","name":"university plugin system is university-agnostic","line":15}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","kind":"it","name":"both institutions implement the full UniversityPlugin contract","line":18}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","kind":"it","name":"risk thresholds diverge between institutions","line":32}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","kind":"it","name":"pass rules diverge between institutions","line":41}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","kind":"it","name":"the same student is graded differently under each institution","line":52}
 {"file":"tests/verify-final-closeout-live.test.ts","role":"unit-test","kind":"describe","name":"verify-final-closeout-live wrapper","line":70}
 {"file":"tests/verify-final-closeout-live.test.ts","role":"unit-test","kind":"it","name":"fails fast when live system-admin credentials are missing","line":71}
 {"file":"tests/verify-final-closeout-live.test.ts","role":"unit-test","kind":"it","name":"skips Railway preflight when Railway auth/context is unavailable","line":90}

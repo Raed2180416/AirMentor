@@ -10,16 +10,16 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | --- | --- |
 | Branch | main |
 | Generation policy | Volatile timestamp, HEAD, and git status are intentionally omitted so regeneration stays content-stable across staging and commits. |
-| Tracked files | 1375 |
+| Tracked files | 1376 |
 | Tracked bytes | 15.0 MiB |
-| Tracked source/doc lines | 330416 |
-| Non-empty lines | 305952 |
-| Comment lines | 7477 |
+| Tracked source/doc lines | 330460 |
+| Non-empty lines | 305990 |
+| Comment lines | 7491 |
 | Local dependency edges | 898 |
-| Symbols/blocks discovered | 24694 |
+| Symbols/blocks discovered | 24703 |
 | API route registrations found | 190 |
-| Test cases discovered | 1379 |
-| Atomic references (exports/env/sql/calls/hooks) | 83482 |
+| Test cases discovered | 1384 |
+| Atomic references (exports/env/sql/calls/hooks) | 83549 |
 | Tracked path anomalies | 0 |
 
 ## Agent Read Order
@@ -134,7 +134,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | other | 409 |
 | backend | 283 |
 | pipeline | 171 |
-| unit-test | 163 |
+| unit-test | 164 |
 | repo-script | 112 |
 | backend-script | 97 |
 | e2e-test | 50 |
@@ -149,7 +149,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 
 | Extension | Files |
 | --- | --- |
-| .ts | 670 |
+| .ts | 671 |
 | .tsx | 214 |
 | .py | 108 |
 | .yaml | 107 |
@@ -185,7 +185,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | adapters | 339 |
 | pipeline | 171 |
 | scripts | 112 |
-| tests | 68 |
+| tests | 69 |
 | tests-e2e | 50 |
 | docs | 34 |
 | kernel | 27 |
@@ -221,7 +221,7 @@ This is the durable navigation layer for future agents. It is deterministic, rep
 | air-mentor-api/scripts | 97 | 1.1 MiB | 27309 | backend-script:97 |
 | scripts | 111 | 1018.5 KiB | 24455 | repo-script:111 |
 | air-mentor-api/src/adapters/simulation | 24 | 957.4 KiB | 22000 | backend:24 |
-| tests | 68 | 614.3 KiB | 17898 | unit-test:68 |
+| tests | 69 | 617.2 KiB | 17967 | unit-test:69 |
 | air-mentor-api/src/lib | 58 | 590.2 KiB | 15517 | backend:58 |
 | . | 25 | 337.7 KiB | 9443 | other:14, build-config:10, agent-config:1 |
 | docs | 20 | 330.5 KiB | 8900 | documentation:20 |

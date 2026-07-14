@@ -24634,6 +24634,15 @@
 {"file":"tests/ui-primitives-modal.test.tsx","role":"unit-test","extension":".tsx","kind":"const","name":"closeButton","startLine":118,"endLine":118,"spanLines":1}
 {"file":"tests/ui-primitives-modal.test.tsx","role":"unit-test","extension":".tsx","kind":"const","name":"rerenderButton","startLine":119,"endLine":119,"spanLines":1}
 {"file":"tests/ui-primitives-modal.test.tsx","role":"unit-test","extension":".tsx","kind":"const","name":"saveButton","startLine":120,"endLine":120,"spanLines":1}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"msruas","startLine":33,"endLine":50,"spanLines":18}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"iitb","startLine":34,"endLine":50,"spanLines":17}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"msruas","startLine":42,"endLine":67,"spanLines":26}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"iitb","startLine":43,"endLine":67,"spanLines":25}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"attendancePct","startLine":57,"endLine":57,"spanLines":1}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"msruasRisk","startLine":58,"endLine":58,"spanLines":1}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"iitbRisk","startLine":59,"endLine":60,"spanLines":2}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"msruasHighRisk","startLine":61,"endLine":61,"spanLines":1}
+{"file":"tests/university-plugin-divergence.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"iitbHighRisk","startLine":62,"endLine":69,"spanLines":8}
 {"file":"tests/verify-final-closeout-live.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"scriptPath","startLine":7,"endLine":12,"spanLines":6}
 {"file":"tests/verify-final-closeout-live.test.ts","role":"unit-test","extension":".ts","kind":"function","name":"makeStubBinDir","startLine":14,"endLine":48,"spanLines":35}
 {"file":"tests/verify-final-closeout-live.test.ts","role":"unit-test","extension":".ts","kind":"const","name":"dir","startLine":15,"endLine":36,"spanLines":22}
